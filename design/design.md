@@ -1,46 +1,342 @@
-# Yet Another Idle Skilling Game
+# Yet Another Idle Skilling Game — Technical Design Document
 
-Multiplayer, web-based game where a player can skill up multiple skills in real time.  Similar games in this genre are Melvor Idle, Idle Clans, and Ironwood RPG.
+**Version:** 0.2 (implementation-ready draft)
+**Scope:** Code architecture and implementation plan only. Game content (specific items, action tables, balance numbers, realm definitions) is deferred to a later content design document. All systems in this document must be built to load content from data, not code, so content can be added later without engine changes.
 
-Differentiator of this game is that the player can choose different realms to setup their estate.  Different realms provide different resources and may have modifiers to skillup rates.  The player can contribute resources to their estate and realm to improve it as very-long term goal. 
+---
 
-Features:
-Different skills:
-1. gathering
-2. refining
-3. crafting
-4. combat
-5. exploration
-Setup your own estate
-* Choose a realm to reside and improve
-Player driven marketplace
+## 1. Overview
 
-Backend design:
-Login microservice to handle auth and sessions
-Choose between python or golang to provide a RESTful API to serve the player client.
-A sql backend to store state, sqlite first, if we need more features or scaling move to postgresql
+A multiplayer, web-based idle skilling game in the genre of Melvor Idle, Idle Clans, and Ironwood RPG. Players train skills in real time via timed action cycles, accumulate resources, and trade with other players.
 
+**Differentiator:** Players choose a *realm* in which to establish their *estate*. Realms provide different resources and modify skill rates. Players contribute resources to improve their estate and realm as a very-long-term progression goal.
 
+### 1.1 Design pillars (engineering implications)
 
+1. **Server-authoritative.** All progression math happens on the server. The client is a view; client timers are cosmetic. This is the single most important rule — an idle game with client-trusted timers is trivially cheated.
+2. **Content is data.** Skills, actions, items, recipes, realms, and modifiers are defined in versioned content files (JSON) loaded by the server. The engine knows *mechanics* (cycles, XP curves, drop tables); it never hardcodes *content*.
+3. **Offline progress by design.** Progress is computed from timestamps, not from a running per-player loop. A player who returns after 8 hours has their elapsed cycles resolved lazily on their next request. This makes the server nearly stateless per player and cheap to scale.
+4. **Simple first, swappable later.** SQLite → PostgreSQL, monorepo services → separate deployments. Interfaces are chosen so these swaps are migrations, not rewrites.
 
-Client design:
-Choose a js framework that can handle a few frames and timers
-The client will have a left side menu bar with a things the player can do, the client will pull available actions to populate that menu from the server. 
-* Profile: general character stats, estate and realm overview
-* Player Market: place to buy and sell resources among players
-* Realm Market: buy and sell resources to the local realm
-* Estate: actions for the player estate
-* divider
-* Combat section
-* divider
-* Skill lists:
-  1. Gathering
-  2. Refining
-  3. Crafting
-  4. exploration
+---
 
-Skilling work flows:
+## 2. Technology choices (decisions, with rationale)
 
-A player may only work on combat or a skill at a time, selecting a skill will request to begin that skill, the server will respond if the player can do that skill and the timer for 1 cycle of that skill will take.  Once that cycle completes, that client will request rewards for that skill cycle, and the server will respond if the rewards are ready and if so, the rewards.
+| Concern | Decision | Rationale |
+|---|---|---|
+| API language | **Python 3.12 + FastAPI** | Fast iteration, excellent typing/validation via Pydantic, async-native. Go was the alternative; raw throughput is not the bottleneck for an idle game (low request rates, tiny payloads). Revisit only if load testing demands it. |
+| ORM / migrations | **SQLAlchemy 2.x + Alembic** | Dialect-agnostic; makes the SQLite → PostgreSQL move a config change plus a migration test pass. |
+| Database | **SQLite (WAL mode)** first; **PostgreSQL** when concurrency or features demand | Per pillar 4. Rules that ease migration listed in §6.4. |
+| Auth service | **Separate FastAPI service** issuing JWTs | Matches the stated microservice requirement while sharing language/tooling with the game API. May be deployed co-located initially. |
+| Client framework | **React 18 + Vite + TypeScript** | Mature ecosystem, best coding-agent familiarity, and the UI is menu/panel-driven — no canvas or high-FPS needs. |
+| Client server-state | **TanStack Query** | Polling, cache invalidation, and optimistic updates map exactly onto the skilling loop. |
+| Client styling | **Tailwind CSS** | Fast to build the panel-based layout; no design system needed for v1. |
+| API style | **REST + JSON**, OpenAPI generated by FastAPI | Per requirement. A future WebSocket channel for market/chat push is noted in §10 but out of scope for v1. |
+| Auth tokens | **Short-lived JWT access token (15 min) + rotating refresh token (httpOnly cookie)** | Standard, stateless verification in the game API. |
 
-Completed skill cycles will reward skill xp and possibly other resource rewards.
+---
+
+## 3. System architecture
+
+```
+┌──────────────┐        HTTPS/JSON         ┌──────────────────┐
+│ React client │ ─────────────────────────▶ │  Auth service     │  issues/refreshes JWT
+│ (Vite build, │                            │  (FastAPI)        │
+│ static host) │        HTTPS/JSON          └────────┬─────────┘
+│              │ ─────────────────────────▶ ┌────────▼─────────┐
+└──────────────┘   Bearer JWT on requests   │  Game API service │  all game logic
+                                            │  (FastAPI)        │
+                                            └────────┬─────────┘
+                                            ┌────────▼─────────┐
+                                            │  SQL database     │  SQLite → PostgreSQL
+                                            └──────────────────┘
+                                            ┌──────────────────┐
+                                            │  Content files    │  JSON, versioned in repo,
+                                            │  (read at boot)   │  loaded/validated at startup
+                                            └──────────────────┘
+```
+
+- The auth service and game API share a users table (or the game API trusts JWT claims only and keeps its own `player` table keyed by the auth `user_id` claim — **chosen approach**, keeps the services decoupled).
+- No per-player background workers. One small scheduled job handles market listing expiry (§8.3).
+
+### 3.1 Repository layout (monorepo)
+
+```
+/                     
+├── services/
+│   ├── auth/            # FastAPI auth service
+│   └── game/            # FastAPI game API
+│       ├── app/
+│       │   ├── api/         # routers (thin: parse, call engine, serialize)
+│       │   ├── engine/      # pure game logic (no FastAPI, no SQLAlchemy imports)
+│       │   ├── models/      # SQLAlchemy models
+│       │   ├── content/     # content loader + Pydantic schemas for content files
+│       │   └── db.py
+│       └── tests/
+├── content/             # JSON content packs (skills, actions, items, realms)
+├── client/              # React app
+│   └── src/
+│       ├── api/         # generated/typed API client + TanStack Query hooks
+│       ├── features/    # one folder per menu section (profile, market, estate, skills, combat)
+│       └── components/  # shared UI (menu, timers, item icons, panels)
+├── docker-compose.yml   # auth + game + client dev stack
+└── docs/
+```
+
+**Engine purity rule:** `engine/` contains pure functions `(state, content, now) → (new_state, results)`. All randomness goes through an injected RNG. This makes the core loop unit-testable without a database and is the part a coding agent should build test-first.
+
+---
+
+## 4. Core gameplay loop (server-authoritative skilling)
+
+### 4.1 Concepts
+
+- **Action:** a content-defined activity within a skill (e.g., "chop oak"). Defined by: skill, level requirement, input items (optional), cycle duration (ms), XP reward, drop table (item rewards + probabilities).
+- **Active action:** at most **one** per character across all skills and combat (per the design requirement). Stored as a row: `(character_id, action_id, started_at, last_resolved_at)`.
+- **Cycle:** one duration-length repetition of the action. Actions repeat automatically until stopped, inputs run out, or an offline cap is hit.
+
+### 4.2 Lazy resolution algorithm
+
+The server never runs timers. Instead, **any** authenticated request that reads or mutates character state first calls `resolve(character, now)`:
+
+```
+elapsed        = now - last_resolved_at
+cycle_ms       = effective_cycle_time(action, character, realm_modifiers)
+n_full_cycles  = floor(elapsed / cycle_ms)
+n_full_cycles  = min(n_full_cycles, cycles_until_inputs_exhausted,
+                     OFFLINE_CAP_CYCLES_remaining)
+apply: consume inputs × n, grant XP × n, roll drop table × n (seeded RNG),
+       handle level-ups, append a reward summary record
+last_resolved_at += n_full_cycles * cycle_ms   # keep partial-cycle remainder
+```
+
+Properties worth noting for implementation:
+
+- Resolution is **idempotent and transactional** — one DB transaction per resolve; concurrent requests for the same character serialize on the active-action row (`SELECT ... FOR UPDATE` in Postgres; SQLite's writer lock covers it initially).
+- `effective_cycle_time` is where **realm/estate modifiers** plug in (§7). Modifiers are resolved at cycle time, not stored on the action.
+- `OFFLINE_CAP` (e.g., 12h of cycles) is a tunable constant; content doc decides the value.
+- Level-ups mid-batch that change requirements/speeds are handled by resolving in segments (resolve until level-up boundary, recompute, continue). v1 may simplify: modifiers snapshot at action start, re-snapshot each resolve.
+
+### 4.3 Client/server flow
+
+Matches the draft's flow, generalized to repeated cycles:
+
+1. Client `POST /characters/me/action` `{action_id}` → server validates (level, inputs, realm availability), stops any current action (resolving it first), starts the new one, and returns `{action, cycle_ms, started_at}`.
+2. Client runs a **cosmetic** progress bar from `cycle_ms` and polls `GET /characters/me/action` on each cycle boundary (or every few seconds). The response includes rewards accrued since the last poll — this *is* the "request rewards" step from the draft, and it also transparently covers reconnects and offline gains.
+3. Client `DELETE /characters/me/action` to stop (server resolves first, then clears).
+
+If the client's clock drifts or it misses polls, nothing is lost or gained — the server's timestamps are the only truth.
+
+---
+
+## 5. API design (Game service)
+
+All routes require `Authorization: Bearer <JWT>` except where noted. Errors use a uniform envelope `{error: {code, message}}` with stable machine-readable codes (`INSUFFICIENT_LEVEL`, `MISSING_INPUTS`, `LISTING_NOT_FOUND`, ...).
+
+### 5.1 Meta / content
+- `GET /content/manifest` — content pack version + hashes (client caches content by version)
+- `GET /content/{pack}` — skills, actions, items, realms as the client-safe subset of content data (drop probabilities may be redacted)
+
+### 5.2 Character & profile
+- `POST /characters` — create character (name, starting realm)
+- `GET /characters/me` — full profile: stats, skill levels/XP, realm, estate summary. **Triggers resolve.**
+- `GET /characters/me/inventory`
+
+### 5.3 Skilling & combat
+- `GET /characters/me/actions/available` — actions the character can currently start, grouped by skill (populates the left menu; server decides availability)
+- `POST /characters/me/action` — start action (skilling or combat encounter alike)
+- `GET /characters/me/action` — current action + accrued rewards since last poll. **Triggers resolve.**
+- `DELETE /characters/me/action` — stop
+
+Combat v1 is implemented as the same cycle machinery: an encounter is an action whose per-cycle resolution runs a deterministic combat round (player stats vs. monster stats from content) and whose drop table is the monster's loot. Richer combat (HP persistence, food, death penalties) is a later phase but must not require changing the action framework — it extends the per-cycle resolver.
+
+### 5.4 Player market
+- `GET /market/listings?item=&sort=&page=` 
+- `POST /market/listings` — create sell listing `{item_id, quantity, unit_price}` (escrows items)
+- `DELETE /market/listings/{id}` — cancel (returns escrow)
+- `POST /market/listings/{id}/buy` — `{quantity}` partial or full purchase (escrowed currency transfer, single transaction)
+- `GET /market/history/me` — my sales/purchases
+
+### 5.5 Realm market (NPC vendor per realm)
+- `GET /realms/{id}/market` — realm's buy/sell offers (content-defined, realm-modified prices)
+- `POST /realms/{id}/market/trade` — `{offer_id, quantity, side}`
+
+### 5.6 Estate & realm
+- `GET /estates/me`
+- `POST /estates/me/upgrades/{upgrade_id}` — spend resources on an estate upgrade
+- `GET /realms` / `GET /realms/{id}` — realm list, details, communal progress
+- `POST /realms/{id}/contribute` — `{item_id, quantity}` contribute to realm project
+- `POST /characters/me/relocate` — move estate to a new realm (cost/penalty rules from content)
+
+### 5.7 Auth service (separate base URL)
+- `POST /auth/register`, `POST /auth/login` → sets refresh cookie, returns access JWT
+- `POST /auth/refresh`, `POST /auth/logout`
+- JWKS or shared-secret endpoint for the game API to verify tokens (**decision: RS256 + JWKS**, so the game API never holds the signing key)
+
+---
+
+## 6. Data model
+
+### 6.1 Auth DB (auth service owns)
+- `users(id, email, password_hash, created_at, status)`
+- `refresh_tokens(id, user_id, token_hash, expires_at, revoked_at)`
+
+### 6.2 Game DB (game service owns)
+
+```
+players            (id, auth_user_id UNIQUE, created_at)
+characters         (id, player_id, name UNIQUE, realm_id, created_at)
+character_skills   (character_id, skill_id, xp, level)          -- level derived but cached
+active_actions     (character_id PK, action_id, started_at, last_resolved_at, meta JSON)
+inventories        (character_id, item_id, quantity)            -- PK (character_id, item_id)
+currency           (character_id PK, gold)                       -- or an item; decision: dedicated column
+reward_log         (id, character_id, action_id, cycles, xp JSON, items JSON, resolved_at)
+market_listings    (id, seller_character_id, item_id, quantity_remaining,
+                    unit_price, created_at, expires_at, status)
+market_trades      (id, listing_id, buyer_character_id, quantity, unit_price, traded_at)
+estates            (character_id PK, realm_id, level, data JSON)
+estate_upgrades    (character_id, upgrade_id, purchased_at)
+realm_state        (realm_id PK, project_id, contribution_totals JSON, tier)
+realm_contributions(id, realm_id, character_id, item_id, quantity, contributed_at)
+```
+
+- Static definitions (skills, actions, items, realms, upgrades, XP curve) live in **content files**, referenced by string IDs. The DB stores only per-player/per-world *state*.
+- v1: **one character per player** (enforced in code, schema allows more later).
+
+### 6.3 Content file schema (validated at boot with Pydantic)
+
+```jsonc
+// content/skills/gathering.json (illustrative shape only — real content deferred)
+{ "id": "gathering", "display_name": "Gathering",
+  "actions": [
+    { "id": "gathering.placeholder_1", "name": "Placeholder Node",
+      "level_required": 1, "cycle_ms": 3000,
+      "inputs": [], "xp": 10,
+      "drops": [ {"item_id": "item.placeholder_ore", "qty": [1,1], "chance": 1.0} ],
+      "realm_tags": ["*"] } ] }
+```
+
+The engine ships with a **placeholder content pack** sufficient to exercise every mechanic (one action per skill, a handful of items, two realms, one estate upgrade, one realm project). Real content replaces this pack later without code changes.
+
+### 6.4 SQLite → PostgreSQL rules
+- All schema through Alembic; no raw dialect-specific SQL.
+- No SQLite-only types; store JSON as `JSON` column type (maps to JSONB in PG).
+- Money/quantities as integers (no floats, no NUMERIC surprises).
+- All timestamps UTC, stored as timezone-aware.
+- CI runs the test suite against both engines from day one.
+
+---
+
+## 7. Realms, estates, and modifiers
+
+Mechanically, realms and estates are **modifier sources** plus **availability filters**:
+
+- **Availability:** each action lists `realm_tags`; a character can start an action only if their realm carries a matching tag. This is how "different realms provide different resources" works — pure data.
+- **Modifiers:** a small, closed set of modifier types the engine understands: `cycle_time_pct`, `xp_pct`, `extra_drop_chance_pct`, `market_tax_pct`. Realms, estate upgrades, and realm-project tiers each emit modifiers; the engine sums/stacks them per a single documented stacking rule (additive within type). Adding new *sources* of modifiers is content; adding new *types* is an engine change.
+- **Realm projects:** each realm has a current project (content-defined) with item contribution targets. `realm_state.contribution_totals` tracks progress; on completion the realm's tier increments and its modifier set changes. Contributions are recorded per character for future recognition features.
+- **Relocation:** allowed, with content-defined cost. Estate level persists or resets per content rules (engine supports both via a flag).
+
+---
+
+## 8. Cross-cutting concerns
+
+### 8.1 Security & anti-cheat
+- All validation server-side; client requests express *intent* only.
+- Server RNG (seeded per resolve from a CSPRNG); drop probabilities never trusted from or necessarily revealed to the client.
+- Rate limiting per token on mutation endpoints (e.g., 10 req/s) — cheap middleware, prevents market spam.
+- JWT verification middleware in the game API; character ownership checked on every `/characters/me/*` implicitly via token claim → player → character.
+
+### 8.2 Transactions & concurrency
+- Every mutating endpoint = one DB transaction.
+- Market purchase: lock listing row, check quantity, transfer currency and items, write trade record — all-or-nothing. Escrow model (items/currency held by the listing) avoids two-party locking.
+- Resolve serializes per character (row lock on `active_actions`).
+
+### 8.3 Background jobs
+- Single scheduled job (APScheduler in-process for v1): expire market listings past `expires_at`, returning escrow. Everything else is lazy.
+
+### 8.4 Testing strategy
+- **Engine unit tests** (no DB): resolution math, offline caps, modifier stacking, level-up boundaries, drop-table statistics (seeded RNG), combat rounds.
+- **API integration tests**: httpx + test DB per test; golden-path flows (register → create character → skill → market round-trip).
+- **Property tests** (hypothesis): resolve is idempotent; total items/currency conserved across market trades.
+- CI: lint (ruff), typecheck (mypy/pyright), both-DB test matrix.
+
+### 8.5 Observability
+- Structured JSON logs (request id, player id); `/healthz` per service; basic counters (resolves, cycles granted, trades) via Prometheus client. Nothing fancier for v1.
+
+---
+
+## 9. Client design
+
+### 9.1 Layout
+
+Left sidebar (server-driven), main content panel. Sidebar sections and their availability come from `GET /characters/me/actions/available` plus static section metadata:
+
+```
+┌──────────┬────────────────────────────┐
+│ Profile  │                            │
+│ P.Market │      Active panel          │
+│ R.Market │  (route per section)       │
+│ Estate   │                            │
+│ ──────── │  Persistent footer strip:  │
+│ Combat   │  current action, progress  │
+│ ──────── │  bar, latest rewards       │
+│ Gathering│                            │
+│ Refining │                            │
+│ Crafting │                            │
+│ Explor.  │                            │
+└──────────┴────────────────────────────┘
+```
+
+- **Routing:** React Router, one route per sidebar section.
+- **Active-action strip** is global (visible on every route) since only one action runs at a time.
+- **Timers:** a single `requestAnimationFrame`/1s-interval driven store animates the progress bar from `started_at + n*cycle_ms`; TanStack Query refetches `/characters/me/action` on cycle boundaries with jitter, and on tab refocus (covers offline catch-up automatically).
+- **Content cache:** content pack fetched once per manifest version, cached in IndexedDB/localStorage.
+
+### 9.2 Client state rules
+- Server state only via TanStack Query hooks in `src/api/` (typed from the OpenAPI schema).
+- UI-only state (selected tab, filters) in component state or a tiny zustand store.
+- No client-computed rewards ever rendered as authoritative; rewards display comes from server responses (`reward_log` deltas).
+
+---
+
+## 10. Explicit non-goals for v1 (recorded so the agent doesn't build them)
+
+- WebSockets / real-time push (polling is fine at idle-game rates)
+- Multiple characters per account, character deletion/rename
+- Guilds/clans, chat, friends
+- Rich combat (equipment, consumables, death) beyond the cycle-based encounter skeleton
+- Admin tooling beyond content-file editing + a seed script
+- Horizontal scaling, caching layers, CDN concerns
+- Real content/balance (placeholder pack only)
+
+---
+
+## 11. Implementation plan (phases for the coding agent)
+
+Each phase ends with passing tests and a runnable `docker-compose up` stack.
+
+**Phase 0 — Skeleton.** Monorepo layout, docker-compose (auth, game, client, volume-mounted SQLite), CI pipeline, health endpoints, Alembic baseline.
+
+**Phase 1 — Auth.** Auth service: register/login/refresh/logout, RS256 JWT + JWKS. Game API: JWT middleware, `players` auto-provisioning on first authenticated call. Client: login/register screens, token refresh handling.
+
+**Phase 2 — Content pipeline + character.** Content loader with Pydantic validation, placeholder pack, `/content/*` endpoints, character creation with realm choice, profile endpoint/page.
+
+**Phase 3 — Skilling core.** `engine/` resolve loop (test-first), active-action endpoints, offline cap, reward log, inventory. Client: skill panels, action start/stop, global progress strip, reward toasts. *This phase is the heart of the game — budget the most review here.*
+
+**Phase 4 — Modifiers, estate, realm.** Modifier stacking in `effective_cycle_time`/XP/drops, estate upgrades, realm projects + contributions, relocation. Client: Estate and Profile realm views.
+
+**Phase 5 — Markets.** Player market (escrowed listings, partial buys, expiry job) and realm market. Client: both market panels.
+
+**Phase 6 — Combat skeleton.** Monster/encounter content shape, per-cycle combat resolver behind the same action framework. Client: Combat panel.
+
+**Phase 7 — Hardening.** Rate limiting, both-DB CI matrix green, property tests, load sanity check (k6 script: 500 simulated pollers), observability counters.
+
+---
+
+## 12. Open questions for the author
+
+1. Offline cap duration and whether it's a premium/upgradeable value.
+2. Currency: single global gold vs. per-realm currencies (affects market schema).
+3. Should drop rates be visible to players (affects `/content` redaction)?
+4. Relocation semantics: does estate progress persist across realms?
+5. Exploration: is it a standard cycle skill in v1, or does it unlock realms/actions (would add an unlocks table)?
