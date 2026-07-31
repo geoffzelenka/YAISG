@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+*.egg-info/
+data/
+client/node_modules/
+client/dist/
+client/coverage/
+.DS_Store

@@ -1,0 +1,48 @@
+services:
+  auth:
+    build:
+      context: ./services/auth
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    environment:
+      AUTH_DATABASE_URL: sqlite:////data/auth.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/auth:/app
+      - ./data:/data
+
+  game:
+    build:
+      context: ./services/game
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      GAME_DATABASE_URL: sqlite:////data/game.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/game:/app
+      - ./data:/data
+
+  client:
+    build: ./client
+    command: npm run dev -- --host 0.0.0.0
+    environment:
+      VITE_AUTH_URL: http://localhost:8001
+      VITE_GAME_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - client-node-modules:/app/node_modules
+    depends_on:
+      - auth
+      - game
+
+volumes:
+  client-node-modules:
