@@ -1,6 +1,6 @@
 # Yet Another Idle Skilling Game — Technical Design Document
 
-**Version:** 0.2 (implementation-ready draft)
+**Version:** 0.3 (implementation-ready draft; open questions resolved)
 **Scope:** Code architecture and implementation plan only. Game content (specific items, action tables, balance numbers, realm definitions) is deferred to a later content design document. All systems in this document must be built to load content from data, not code, so content can be added later without engine changes.
 
 ---
@@ -114,7 +114,7 @@ Properties worth noting for implementation:
 
 - Resolution is **idempotent and transactional** — one DB transaction per resolve; concurrent requests for the same character serialize on the active-action row (`SELECT ... FOR UPDATE` in Postgres; SQLite's writer lock covers it initially).
 - `effective_cycle_time` is where **realm/estate modifiers** plug in (§7). Modifiers are resolved at cycle time, not stored on the action.
-- `OFFLINE_CAP` (e.g., 12h of cycles) is a tunable constant; content doc decides the value.
+- The offline cap starts at **12 hours** of cycles and is a per-character *cap* (§7.1) upgradeable via estate upgrades or future premium features — the engine reads it from the character's resolved cap set, never from a constant.
 - Level-ups mid-batch that change requirements/speeds are handled by resolving in segments (resolve until level-up boundary, recompute, continue). v1 may simplify: modifiers snapshot at action start, re-snapshot each resolve.
 
 ### 4.3 Client/server flow
@@ -135,7 +135,7 @@ All routes require `Authorization: Bearer <JWT>` except where noted. Errors use 
 
 ### 5.1 Meta / content
 - `GET /content/manifest` — content pack version + hashes (client caches content by version)
-- `GET /content/{pack}` — skills, actions, items, realms as the client-safe subset of content data (drop probabilities may be redacted)
+- `GET /content/{pack}` — skills, actions, items, realms. **Drop rates are exposed to the client** as a design choice (players can see general probabilities); the server still rolls all drops itself.
 
 ### 5.2 Character & profile
 - `POST /characters` — create character (name, starting realm)
@@ -189,13 +189,17 @@ characters         (id, player_id, name UNIQUE, realm_id, created_at)
 character_skills   (character_id, skill_id, xp, level)          -- level derived but cached
 active_actions     (character_id PK, action_id, started_at, last_resolved_at, meta JSON)
 inventories        (character_id, item_id, quantity)            -- PK (character_id, item_id)
-currency           (character_id PK, gold)                       -- or an item; decision: dedicated column
+currency           (character_id PK, gold, premium)               -- premium column exists from day one, unused in v1
 reward_log         (id, character_id, action_id, cycles, xp JSON, items JSON, resolved_at)
 market_listings    (id, seller_character_id, item_id, quantity_remaining,
                     unit_price, created_at, expires_at, status)
 market_trades      (id, listing_id, buyer_character_id, quantity, unit_price, traded_at)
-estates            (character_id PK, realm_id, level, data JSON)
-estate_upgrades    (character_id, upgrade_id, purchased_at)
+estates            (id PK, character_id, realm_id, level, upgrade_slots, data JSON)
+                    -- own id (not character PK) so multiple estates per character
+                    -- can arrive later as a code change only; v1 enforces one
+estate_upgrades    (estate_id, slot_index, upgrade_id, purchased_at)
+                    -- slot-based: an estate has `upgrade_slots` slots (upgradeable
+                    -- count); each holds one upgrade; UNIQUE(estate_id, slot_index)
 realm_state        (realm_id PK, project_id, contribution_totals JSON, tier)
 realm_contributions(id, realm_id, character_id, item_id, quantity, contributed_at)
 ```
@@ -234,7 +238,20 @@ Mechanically, realms and estates are **modifier sources** plus **availability fi
 - **Availability:** each action lists `realm_tags`; a character can start an action only if their realm carries a matching tag. This is how "different realms provide different resources" works — pure data.
 - **Modifiers:** a small, closed set of modifier types the engine understands: `cycle_time_pct`, `xp_pct`, `extra_drop_chance_pct`, `market_tax_pct`. Realms, estate upgrades, and realm-project tiers each emit modifiers; the engine sums/stacks them per a single documented stacking rule (additive within type). Adding new *sources* of modifiers is content; adding new *types* is an engine change.
 - **Realm projects:** each realm has a current project (content-defined) with item contribution targets. `realm_state.contribution_totals` tracks progress; on completion the realm's tier increments and its modifier set changes. Contributions are recorded per character for future recognition features.
-- **Relocation:** allowed, with content-defined cost. Estate level persists or resets per content rules (engine supports both via a flag).
+- **Relocation:** allowed, with content-defined cost. **Estates are persistent**: level, slots, and installed upgrades survive relocation (no reset flag needed). Realm-specific upgrade availability may make some installed upgrades inert in the new realm — inert, not lost.
+
+### 7.1 Caps (upgradeable limits)
+
+Alongside modifiers, the engine understands a closed set of **cap types**, resolved per character the same way modifiers are (base value + bonuses from estate upgrades, realm tier, and future premium sources):
+
+| Cap | v1 base | Notes |
+|---|---|---|
+| `offline_hours` | 12 | Max offline cycles resolved per return |
+| `inventory_slots` | content-defined | Distinct item stacks in inventory |
+| `market_listings` | content-defined | Concurrent active listings |
+| `estate_upgrade_slots` | content-defined | Upgrade slots per estate |
+
+Enforcement points: resolve loop (offline), inventory grants (drops that would exceed slots follow a single documented rule — v1: overflow items are dropped with a logged notice; revisit later), listing creation, and upgrade purchase. Adding new cap *sources* is content; new cap *types* is an engine change — same rule as modifiers. A future "multiple estates" feature would add an `estates` count cap; the schema already supports it (§6.2).
 
 ---
 
@@ -287,7 +304,7 @@ Left sidebar (server-driven), main content panel. Sidebar sections and their ava
 └──────────┴────────────────────────────┘
 ```
 
-- **Routing:** React Router, one route per sidebar section.
+- **Routing:** React Router, one route per sidebar section. The Exploration entry renders disabled ("coming soon") in v1 (§10).
 - **Active-action strip** is global (visible on every route) since only one action runs at a time.
 - **Timers:** a single `requestAnimationFrame`/1s-interval driven store animates the progress bar from `started_at + n*cycle_ms`; TanStack Query refetches `/characters/me/action` on cycle boundaries with jitter, and on tab refocus (covers offline catch-up automatically).
 - **Content cache:** content pack fetched once per manifest version, cached in IndexedDB/localStorage.
@@ -302,7 +319,10 @@ Left sidebar (server-driven), main content panel. Sidebar sections and their ava
 ## 10. Explicit non-goals for v1 (recorded so the agent doesn't build them)
 
 - WebSockets / real-time push (polling is fine at idle-game rates)
+- **Exploration** — deferred entirely. Design intent for later: exploration lets a player discover new realms or new resources within known realms, implying a per-character *unlocks/discoveries* table and dynamic action availability. The action-availability endpoint (§5.3) already filters per character, so exploration can layer on without reworking the menu or engine. The sidebar reserves the slot but v1 renders it as "coming soon."
 - Multiple characters per account, character deletion/rename
+- Multiple estates per character (schema is ready; feature is not)
+- Premium currency mechanics (column exists; nothing earns or spends it)
 - Guilds/clans, chat, friends
 - Rich combat (equipment, consumables, death) beyond the cycle-based encounter skeleton
 - Admin tooling beyond content-file editing + a seed script
@@ -333,10 +353,10 @@ Each phase ends with passing tests and a runnable `docker-compose up` stack.
 
 ---
 
-## 12. Open questions for the author
+## 12. Resolved design decisions (log)
 
-1. Offline cap duration and whether it's a premium/upgradeable value.
-2. Currency: single global gold vs. per-realm currencies (affects market schema).
-3. Should drop rates be visible to players (affects `/content` redaction)?
-4. Relocation semantics: does estate progress persist across realms?
-5. Exploration: is it a standard cycle skill in v1, or does it unlock realms/actions (would add an unlocks table)?
+1. **Offline cap:** 12h base, upgradeable — generalized into the caps system (§7.1) along with inventory size, market listings, and estate upgrade slots.
+2. **Currency:** one general currency (gold); premium currency planned — schema column reserved, mechanics out of scope for v1.
+3. **Drop rates:** exposed to players via the content endpoint; server-rolled regardless.
+4. **Estates:** persistent across relocation; progression is bounded by limited, upgradeable slots rather than resets.
+5. **Exploration:** deferred to a post-v1 feature (realm/resource discovery via an unlocks table); v1 ships four skills + combat with a reserved sidebar slot.
