@@ -5,7 +5,11 @@ from pathlib import Path
 
 DATABASE_URL = os.getenv("AUTH_DATABASE_URL", "sqlite:///./data/auth.db")
 VERSION = os.getenv("GIT_SHA", "dev")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 AUTH_KEYS_DIR = Path(os.getenv("AUTH_KEYS_DIR", "./data/keys"))
 ACCESS_TOKEN_SECONDS = 15 * 60
 REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60

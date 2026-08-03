@@ -20,19 +20,22 @@ services:
       context: ./services/game
       args:
         GIT_SHA: ${GIT_SHA:-dev}
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       GAME_DATABASE_URL: sqlite:////data/game.db
+      AUTH_JWKS_URL: http://auth:8001/.well-known/jwks.json
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "8000:8000"
     volumes:
       - ./services/game:/app
       - ./data:/data
+    depends_on:
+      - auth
 
   client:
     build: ./client
-    command: npm run dev -- --host 0.0.0.0
+    command: sh -c "npm install --prefer-offline && npm run dev -- --host 0.0.0.0"
     environment:
       VITE_AUTH_URL: http://localhost:8001
       VITE_GAME_URL: http://localhost:8000

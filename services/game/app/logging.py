@@ -29,7 +29,12 @@ async def log_request(
         exception_type = type(error).__name__
         response = JSONResponse(
             status_code=status_code,
-            content={"detail": "Internal Server Error"},
+            content={
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "Internal Server Error",
+                }
+            },
         )
 
     response.headers["X-Request-Id"] = request_id

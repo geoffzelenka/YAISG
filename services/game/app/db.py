@@ -1,9 +1,11 @@
 """Database engine configuration for the game service."""
 
 import sqlite3
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import DATABASE_URL
 
@@ -27,6 +29,18 @@ if DATABASE_URL.startswith("sqlite:"):
     )
 else:
     engine = create_engine(DATABASE_URL)
+
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+
+class Base(DeclarativeBase):
+    """Base for game-owned SQLAlchemy models."""
+
+
+async def get_db() -> AsyncGenerator[Session, None]:
+    """Provide a transaction-scoped database session to a request."""
+    with SessionLocal() as session:
+        yield session
 
 
 @event.listens_for(engine, "connect")

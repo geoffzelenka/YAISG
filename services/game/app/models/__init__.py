@@ -1,1 +1,5 @@
-"""Database models package reserved for later phases."""
+"""Game database models."""
+
+from app.models.player import Player
+
+__all__ = ["Player"]

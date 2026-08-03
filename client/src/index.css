@@ -5,3 +5,21 @@
 body {
   @apply m-0 min-w-80 bg-slate-950 font-sans text-slate-100 antialiased;
 }
+
+@layer components {
+  .auth-input {
+    @apply mt-1 w-full rounded-md border border-slate-600 bg-slate-950 px-3 py-2 outline-none focus:border-emerald-400;
+  }
+
+  .primary-button {
+    @apply rounded-md bg-emerald-500 px-4 py-2 font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60;
+  }
+
+  .secondary-button {
+    @apply rounded-md border border-slate-600 px-4 py-2 hover:border-slate-400;
+  }
+
+  .sidebar-link {
+    @apply block rounded-md px-3 py-2 text-sm text-slate-300;
+  }
+}
