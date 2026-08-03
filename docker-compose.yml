@@ -4,9 +4,10 @@ services:
       context: ./services/auth
       args:
         GIT_SHA: ${GIT_SHA:-dev}
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload"
     environment:
       AUTH_DATABASE_URL: sqlite:////data/auth.db
+      AUTH_KEYS_DIR: /data/auth-keys
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "8001:8001"

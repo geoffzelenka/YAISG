@@ -43,17 +43,24 @@ def test_exception_is_logged_with_request_id(caplog: LogCaptureFixture) -> None:
     with caplog.at_level(logging.INFO, logger="yaisg.requests"):
         transport = ASGITransport(app=failure_app)
 
-        async def get_failure() -> tuple[int, str]:
+        async def get_failure() -> tuple[int, str, dict[str, object]]:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
                 response = await client.get("/failure")
-            return response.status_code, response.headers["X-Request-Id"]
+            return (
+                response.status_code,
+                response.headers["X-Request-Id"],
+                response.json(),
+            )
 
-        status_code, request_id = asyncio.run(get_failure())
+        status_code, request_id, body = asyncio.run(get_failure())
 
     log_record = json.loads(caplog.records[-1].message)
     assert status_code == 500
     assert log_record["status"] == 500
     assert log_record["request_id"] == request_id
     assert log_record["exception_type"] == "RuntimeError"
+    assert body == {
+        "error": {"code": "INTERNAL_ERROR", "message": "Internal Server Error"}
+    }

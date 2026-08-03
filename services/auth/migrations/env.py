@@ -4,15 +4,16 @@ from logging.config import fileConfig
 
 from alembic import context
 
+from app import models  # noqa: F401
 from app.config import DATABASE_URL
+from app.db import Base
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Phase 0 has no models. Replace this with Base.metadata when models are introduced.
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
