@@ -1,0 +1,16 @@
+{
+  "realms": [
+    {
+      "id": "realm.verdant_vale", "name": "Verdant Vale", "tags": ["verdant"],
+      "modifiers": [{"type": "cycle_time_pct", "value": -10, "skill_id": "gathering"}],
+      "market_offers": [{"item_id": "item.fake_sprig", "buy_price": 4, "sell_price": 1}],
+      "project": {"id": "project.verdant_cardboard", "name": "Cardboard Canopy Prototype", "contribution_targets": [{"item_id": "item.demo_crate", "qty": 100}, {"item_id": "item.cardboard_badge", "qty": 25}], "tiers": [{"tier": 1, "modifiers": [{"type": "xp_pct", "value": 5, "skill_id": "gathering"}]}]}
+    },
+    {
+      "id": "realm.ashen_reach", "name": "Ashen Reach", "tags": ["ashen"],
+      "modifiers": [{"type": "cycle_time_pct", "value": 10, "skill_id": "gathering"}],
+      "market_offers": [{"item_id": "item.mock_ore", "buy_price": 7, "sell_price": 2}],
+      "project": {"id": "project.ashen_placeholder", "name": "Placeholder Furnace Facade", "contribution_targets": [{"item_id": "item.prototype_widget", "qty": 75}, {"item_id": "item.placeholder_token", "qty": 30}], "tiers": [{"tier": 1, "modifiers": [{"type": "extra_drop_chance_pct", "value": 3, "skill_id": "gathering"}]}]}
+    }
+  ]
+}

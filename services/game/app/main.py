@@ -8,15 +8,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 
+from app.api.content import PUBLIC_CONTENT_PATHS
+from app.api.content import router as content_router
 from app.api.players import router as players_router
 from app.auth import verify_access_token
-from app.config import CORS_ORIGINS, VERSION
+from app.config import CONTENT_DIR, CORS_ORIGINS, VERSION
+from app.content import load_content
 from app.logging import log_request
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 app = FastAPI(title="YAISG Game")
+app.state.content = load_content(CONTENT_DIR)
 app.middleware("http")(log_request)
+app.include_router(content_router)
 app.include_router(players_router)
 
 
@@ -25,7 +30,11 @@ async def require_authentication(
     request: Request, call_next: RequestResponseEndpoint
 ) -> Response:
     """Require a verified identity for every route other than service health."""
-    if request.url.path == "/healthz" or request.method == "OPTIONS":
+    if (
+        request.url.path == "/healthz"
+        or request.url.path in PUBLIC_CONTENT_PATHS
+        or request.method == "OPTIONS"
+    ):
         return await call_next(request)
     try:
         request.state.identity = await verify_access_token(request)

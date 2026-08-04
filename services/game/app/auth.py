@@ -100,9 +100,7 @@ class JwksCache:
         except (httpx.HTTPError, ValueError, TypeError) as error:
             # Briefly back off both expiry and unknown-kid refresh attempts when
             # the auth service is unavailable or returns malformed data.
-            self._expires_at = (
-                attempt_at + self._unknown_kid_refresh_floor_seconds
-            )
+            self._expires_at = attempt_at + self._unknown_kid_refresh_floor_seconds
             raise InvalidTokenError("Unable to load token signing keys") from error
 
     def _prune_unknown_kids(self) -> None:

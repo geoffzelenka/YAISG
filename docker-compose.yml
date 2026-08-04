@@ -24,11 +24,13 @@ services:
     environment:
       GAME_DATABASE_URL: sqlite:////data/game.db
       AUTH_JWKS_URL: http://auth:8001/.well-known/jwks.json
+      CONTENT_DIR: /content
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "8000:8000"
     volumes:
       - ./services/game:/app
+      - ./content:/content:ro
       - ./data:/data
     depends_on:
       - auth

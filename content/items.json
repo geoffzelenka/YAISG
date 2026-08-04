@@ -1,0 +1,14 @@
+{
+  "items": [
+    {"id": "item.fake_sprig", "name": "Fake Sprig", "tags": ["gathered", "plant"]},
+    {"id": "item.mock_ore", "name": "Mock Ore", "tags": ["gathered", "ore"]},
+    {"id": "item.test_crystal", "name": "Test Crystal", "tags": ["gathered", "crystal"]},
+    {"id": "item.fake_plank", "name": "Fake Plank", "tags": ["refined", "wood"]},
+    {"id": "item.mock_ingot", "name": "Mock Ingot", "tags": ["refined", "metal"]},
+    {"id": "item.demo_crate", "name": "Demo Crate", "tags": ["crafted"]},
+    {"id": "item.prototype_widget", "name": "Prototype Widget", "tags": ["crafted"]},
+    {"id": "item.worthless_button", "name": "Worthless Button", "stack_limit": 999999, "tags": ["junk", "currency-adjacent"]},
+    {"id": "item.placeholder_token", "name": "Placeholder Token", "tags": ["project"]},
+    {"id": "item.cardboard_badge", "name": "Cardboard Badge", "tags": ["project"]}
+  ]
+}
