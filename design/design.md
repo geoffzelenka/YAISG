@@ -139,7 +139,10 @@ All routes require `Authorization: Bearer <JWT>` except where noted. Errors use 
 
 ### 5.2 Character & profile
 - `POST /characters` — create character (name, starting realm)
-- `GET /characters/me` — full profile: stats, skill levels/XP, realm, estate summary. **Triggers resolve.**
+- `GET /characters/me` — full profile: stats, skill levels/XP, realm, estate
+  summary. **Triggers resolve and may persist derived-state repairs**, such as
+  adding rows for newly introduced content skills or correcting cached skill
+  levels from the XP curve.
 - `GET /characters/me/inventory`
 
 ### 5.3 Skilling & combat
@@ -185,7 +188,8 @@ Combat v1 is implemented as the same cycle machinery: an encounter is an action 
 
 ```
 players            (id, auth_user_id UNIQUE, created_at)
-characters         (id, player_id, name UNIQUE, realm_id, created_at)
+characters         (id, player_id UNIQUE, name, name_normalized UNIQUE,
+                    realm_id, created_at)
 character_skills   (character_id, skill_id, xp, level)          -- level derived but cached
 active_actions     (character_id PK, action_id, started_at, last_resolved_at, meta JSON)
 inventories        (character_id, item_id, quantity)            -- PK (character_id, item_id)
@@ -205,7 +209,13 @@ realm_contributions(id, realm_id, character_id, item_id, quantity, contributed_a
 ```
 
 - Static definitions (skills, actions, items, realms, upgrades, XP curve) live in **content files**, referenced by string IDs. The DB stores only per-player/per-world *state*.
-- v1: **one character per player** (enforced in code, schema allows more later).
+- v1: **one character per player**, enforced by both application logic and a
+  unique constraint on `characters.player_id` so concurrent creation requests
+  cannot create multiple characters. Supporting multiple characters later
+  requires removing that constraint in a migration.
+- `characters.name_normalized` stores the trimmed, case-folded name used for
+  database-enforced global case-insensitive uniqueness. `characters.name`
+  retains the canonical display spelling.
 
 ### 6.3 Content file schema (validated at boot with Pydantic)
 

@@ -1,8 +1,24 @@
 # Yet Another Idle Skilling Game
 
 YAISG is a multiplayer idle skilling game under active development. The current
-Phase 0 implementation is the project skeleton only: two health-check APIs and a
-small status page. It does not yet contain authentication or game logic.
+Phase 2 implementation includes authentication, validated and versioned placeholder
+content, character creation with a starting realm, and a live character profile.
+Skilling actions, inventory rewards, markets, estate upgrades, and combat remain
+future phases.
+
+## Current capabilities
+
+- Register, log in, refresh, and log out through the RS256/JWKS auth service.
+- Load validated placeholder skills, items, realms, upgrades, and caps through
+  versioned public content endpoints.
+- Create one character per account with a globally unique, case-insensitive name
+  and an estate in the selected realm.
+- View character skills and XP progress, gold, realm modifiers, and estate summary.
+- Route authenticated accounts without a character to creation and established
+  characters to the main profile shell.
+
+The content pack is deliberately synthetic scaffolding. It does not establish final
+game names, balance, or content.
 
 ## Current services
 
@@ -31,7 +47,8 @@ From the repository root, run:
 docker compose up --build
 ```
 
-Then visit <http://localhost:5173>. The page should show both services as healthy.
+Then visit <http://localhost:5173>. Register an account, choose a character name and
+realm, and the client will open the profile shell.
 Source directories are mounted into their containers, so the development servers
 reload when files change. SQLite databases are stored in the ignored local `data/`
 directory.
@@ -95,7 +112,9 @@ Open <http://localhost:5173> after both APIs are running.
 
 ## Database migrations
 
-Both services currently have empty Alembic baseline migrations. Apply them from
+Both services own Alembic migrations. The auth migrations create users and rotating
+refresh tokens; the game migrations create players, characters, skill progression,
+currency, estates, installed estate upgrades, and inventory stacks. Apply them from
 their respective service directories:
 
 ```bash
@@ -106,7 +125,7 @@ cd ../auth
 alembic upgrade head
 ```
 
-No application tables are created in Phase 0.
+Docker Compose applies both migration chains automatically before starting the APIs.
 
 ## Configuration
 
@@ -116,6 +135,13 @@ No application tables are created in Phase 0.
 | `AUTH_DATABASE_URL` | Auth API | `sqlite:///./data/auth.db` |
 | `CORS_ORIGINS` | Both APIs | `http://localhost:5173` |
 | `GIT_SHA` | Both APIs | `dev` |
+| `STARTING_GOLD` | Game API | `100` |
+| `CONTENT_DIR` | Game API | Repository `content/` directory |
+| `AUTH_JWKS_URL` | Game API | `http://localhost:8001/.well-known/jwks.json` |
+| `AUTH_JWKS_TTL_SECONDS` | Game API | `300` |
+| `JWT_ISSUER` | Game API | `yaisg-auth` |
+| `AUTH_KEYS_DIR` | Auth API | `./data/keys` |
+| `AUTH_COOKIE_SECURE` | Auth API | `false` |
 | `VITE_GAME_URL` | Client | `http://localhost:8000` |
 | `VITE_AUTH_URL` | Client | `http://localhost:8001` |
 
@@ -145,13 +171,13 @@ make client-ci
 ## Repository layout
 
 ```text
-services/auth/   FastAPI authentication service skeleton
-services/game/   FastAPI game service skeleton and reserved engine packages
-content/         Future data-driven content packs
-client/          React status client
+services/auth/   FastAPI authentication service and auth-owned database
+services/game/   FastAPI game API, content loader, models, and pure engine functions
+content/         Validated placeholder content packs and generated XP curve
+client/          React authentication, character creation, and profile client
 design/          Technical design document
 docs/            Phase notes and project documentation
 ```
 
-See [the technical design](design/design.md) and
-[Phase 0 notes](docs/phase-notes/0.1.md) for scope and implementation decisions.
+See [the technical design](design/design.md), [Phase 2.1 notes](docs/phase-notes/2.1.md),
+and [Phase 2.2 notes](docs/phase-notes/2.2.md) for scope and implementation decisions.
