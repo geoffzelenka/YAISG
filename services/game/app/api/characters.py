@@ -3,7 +3,7 @@
 import logging
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.auth import CurrentPlayer, DatabaseSession
+from app.clock import ServerNow
 from app.config import STARTING_GOLD
 from app.content.loader import ContentIndex
 from app.content.schemas import Modifier
@@ -24,6 +25,7 @@ from app.models import (
     EstateUpgrade,
     Inventory,
 )
+from app.services.actions import resolve_character
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 _VALID_NAME = re.compile(r"^[A-Za-z0-9 ]{3,20}$")
@@ -122,6 +124,7 @@ def _character_for_player(session: DatabaseSession, player_id: uuid.UUID) -> Cha
 async def create_character(
     body: CreateCharacterRequest,
     request: Request,
+    now: ServerNow,
     player: CurrentPlayer,
     session: DatabaseSession,
 ) -> ProfileResponse:
@@ -143,7 +146,6 @@ async def create_character(
             422, "UNKNOWN_REALM", "The selected realm does not exist"
         ) from None
 
-    now = datetime.now(UTC)
     character = Character(
         id=uuid.uuid4(),
         player_id=player.id,
@@ -269,19 +271,26 @@ def _profile(
 
 @router.get("/me", response_model=ProfileResponse)
 async def get_profile(
-    request: Request, player: CurrentPlayer, session: DatabaseSession
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
 ) -> ProfileResponse:
     """Return the caller's character profile."""
     character = _character_for_player(session, player.id)
+    resolve_character(session, character.id, now)
+    session.commit()
     return _profile(session, _content(request), character)
 
 
 @router.get("/me/inventory", response_model=InventoryResponse)
 async def get_inventory(
-    player: CurrentPlayer, session: DatabaseSession
+    now: ServerNow, player: CurrentPlayer, session: DatabaseSession
 ) -> InventoryResponse:
     """Return all item stacks owned by the caller's character."""
     character = _character_for_player(session, player.id)
+    resolve_character(session, character.id, now)
+    session.commit()
     stacks = session.scalars(
         select(Inventory)
         .where(Inventory.character_id == character.id)

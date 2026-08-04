@@ -1,1 +1,41 @@
-"""Pure game engine package reserved for later phases."""
+"""Pure game engine public API."""
+
+from app.engine.core import (
+    OK,
+    ActiveAction,
+    Caps,
+    CharacterState,
+    CycleRewards,
+    CycleRewardStrategy,
+    ErrorCode,
+    Ok,
+    RandomSource,
+    ResolveResult,
+    StopReason,
+    can_start,
+    effective_cycle_time,
+    effective_drops,
+    effective_xp,
+    resolve,
+    resolve_caps,
+)
+
+__all__ = [
+    "OK",
+    "ActiveAction",
+    "Caps",
+    "CharacterState",
+    "CycleRewardStrategy",
+    "CycleRewards",
+    "ErrorCode",
+    "Ok",
+    "RandomSource",
+    "ResolveResult",
+    "StopReason",
+    "can_start",
+    "effective_cycle_time",
+    "effective_drops",
+    "effective_xp",
+    "resolve",
+    "resolve_caps",
+]

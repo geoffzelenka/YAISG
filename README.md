@@ -1,10 +1,10 @@
 # Yet Another Idle Skilling Game
 
 YAISG is a multiplayer idle skilling game under active development. The current
-Phase 2 implementation includes authentication, validated and versioned placeholder
-content, character creation with a starting realm, and a live character profile.
-Skilling actions, inventory rewards, markets, estate upgrades, and combat remain
-future phases.
+Phase 3 server implementation includes authentication, validated and versioned
+placeholder content, character creation, the pure skilling engine, and persistent
+active-action APIs. The skilling client UI, markets, estate upgrades, and combat
+remain future phases.
 
 ## Current capabilities
 
@@ -14,6 +14,10 @@ future phases.
 - Create one character per account with a globally unique, case-insensitive name
   and an estate in the selected realm.
 - View character skills and XP progress, gold, realm modifiers, and estate summary.
+- List realm-available skilling actions with level and input blockers.
+- Start, poll, switch, and stop one server-authoritative active action per character.
+- Resolve online and offline progress lazily, including XP, inventory changes,
+  offline caps, and a durable reward feed.
 - Route authenticated accounts without a character to creation and established
   characters to the main profile shell.
 
@@ -114,8 +118,8 @@ Open <http://localhost:5173> after both APIs are running.
 
 Both services own Alembic migrations. The auth migrations create users and rotating
 refresh tokens; the game migrations create players, characters, skill progression,
-currency, estates, installed estate upgrades, and inventory stacks. Apply them from
-their respective service directories:
+currency, estates, installed estate upgrades, inventory stacks, active actions, and
+the reward log/feed state. Apply them from their respective service directories:
 
 ```bash
 cd services/game
@@ -179,5 +183,5 @@ design/          Technical design document
 docs/            Phase notes and project documentation
 ```
 
-See [the technical design](design/design.md), [Phase 2.1 notes](docs/phase-notes/2.1.md),
-and [Phase 2.2 notes](docs/phase-notes/2.2.md) for scope and implementation decisions.
+See [the technical design](design/design.md), [Phase 3.1 notes](docs/phase-notes/3.1.md),
+and [Phase 3.2 notes](docs/phase-notes/3.2.md) for scope and implementation decisions.

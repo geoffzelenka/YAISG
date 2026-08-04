@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import DATABASE_URL
@@ -22,11 +23,38 @@ def _ensure_sqlite_directory(database_url: str) -> None:
 
 
 _ensure_sqlite_directory(DATABASE_URL)
+
+
+def configure_sqlite_engine(database_engine: Engine) -> None:
+    """Configure explicit, transaction-aware SQLite BEGIN behavior and WAL."""
+
+    @event.listens_for(database_engine, "connect")
+    def prepare_connection(dbapi_connection: object, connection_record: object) -> None:
+        del connection_record
+        if isinstance(dbapi_connection, sqlite3.Connection):
+            dbapi_connection.isolation_level = None
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+            finally:
+                cursor.close()
+
+    @event.listens_for(database_engine, "begin")
+    def begin_transaction(connection: Connection) -> None:
+        mode = (
+            "BEGIN IMMEDIATE"
+            if connection.get_execution_options().get("sqlite_write_intent")
+            else "BEGIN"
+        )
+        connection.exec_driver_sql(mode)
+
+
 if DATABASE_URL.startswith("sqlite:"):
     engine = create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False},
     )
+    configure_sqlite_engine(engine)
 else:
     engine = create_engine(DATABASE_URL)
 
@@ -41,15 +69,3 @@ async def get_db() -> AsyncGenerator[Session, None]:
     """Provide a transaction-scoped database session to a request."""
     with SessionLocal() as session:
         yield session
-
-
-@event.listens_for(engine, "connect")
-def enable_sqlite_wal(dbapi_connection: object, connection_record: object) -> None:
-    """Enable WAL journaling for each SQLite connection."""
-    del connection_record
-    if isinstance(dbapi_connection, sqlite3.Connection):
-        cursor = dbapi_connection.cursor()
-        try:
-            cursor.execute("PRAGMA journal_mode=WAL")
-        finally:
-            cursor.close()

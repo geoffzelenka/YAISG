@@ -111,11 +111,19 @@ class MarketOffer(ContentModel):
     sell_price: int = Field(ge=0)
 
 
+class CapBonus(ContentModel):
+    """An additive increase to an engine cap."""
+
+    cap: CapType
+    value: float = Field(gt=0)
+
+
 class ProjectTier(ContentModel):
-    """Modifiers activated at a realm project tier."""
+    """Modifiers and cap bonuses activated at a realm project tier."""
 
     tier: int = Field(ge=1)
-    modifiers: tuple[Modifier, ...]
+    modifiers: tuple[Modifier, ...] = ()
+    cap_bonuses: tuple[CapBonus, ...] = ()
 
 
 class RealmProject(ContentModel):
@@ -142,13 +150,6 @@ class RealmsPack(ContentModel):
     """Top-level realms content pack."""
 
     realms: tuple[Realm, ...]
-
-
-class CapBonus(ContentModel):
-    """An additive increase to an engine cap."""
-
-    cap: CapType
-    value: float = Field(gt=0)
 
 
 class EstateUpgrade(ContentModel):

@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Uuid,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -112,4 +113,49 @@ class Inventory(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_inventories_quantity_positive"),
+    )
+
+
+class ActiveActionRecord(Base):
+    """The single repeating action currently assigned to a character."""
+
+    __tablename__ = "active_actions"
+
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
+    )
+    action_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_resolved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class RewardLog(Base):
+    """An immutable summary of one productive action resolution."""
+
+    __tablename__ = "reward_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    cycles: Mapped[int] = mapped_column(Integer, nullable=False)
+    xp: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False)
+    items: Mapped[dict[str, dict[str, int]]] = mapped_column(JSON, nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+    resolved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    __table_args__ = (
+        CheckConstraint("cycles > 0", name="ck_reward_log_cycles_positive"),
     )

@@ -1,17 +1,15 @@
 """JWT verification and player auto-provisioning tests."""
 
 import uuid
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
-from typing import cast
 from unittest.mock import AsyncMock
 
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi.testclient import TestClient
-from httpx import Response
+from httpx import ASGITransport, AsyncClient, Response
 from jwt import PyJWK
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -26,6 +24,7 @@ ISSUER = "yaisg-auth"
 KEY_ID = "test-key"
 PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+pytestmark = pytest.mark.anyio
 
 
 def _public_jwk_data() -> dict[str, str]:
@@ -70,7 +69,7 @@ def _token(
 
 
 @pytest.fixture
-def client() -> Generator[tuple[TestClient, sessionmaker[Session]], None, None]:
+async def client() -> AsyncGenerator[tuple[AsyncClient, sessionmaker[Session]], None]:
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -87,7 +86,9 @@ def client() -> Generator[tuple[TestClient, sessionmaker[Session]], None, None]:
     original = jwks_cache.get_key
     jwks_cache.get_key = AsyncMock(return_value=_public_jwk())  # type: ignore[method-assign]
     try:
-        with TestClient(app) as test_client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as test_client:
             yield test_client, factory
     finally:
         jwks_cache.get_key = original  # type: ignore[method-assign]
@@ -95,17 +96,14 @@ def client() -> Generator[tuple[TestClient, sessionmaker[Session]], None, None]:
         engine.dispose()
 
 
-def _get_me(client: TestClient, token: str) -> Response:
-    return cast(
-        Response,
-        client.get("/players/me", headers={"Authorization": f"Bearer {token}"}),
-    )
+async def _get_me(client: AsyncClient, token: str) -> Response:
+    return await client.get("/players/me", headers={"Authorization": f"Bearer {token}"})
 
 
-def test_valid_token_returns_player(
-    client: tuple[TestClient, sessionmaker[Session]],
+async def test_valid_token_returns_player(
+    client: tuple[AsyncClient, sessionmaker[Session]],
 ) -> None:
-    response = _get_me(client[0], _token())
+    response = await _get_me(client[0], _token())
 
     assert response.status_code == 200
     assert response.json()["id"]
@@ -120,10 +118,10 @@ def test_valid_token_returns_player(
     ],
     ids=["expired", "bad-issuer", "bad-signature"],
 )
-def test_invalid_token_is_rejected(
-    client: tuple[TestClient, sessionmaker[Session]], token: str
+async def test_invalid_token_is_rejected(
+    client: tuple[AsyncClient, sessionmaker[Session]], token: str
 ) -> None:
-    response = _get_me(client[0], token)
+    response = await _get_me(client[0], token)
 
     assert response.status_code == 401
     assert response.json() == {
@@ -134,19 +132,19 @@ def test_invalid_token_is_rejected(
     }
 
 
-def test_missing_authorization_is_rejected(
-    client: tuple[TestClient, sessionmaker[Session]],
+async def test_missing_authorization_is_rejected(
+    client: tuple[AsyncClient, sessionmaker[Session]],
 ) -> None:
-    response = client[0].get("/players/me")
+    response = await client[0].get("/players/me")
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHORIZED"
 
 
-def test_authentication_401_includes_cors_headers(
-    client: tuple[TestClient, sessionmaker[Session]],
+async def test_authentication_401_includes_cors_headers(
+    client: tuple[AsyncClient, sessionmaker[Session]],
 ) -> None:
-    response = client[0].get(
+    response = await client[0].get(
         "/players/me",
         headers={
             "Authorization": f"Bearer {_token(expires_at=datetime.now(UTC))}",
@@ -158,13 +156,13 @@ def test_authentication_401_includes_cors_headers(
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
-def test_player_provisioning_is_idempotent(
-    client: tuple[TestClient, sessionmaker[Session]],
+async def test_player_provisioning_is_idempotent(
+    client: tuple[AsyncClient, sessionmaker[Session]],
 ) -> None:
     token = _token()
 
-    first = _get_me(client[0], token)
-    second = _get_me(client[0], token)
+    first = await _get_me(client[0], token)
+    second = await _get_me(client[0], token)
 
     assert first.json()["id"] == second.json()["id"]
     with client[1]() as session:
@@ -177,7 +175,6 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-@pytest.mark.anyio
 async def test_jwks_cache_hits_within_ttl() -> None:
     requests = 0
 
@@ -194,7 +191,6 @@ async def test_jwks_cache_hits_within_ttl() -> None:
     assert requests == 1
 
 
-@pytest.mark.anyio
 async def test_jwks_cache_refetches_after_ttl() -> None:
     requests = 0
 
@@ -211,7 +207,6 @@ async def test_jwks_cache_refetches_after_ttl() -> None:
     assert requests == 2
 
 
-@pytest.mark.anyio
 async def test_jwks_cache_refetches_unknown_kid_once() -> None:
     requests = 0
 
@@ -236,7 +231,6 @@ async def test_jwks_cache_refetches_unknown_kid_once() -> None:
     assert requests == 2
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize("response_status", [200, 503])
 async def test_jwks_cache_maps_malformed_and_http_errors(
     response_status: int,

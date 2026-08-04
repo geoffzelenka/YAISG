@@ -115,6 +115,10 @@ Properties worth noting for implementation:
 - Resolution is **idempotent and transactional** — one DB transaction per resolve; concurrent requests for the same character serialize on the active-action row (`SELECT ... FOR UPDATE` in Postgres; SQLite's writer lock covers it initially).
 - `effective_cycle_time` is where **realm/estate modifiers** plug in (§7). Modifiers are resolved at cycle time, not stored on the action.
 - The offline cap starts at **12 hours** of cycles and is a per-character *cap* (§7.1) upgradeable via estate upgrades or future premium features — the engine reads it from the character's resolved cap set, never from a constant.
+- Reaching the offline cap ends the active action after granting only the full
+  cycles inside that budget. This prevents repeated polls from draining an
+  arbitrarily long absence in cap-sized batches. If no full cycle fits inside
+  the offline budget, the action remains pending without progress.
 - Level-ups mid-batch that change requirements/speeds are handled by resolving in segments (resolve until level-up boundary, recompute, continue). v1 may simplify: modifiers snapshot at action start, re-snapshot each resolve.
 
 ### 4.3 Client/server flow
@@ -194,7 +198,8 @@ character_skills   (character_id, skill_id, xp, level)          -- level derived
 active_actions     (character_id PK, action_id, started_at, last_resolved_at, meta JSON)
 inventories        (character_id, item_id, quantity)            -- PK (character_id, item_id)
 currency           (character_id PK, gold, premium)               -- premium column exists from day one, unused in v1
-reward_log         (id, character_id, action_id, cycles, xp JSON, items JSON, resolved_at)
+reward_log         (id, character_id, action_id, cycles, xp JSON, items JSON,
+                    details JSON, resolved_at, claimed_at NULL)
 market_listings    (id, seller_character_id, item_id, quantity_remaining,
                     unit_price, created_at, expires_at, status)
 market_trades      (id, listing_id, buyer_character_id, quantity, unit_price, traded_at)
@@ -322,7 +327,10 @@ Left sidebar (server-driven), main content panel. Sidebar sections and their ava
 ### 9.2 Client state rules
 - Server state only via TanStack Query hooks in `src/api/` (typed from the OpenAPI schema).
 - UI-only state (selected tab, filters) in component state or a tiny zustand store.
-- No client-computed rewards ever rendered as authoritative; rewards display comes from server responses (`reward_log` deltas).
+- No client-computed rewards ever rendered as authoritative; rewards display comes
+  from server responses backed by unclaimed `reward_log` deltas. v1 marks rows
+  claimed in the response transaction (at-most-once toast delivery); character
+  progress remains authoritative even if a response is lost.
 
 ---
 

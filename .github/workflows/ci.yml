@@ -19,9 +19,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, game]
-        # PostgreSQL will be added here when the project adopts it per section 6.4.
-        database: [sqlite]
+        include:
+          - service: auth
+            database: sqlite
+          - service: game
+            database: sqlite
+          - service: game
+            database: postgres
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: yaisg
+          POSTGRES_PASSWORD: yaisg
+          POSTGRES_DB: yaisg_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yaisg -d yaisg_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,8 +49,16 @@ jobs:
           cache-dependency-path: services/${{ matrix.service }}/pyproject.toml
       - name: Install service
         run: python -m pip install -e "services/${{ matrix.service }}[dev]"
+      - name: Verify PostgreSQL migrations
+        if: matrix.database == 'postgres'
+        working-directory: services/game
+        run: alembic upgrade head && alembic current && alembic check
+        env:
+          GAME_DATABASE_URL: postgresql+psycopg://yaisg:yaisg@localhost:5432/yaisg_test
       - name: Check service
         run: make ${{ matrix.service }}-ci
+        env:
+          TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://yaisg:yaisg@localhost:5432/yaisg_test' || '' }}
 
   client:
     runs-on: ubuntu-latest

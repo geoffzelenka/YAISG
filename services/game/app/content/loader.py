@@ -3,7 +3,7 @@
 import hashlib
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -86,6 +86,71 @@ class ContentIndex:
     def upgrade(self, upgrade_id: str) -> EstateUpgrade:
         """Look up an estate upgrade, raising KeyError if it does not exist."""
         return self._upgrades_by_id[upgrade_id]
+
+    def with_overrides(
+        self,
+        *,
+        actions: Iterable[Action] = (),
+        items: Iterable[Item] = (),
+        upgrades: Iterable[EstateUpgrade] = (),
+    ) -> "ContentIndex":
+        """Return an immutable copy with selected definitions replaced.
+
+        This is intended for engine tests and simulation tooling. It deliberately
+        leaves the source pack payloads and manifest unchanged.
+        """
+        action_overrides = {action.id: action for action in actions}
+        item_overrides = {item.id: item for item in items}
+        upgrade_overrides = {upgrade.id: upgrade for upgrade in upgrades}
+        unknown_actions = set(action_overrides) - set(self._actions_by_id)
+        if unknown_actions:
+            raise ValueError(
+                f"cannot override unknown actions: {sorted(unknown_actions)}"
+            )
+
+        skills = tuple(
+            skill.model_copy(
+                update={
+                    "actions": tuple(
+                        action_overrides.get(action.id, action)
+                        for action in skill.actions
+                    )
+                }
+            )
+            for skill in self.skills
+        )
+        actions_by_skill = {skill.id: skill.actions for skill in skills}
+        actions_by_id = {
+            action.id: action for skill in skills for action in skill.actions
+        }
+        replaced_item_ids = set(item_overrides) & set(self._items_by_id)
+        replaced_upgrade_ids = set(upgrade_overrides) & set(self._upgrades_by_id)
+        resolved_items = tuple(
+            item_overrides.get(item.id, item) for item in self.items
+        ) + tuple(
+            item
+            for item_id, item in item_overrides.items()
+            if item_id not in replaced_item_ids
+        )
+        resolved_upgrades = tuple(
+            upgrade_overrides.get(upgrade.id, upgrade) for upgrade in self.upgrades
+        ) + tuple(
+            upgrade
+            for upgrade_id, upgrade in upgrade_overrides.items()
+            if upgrade_id not in replaced_upgrade_ids
+        )
+        return replace(
+            self,
+            skills=skills,
+            items=resolved_items,
+            upgrades=resolved_upgrades,
+            _actions_by_id=MappingProxyType(actions_by_id),
+            _actions_by_skill=MappingProxyType(actions_by_skill),
+            _items_by_id=MappingProxyType({item.id: item for item in resolved_items}),
+            _upgrades_by_id=MappingProxyType(
+                {upgrade.id: upgrade for upgrade in resolved_upgrades}
+            ),
+        )
 
 
 def _canonical_bytes(value: Any) -> bytes:
