@@ -1,7 +1,9 @@
 # Yet Another Idle Skilling Game — Technical Design Document
 
-**Version:** 0.3 (implementation-ready draft; open questions resolved)
+**Version:** 0.4 (post-Phase-3 ratification; incorporates implementation decisions from the Phases 0–3 status report)
 **Scope:** Code architecture and implementation plan only. Game content (specific items, action tables, balance numbers, realm definitions) is deferred to a later content design document. All systems in this document must be built to load content from data, not code, so content can be added later without engine changes.
+
+**Changes from 0.3:** §12 log extended with decisions 6–12 (ratified from implementation); §4.2 segmented level-up resolution is now the settled approach and backwards-clock handling is specified; §5.1 records content-endpoint authentication and XP-curve exposure; §5.7 defines the refresh-token family; §7 specifies modifier arithmetic semantics and realm-tier cap bonuses; §7.1 specifies overflow precedence and stack-limit handling; §9.2 records the at-most-once reward feed. No architectural changes.
 
 ---
 
@@ -26,7 +28,7 @@ A multiplayer, web-based idle skilling game in the genre of Melvor Idle, Idle Cl
 |---|---|---|
 | API language | **Python 3.12 + FastAPI** | Fast iteration, excellent typing/validation via Pydantic, async-native. Go was the alternative; raw throughput is not the bottleneck for an idle game (low request rates, tiny payloads). Revisit only if load testing demands it. |
 | ORM / migrations | **SQLAlchemy 2.x + Alembic** | Dialect-agnostic; makes the SQLite → PostgreSQL move a config change plus a migration test pass. |
-| Database | **SQLite (WAL mode)** first; **PostgreSQL** when concurrency or features demand | Per pillar 4. Rules that ease migration listed in §6.4. |
+| Database | **SQLite (WAL mode)** first; **PostgreSQL** when concurrency or features demand | Per pillar 4. Rules that ease migration listed in §6.4. PostgreSQL 16 already runs in the game-service CI matrix (pulled forward from Phase 7). |
 | Auth service | **Separate FastAPI service** issuing JWTs | Matches the stated microservice requirement while sharing language/tooling with the game API. May be deployed co-located initially. |
 | Client framework | **React 18 + Vite + TypeScript** | Mature ecosystem, best coding-agent familiarity, and the UI is menu/panel-driven — no canvas or high-FPS needs. |
 | Client server-state | **TanStack Query** | Polling, cache invalidation, and optimistic updates map exactly onto the skilling loop. |
@@ -119,7 +121,14 @@ Properties worth noting for implementation:
   cycles inside that budget. This prevents repeated polls from draining an
   arbitrarily long absence in cap-sized batches. If no full cycle fits inside
   the offline budget, the action remains pending without progress.
-- Level-ups mid-batch that change requirements/speeds are handled by resolving in segments (resolve until level-up boundary, recompute, continue). v1 may simplify: modifiers snapshot at action start, re-snapshot each resolve.
+- Level-ups mid-batch that change requirements/speeds are handled by **segmented
+  resolution**: resolve until the level-up boundary, recompute effective values,
+  continue. This is the implemented and settled approach (log #11); effective
+  values are cached per segment. The earlier "snapshot at action start"
+  simplification is retired.
+- A backwards server-clock correction observed during resolve (`now` earlier
+  than `last_resolved_at`) is a **no-op**, not an error (log #12): the resolve
+  grants zero cycles and leaves all state untouched.
 
 ### 4.3 Client/server flow
 
@@ -135,11 +144,13 @@ If the client's clock drifts or it misses polls, nothing is lost or gained — t
 
 ## 5. API design (Game service)
 
-All routes require `Authorization: Bearer <JWT>` except where noted. Errors use a uniform envelope `{error: {code, message}}` with stable machine-readable codes (`INSUFFICIENT_LEVEL`, `MISSING_INPUTS`, `LISTING_NOT_FOUND`, ...).
+All routes require `Authorization: Bearer <JWT>` **except `/healthz` and the `/content/*` endpoints** (§5.1). Errors use a uniform envelope `{error: {code, message}}` with stable machine-readable codes (`INSUFFICIENT_LEVEL`, `MISSING_INPUTS`, `LISTING_NOT_FOUND`, ...).
 
 ### 5.1 Meta / content
 - `GET /content/manifest` — content pack version + hashes (client caches content by version)
 - `GET /content/{pack}` — skills, actions, items, realms. **Drop rates are exposed to the client** as a design choice (players can see general probabilities); the server still rolls all drops itself.
+- **Content endpoints are unauthenticated** (log #8) so the client cache can populate before login. Content is public data by design; nothing per-player is served here.
+- The **XP curve** is part of the content version hash (changing it changes the manifest version) but is **not exposed as a public pack** — the served packs are limited to `skills`, `items`, `realms`, `upgrades`, `caps` (log #8). The client receives xp-to-next figures from the profile endpoint instead.
 
 ### 5.2 Character & profile
 - `POST /characters` — create character (name, starting realm)
@@ -155,7 +166,7 @@ All routes require `Authorization: Bearer <JWT>` except where noted. Errors use 
 - `GET /characters/me/action` — current action + accrued rewards since last poll. **Triggers resolve.**
 - `DELETE /characters/me/action` — stop
 
-Combat v1 is implemented as the same cycle machinery: an encounter is an action whose per-cycle resolution runs a deterministic combat round (player stats vs. monster stats from content) and whose drop table is the monster's loot. Richer combat (HP persistence, food, death penalties) is a later phase but must not require changing the action framework — it extends the per-cycle resolver.
+Combat v1 is implemented as the same cycle machinery: an encounter is an action whose per-cycle resolution runs a deterministic combat round (player stats vs. monster stats from content) and whose drop table is the monster's loot. Richer combat (HP persistence, food, death penalties) is a later phase but must not require changing the action framework — it extends the per-cycle resolver (the engine's `CycleRewardStrategy` seam exists for exactly this).
 
 ### 5.4 Player market
 - `GET /market/listings?item=&sort=&page=` 
@@ -179,6 +190,7 @@ Combat v1 is implemented as the same cycle machinery: an encounter is an action 
 - `POST /auth/register`, `POST /auth/login` → sets refresh cookie, returns access JWT
 - `POST /auth/refresh`, `POST /auth/logout`
 - JWKS or shared-secret endpoint for the game API to verify tokens (**decision: RS256 + JWKS**, so the game API never holds the signing key)
+- **Refresh-token family = all of a user's refresh tokens** (log #9). The schema carries no family-id column; detected reuse of a revoked refresh token revokes every refresh token for that user. A future per-device session feature would require adding a family/device column — record that as a migration cost if it comes up.
 
 ---
 
@@ -242,7 +254,7 @@ The engine ships with a **placeholder content pack** sufficient to exercise ever
 - No SQLite-only types; store JSON as `JSON` column type (maps to JSONB in PG).
 - Money/quantities as integers (no floats, no NUMERIC surprises).
 - All timestamps UTC, stored as timezone-aware.
-- CI runs the test suite against both engines from day one.
+- CI runs the test suite against both engines from day one. *(Status: PostgreSQL 16 matrix is live as of Phase 3.)*
 
 ---
 
@@ -252,7 +264,8 @@ Mechanically, realms and estates are **modifier sources** plus **availability fi
 
 - **Availability:** each action lists `realm_tags`; a character can start an action only if their realm carries a matching tag. This is how "different realms provide different resources" works — pure data.
 - **Modifiers:** a small, closed set of modifier types the engine understands: `cycle_time_pct`, `xp_pct`, `extra_drop_chance_pct`, `market_tax_pct`. Realms, estate upgrades, and realm-project tiers each emit modifiers; the engine sums/stacks them per a single documented stacking rule (additive within type). Adding new *sources* of modifiers is content; adding new *types* is an engine change.
-- **Realm projects:** each realm has a current project (content-defined) with item contribution targets. `realm_state.contribution_totals` tracks progress; on completion the realm's tier increments and its modifier set changes. Contributions are recorded per character for future recognition features.
+- **Modifier arithmetic** (log #10): within each type, values from all active sources are summed. `cycle_time_pct` and `xp_pct` apply the summed percentage to the base value and **truncate to integer**. `extra_drop_chance_pct` **multiplies each drop's base chance by `1 + total/100`, clamped to [0, 1]**.
+- **Realm projects:** each realm has a current project (content-defined) with item contribution targets. `realm_state.contribution_totals` tracks progress; on completion the realm's tier increments and its modifier set changes. **Realm project tiers may declare `cap_bonuses` as well as modifiers** (log #10), so communal progress can raise caps (§7.1) exactly like estate upgrades do.
 - **Relocation:** allowed, with content-defined cost. **Estates are persistent**: level, slots, and installed upgrades survive relocation (no reset flag needed). Realm-specific upgrade availability may make some installed upgrades inert in the new realm — inert, not lost.
 
 ### 7.1 Caps (upgradeable limits)
@@ -267,6 +280,10 @@ Alongside modifiers, the engine understands a closed set of **cap types**, resol
 | `estate_upgrade_slots` | content-defined | Upgrade slots per estate |
 
 Enforcement points: resolve loop (offline), inventory grants (drops that would exceed slots follow a single documented rule — v1: overflow items are dropped with a logged notice; revisit later), listing creation, and upgrade purchase. Adding new cap *sources* is content; new cap *types* is an engine change — same rule as modifiers. A future "multiple estates" feature would add an `estates` count cap; the schema already supports it (§6.2).
+
+**Overflow precedence** (log #10): when a single cycle both overflows the inventory and exhausts inputs, `inventory_full` takes precedence over `inputs_exhausted` as the reported stop reason. Per-item `stack_limit` enforcement uses the same discard-and-log rule as distinct-slot overflow.
+
+**API exposure:** resolved caps (base + all bonuses) must be exposed to the client via the profile (or inventory) response — the client must never display base values from the content pack as if they were the character's effective caps. *(Known gap after Phase 3; first Phase 4 deliverable.)*
 
 ---
 
@@ -328,9 +345,13 @@ Left sidebar (server-driven), main content panel. Sidebar sections and their ava
 - Server state only via TanStack Query hooks in `src/api/` (typed from the OpenAPI schema).
 - UI-only state (selected tab, filters) in component state or a tiny zustand store.
 - No client-computed rewards ever rendered as authoritative; rewards display comes
-  from server responses backed by unclaimed `reward_log` deltas. v1 marks rows
-  claimed in the response transaction (at-most-once toast delivery); character
-  progress remains authoritative even if a response is lost.
+  from server responses backed by unclaimed `reward_log` deltas.
+- **Reward feed is at-most-once** (log #7): `reward_log` rows are marked claimed
+  in the same transaction that builds the poll response. A lost response can drop
+  a toast but never progress — character state remains authoritative regardless.
+  An acknowledged-cursor upgrade to at-least-once delivery is a possible later
+  requirement; nothing in the schema precludes it (`claimed_at` would become a
+  cursor acknowledgment).
 
 ---
 
@@ -353,28 +374,37 @@ Left sidebar (server-driven), main content panel. Sidebar sections and their ava
 
 Each phase ends with passing tests and a runnable `docker-compose up` stack.
 
-**Phase 0 — Skeleton.** Monorepo layout, docker-compose (auth, game, client, volume-mounted SQLite), CI pipeline, health endpoints, Alembic baseline.
+**Phase 0 — Skeleton.** Monorepo layout, docker-compose (auth, game, client, volume-mounted SQLite), CI pipeline, health endpoints, Alembic baseline. ✅ *Complete.*
 
-**Phase 1 — Auth.** Auth service: register/login/refresh/logout, RS256 JWT + JWKS. Game API: JWT middleware, `players` auto-provisioning on first authenticated call. Client: login/register screens, token refresh handling.
+**Phase 1 — Auth.** Auth service: register/login/refresh/logout, RS256 JWT + JWKS. Game API: JWT middleware, `players` auto-provisioning on first authenticated call. Client: login/register screens, token refresh handling. ✅ *Complete.*
 
-**Phase 2 — Content pipeline + character.** Content loader with Pydantic validation, placeholder pack, `/content/*` endpoints, character creation with realm choice, profile endpoint/page.
+**Phase 2 — Content pipeline + character.** Content loader with Pydantic validation, placeholder pack, `/content/*` endpoints, character creation with realm choice, profile endpoint/page. ✅ *Complete.*
 
-**Phase 3 — Skilling core.** `engine/` resolve loop (test-first), active-action endpoints, offline cap, reward log, inventory. Client: skill panels, action start/stop, global progress strip, reward toasts. *This phase is the heart of the game — budget the most review here.*
+**Phase 3 — Skilling core.** `engine/` resolve loop (test-first), active-action endpoints, offline cap, reward log, inventory. Client: skill panels, action start/stop, global progress strip, reward toasts. *This phase is the heart of the game — budget the most review here.* ✅ *Complete.*
 
-**Phase 4 — Modifiers, estate, realm.** Modifier stacking in `effective_cycle_time`/XP/drops, estate upgrades, realm projects + contributions, relocation. Client: Estate and Profile realm views.
+**Phase 4 — Modifiers, estate, realm.** Resolved-caps API exposure (§7.1 gap), modifier stacking in `effective_cycle_time`/XP/drops (engine done; persistence + endpoints remain), estate upgrades, realm projects + contributions, relocation. Client: Estate and Profile realm views.
 
 **Phase 5 — Markets.** Player market (escrowed listings, partial buys, expiry job) and realm market. Client: both market panels.
 
-**Phase 6 — Combat skeleton.** Monster/encounter content shape, per-cycle combat resolver behind the same action framework. Client: Combat panel.
+**Phase 6 — Combat skeleton.** Monster/encounter content shape, per-cycle combat resolver behind the same action framework (via the `CycleRewardStrategy` seam). Client: Combat panel.
 
-**Phase 7 — Hardening.** Rate limiting, both-DB CI matrix green, property tests, load sanity check (k6 script: 500 simulated pollers), observability counters.
+**Phase 7 — Hardening.** Rate limiting, property tests, load sanity check (k6 script: 500 simulated pollers), observability counters. (Both-DB CI matrix already green as of Phase 3.)
 
 ---
 
 ## 12. Resolved design decisions (log)
+
+Decisions 1–5 predate implementation; 6–12 were made during Phases 0–3 and ratified into v0.4.
 
 1. **Offline cap:** 12h base, upgradeable — generalized into the caps system (§7.1) along with inventory size, market listings, and estate upgrade slots.
 2. **Currency:** one general currency (gold); premium currency planned — schema column reserved, mechanics out of scope for v1.
 3. **Drop rates:** exposed to players via the content endpoint; server-rolled regardless.
 4. **Estates:** persistent across relocation; progression is bounded by limited, upgradeable slots rather than resets.
 5. **Exploration:** deferred to a post-v1 feature (realm/resource discovery via an unlocks table); v1 ships four skills + combat with a reserved sidebar slot.
+6. **Offline cap ends the action** after granting only the cycles inside the budget, preventing a long absence from being drained in cap-sized poll batches; if no full cycle fits the budget, the action stays pending with no progress (§4.2).
+7. **Reward feed is at-most-once:** `reward_log` rows are claimed in the response-building transaction. A lost response may drop a toast, never progress. Acknowledged-cursor at-least-once delivery is a recorded possible upgrade (§9.2).
+8. **Content endpoints are unauthenticated**; served packs are limited to `skills`, `items`, `realms`, `upgrades`, `caps`. The XP curve participates in the content version hash but is not a public pack — xp-to-next comes from the profile endpoint (§5.1).
+9. **Refresh-token family = all of a user's refresh tokens** (no family-id column); reuse of a revoked token revokes everything for that user. Per-device sessions would require a schema migration (§5.7).
+10. **Modifier/cap arithmetic:** `extra_drop_chance_pct` multiplies base chance by `1 + total/100` clamped to [0, 1]; `cycle_time_pct` and `xp_pct` truncate to integer after applying the summed percentage. Inventory overflow takes precedence over same-cycle input exhaustion as stop reason; `stack_limit` uses the same discard/overflow rule. Realm project tiers may declare `cap_bonuses` (§7, §7.1).
+11. **Segmented level-up resolution** is the implemented approach (per-segment caching of effective values); the snapshot simplification is retired (§4.2).
+12. **Backwards server-clock correction during resolve is a no-op**, not an error (§4.2).
