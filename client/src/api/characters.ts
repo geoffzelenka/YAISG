@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { Modifier } from './content'
-import { gameRequest } from './http'
+import { gameRequest, readApiError } from './http'
 
 export type CharacterProfile = {
   character: {
@@ -45,8 +45,11 @@ export class CharacterApiError extends Error {
 async function profileRequest(): Promise<CharacterProfile | null> {
   const response = await gameRequest('/characters/me')
   if (response.status === 404) {
-    const payload = (await response.json()) as { error?: { code?: string } }
-    if (payload.error?.code === 'NO_CHARACTER') return null
+    const error = await readApiError(
+      response,
+      'Unable to load character profile',
+    )
+    if (error.code === 'NO_CHARACTER') return null
   }
   if (!response.ok) throw new Error('Unable to load character profile')
   return (await response.json()) as CharacterProfile
@@ -62,13 +65,8 @@ async function createCharacter(input: {
     body: JSON.stringify(input),
   })
   if (!response.ok) {
-    const payload = (await response.json()) as {
-      error?: { code?: string; message?: string }
-    }
-    throw new CharacterApiError(
-      payload.error?.code ?? 'CREATE_FAILED',
-      payload.error?.message ?? 'Unable to create character',
-    )
+    const error = await readApiError(response, 'Unable to create character')
+    throw new CharacterApiError(error.code ?? 'CREATE_FAILED', error.message)
   }
   return (await response.json()) as CharacterProfile
 }

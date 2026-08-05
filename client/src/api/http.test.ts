@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import {
   gameRequest,
+  readApiError,
   setAccessToken,
   setAuthenticationLostHandler,
 } from './http'
@@ -52,4 +53,31 @@ test('reports authentication loss when the retry is still unauthorized', async (
 
   expect(response.status).toBe(401)
   expect(authenticationLost).toHaveBeenCalledOnce()
+})
+
+test('reads structured API errors', async () => {
+  const error = await readApiError(
+    new Response(
+      JSON.stringify({
+        error: { code: 'MISSING_INPUTS', message: 'Missing inputs' },
+      }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    ),
+    'Fallback',
+  )
+
+  expect(error).toEqual({ code: 'MISSING_INPUTS', message: 'Missing inputs' })
+})
+
+test('falls back cleanly for non-JSON API errors', async () => {
+  const error = await readApiError(
+    new Response('<html>Bad gateway</html>', {
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: { 'Content-Type': 'text/html' },
+    }),
+    'Request failed (502)',
+  )
+
+  expect(error).toEqual({ message: 'Bad Gateway' })
 })

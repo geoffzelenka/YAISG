@@ -3,7 +3,8 @@
 YAISG is a multiplayer idle skilling game under active development. The current
 Phase 3 server implementation includes authentication, validated and versioned
 placeholder content, character creation, the pure skilling engine, and persistent
-active-action APIs. The skilling client UI, markets, estate upgrades, and combat
+active-action APIs. The client includes live skilling routes, inventory display,
+and a persistent active-action experience. Markets, estate upgrades, and combat
 remain future phases.
 
 ## Current capabilities
@@ -20,6 +21,12 @@ remain future phases.
   offline caps, and a durable reward feed.
 - Route authenticated accounts without a character to creation and established
   characters to the main profile shell.
+- Browse Gathering, Refining, and Crafting actions with requirements, recipes,
+  drop rates, server-calculated cycle times, and start blockers.
+- Track and stop the global active action with a cosmetic progress timer, receive
+  authoritative reward notifications, and review offline gains in a catch-up
+  summary.
+- View named inventory stacks and base inventory-slot usage on the Profile route.
 
 The content pack is deliberately synthetic scaffolding. It does not establish final
 game names, balance, or content.
@@ -52,7 +59,8 @@ docker compose up --build
 ```
 
 Then visit <http://localhost:5173>. Register an account, choose a character name and
-realm, and the client will open the profile shell.
+realm, and use the skill routes in the sidebar to start an action. The global
+action strip remains visible while navigating between routes.
 Source directories are mounted into their containers, so the development servers
 reload when files change. SQLite databases are stored in the ignored local `data/`
 directory.

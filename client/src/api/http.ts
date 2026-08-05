@@ -2,6 +2,7 @@ const authUrl = String(import.meta.env.VITE_AUTH_URL ?? 'http://localhost:8001')
 const gameUrl = String(import.meta.env.VITE_GAME_URL ?? 'http://localhost:8000')
 
 type TokenResponse = { access_token: string }
+export type ApiErrorDetails = { code?: string; message: string }
 
 let accessToken: string | null = null
 let refreshRequest: Promise<string> | null = null
@@ -13,6 +14,31 @@ export function setAccessToken(token: string | null) {
 
 export function setAuthenticationLostHandler(handler: () => void) {
   onAuthenticationLost = handler
+}
+
+export async function readApiError(
+  response: Response,
+  fallbackMessage: string,
+): Promise<ApiErrorDetails> {
+  try {
+    const payload = (await response.json()) as {
+      error?: { code?: unknown; message?: unknown }
+    }
+    return {
+      code:
+        typeof payload.error?.code === 'string'
+          ? payload.error.code
+          : undefined,
+      message:
+        typeof payload.error?.message === 'string'
+          ? payload.error.message
+          : fallbackMessage,
+    }
+  } catch {
+    return {
+      message: response.statusText || fallbackMessage,
+    }
+  }
 }
 
 async function requestRefresh(): Promise<string> {
@@ -84,10 +110,8 @@ export async function authenticate(
     body: JSON.stringify({ email, password }),
   })
   if (!response.ok) {
-    const payload = (await response.json()) as {
-      error?: { message?: string }
-    }
-    throw new Error(payload.error?.message ?? 'Authentication failed')
+    const error = await readApiError(response, 'Authentication failed')
+    throw new Error(error.message)
   }
   const payload = (await response.json()) as TokenResponse
   setAccessToken(payload.access_token)

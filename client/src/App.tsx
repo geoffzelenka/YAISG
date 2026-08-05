@@ -1,5 +1,12 @@
 import { useState } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import {
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router-dom'
 
 import {
   CharacterApiError,
@@ -10,6 +17,9 @@ import {
 import { type Modifier, useContent } from './api/content'
 import { AuthForm } from './features/auth/AuthForm'
 import { useAuth } from './features/auth/AuthProvider'
+import { ActionExperience } from './features/actions/ActionExperience'
+import { InventoryPanel } from './features/profile/InventoryPanel'
+import { SkillPanel } from './features/skills/SkillPanel'
 
 function RequireAuth() {
   const { state } = useAuth()
@@ -161,16 +171,26 @@ function ProfilePanel({ profile }: { profile: CharacterProfile }) {
           )
         })}
       </div>
+      <InventoryPanel />
     </section>
   )
 }
 
 function Shell({ profile }: { profile: CharacterProfile }) {
   const { logout } = useAuth()
-  const groups = [
-    ['Profile', 'Player Market', 'Realm Market', 'Estate'],
-    ['Combat'],
-    ['Gathering', 'Refining', 'Crafting'],
+  const groups: { name: string; path?: string }[][] = [
+    [
+      { name: 'Profile', path: '/' },
+      { name: 'Player Market' },
+      { name: 'Realm Market' },
+      { name: 'Estate' },
+    ],
+    [{ name: 'Combat' }],
+    [
+      { name: 'Gathering', path: '/skills/gathering' },
+      { name: 'Refining', path: '/skills/refining' },
+      { name: 'Crafting', path: '/skills/crafting' },
+    ],
   ]
   return (
     <div className="grid min-h-screen md:grid-cols-[15rem_1fr]">
@@ -182,17 +202,29 @@ function Shell({ profile }: { profile: CharacterProfile }) {
               className={
                 groupIndex === 0 ? '' : 'mt-3 border-t border-slate-700 pt-3'
               }
-              key={group[0]}
+              key={group[0].name}
             >
-              {group.map((section) => (
-                <span
-                  className={`sidebar-link ${section === 'Profile' ? 'bg-slate-800 text-emerald-300' : 'text-slate-500'}`}
-                  key={section}
-                >
-                  {section}
-                  {section !== 'Profile' && ' · coming soon'}
-                </span>
-              ))}
+              {group.map((section) =>
+                section.path ? (
+                  <NavLink
+                    end={section.path === '/'}
+                    className={({ isActive }) =>
+                      `sidebar-link ${isActive ? 'bg-slate-800 text-emerald-300' : ''}`
+                    }
+                    key={section.name}
+                    to={section.path}
+                  >
+                    {section.name}
+                  </NavLink>
+                ) : (
+                  <span
+                    className="sidebar-link text-slate-500"
+                    key={section.name}
+                  >
+                    {section.name} · coming soon
+                  </span>
+                ),
+              )}
             </div>
           ))}
           <span
@@ -209,12 +241,27 @@ function Shell({ profile }: { profile: CharacterProfile }) {
           Log out
         </button>
       </aside>
-      <main className="p-8">
-        <ProfilePanel profile={profile} />
-        <div className="mt-8 border-t border-slate-800 pt-4 text-sm text-slate-500">
-          Current action · coming soon
-        </div>
-      </main>
+      <div className="flex min-h-screen min-w-0 flex-col">
+        <main className="flex-1 p-8">
+          <Routes>
+            <Route index element={<ProfilePanel profile={profile} />} />
+            <Route
+              path="skills/gathering"
+              element={<SkillPanel skillId="gathering" />}
+            />
+            <Route
+              path="skills/refining"
+              element={<SkillPanel skillId="refining" />}
+            />
+            <Route
+              path="skills/crafting"
+              element={<SkillPanel skillId="crafting" />}
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        <ActionExperience />
+      </div>
     </div>
   )
 }
@@ -244,7 +291,7 @@ export function App() {
       <Route path="/login" element={<AuthForm mode="login" />} />
       <Route path="/register" element={<AuthForm mode="register" />} />
       <Route element={<RequireAuth />}>
-        <Route path="/" element={<CharacterRouter />} />
+        <Route path="/*" element={<CharacterRouter />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
