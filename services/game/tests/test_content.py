@@ -34,9 +34,9 @@ def _add_duplicate_id(content_dir: Path) -> None:
 
 
 def _set_bad_modifier(content_dir: Path) -> None:
-    path = content_dir / "realms.json"
+    path = content_dir / "development.json"
     value = json.loads(path.read_text())
-    value["realms"][0]["modifiers"][0]["type"] = "made_up_pct"
+    value["nodes"][1]["modifiers"][0]["type"] = "made_up_pct"
     _write_json(path, value)
 
 
@@ -44,6 +44,50 @@ def _remove_cap(content_dir: Path) -> None:
     path = content_dir / "caps.json"
     value = json.loads(path.read_text())
     del value["inventory_slots"]
+    _write_json(path, value)
+
+
+def _duplicate_map_edge(content_dir: Path) -> None:
+    path = content_dir / "map.json"
+    value = json.loads(path.read_text())
+    duplicate = value["edges"][0].copy()
+    duplicate["realms"] = list(reversed(duplicate["realms"]))
+    value["edges"].append(duplicate)
+    _write_json(path, value)
+
+
+def _unknown_map_realm(content_dir: Path) -> None:
+    path = content_dir / "map.json"
+    value = json.loads(path.read_text())
+    value["edges"][0]["realms"][1] = "realm.missing"
+    _write_json(path, value)
+
+
+def _award_regression_edge(content_dir: Path) -> None:
+    path = content_dir / "projects.json"
+    value = json.loads(path.read_text())
+    value["projects"][0]["awards"][0]["edge_id"] = "edge.verdant_regress"
+    _write_json(path, value)
+
+
+def _remove_development_transition(content_dir: Path) -> None:
+    path = content_dir / "development.json"
+    value = json.loads(path.read_text())
+    del value["edges"][0]["transition_ms"]
+    _write_json(path, value)
+
+
+def _unknown_transformation_form(content_dir: Path) -> None:
+    path = content_dir / "estate_forms.json"
+    value = json.loads(path.read_text())
+    value["transformations"][0]["to"] = "form.missing"
+    _write_json(path, value)
+
+
+def _unknown_starting_node(content_dir: Path) -> None:
+    path = content_dir / "realms.json"
+    value = json.loads(path.read_text())
+    value["realms"][0]["starting_node_id"] = "node.missing"
     _write_json(path, value)
 
 
@@ -57,15 +101,38 @@ def test_placeholder_content_loads() -> None:
         "item.fake_plank"
     )
     assert content.item("item.prototype_widget").name == "Prototype Widget"
-    assert content.realm("realm.verdant_vale").tags == ("verdant",)
+    assert content.realm("realm.verdant_vale").starting_node_id == "node.verdant_t1"
+    assert content.development_node("node.verdant_t1").tags == ("verdant",)
     assert content.upgrade("upgrade.alarm_clock").cap_bonuses[0].value == 2
     assert len(content.xp_curve.levels) == 99
 
 
 @pytest.mark.parametrize(
     "break_content",
-    [_change_unknown_item, _add_duplicate_id, _set_bad_modifier, _remove_cap],
-    ids=["unknown-item", "duplicate-id", "bad-modifier", "missing-cap"],
+    [
+        _change_unknown_item,
+        _add_duplicate_id,
+        _set_bad_modifier,
+        _remove_cap,
+        _duplicate_map_edge,
+        _unknown_map_realm,
+        _award_regression_edge,
+        _remove_development_transition,
+        _unknown_transformation_form,
+        _unknown_starting_node,
+    ],
+    ids=[
+        "unknown-item",
+        "duplicate-id",
+        "bad-modifier",
+        "missing-cap",
+        "duplicate-map-edge",
+        "unknown-map-realm",
+        "regression-award",
+        "missing-transition",
+        "unknown-form",
+        "unknown-starting-node",
+    ],
 )
 def test_broken_content_is_rejected(
     tmp_path: Path, break_content: Callable[[Path], None]
@@ -176,6 +243,10 @@ def test_only_known_content_routes_are_public() -> None:
         "realms",
         "upgrades",
         "caps",
+        "map",
+        "estate_forms",
+        "development",
+        "projects",
     }
     assert missing.status_code == 401
     assert missing.json()["error"]["code"] == "UNAUTHORIZED"

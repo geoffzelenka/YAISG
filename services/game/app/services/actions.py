@@ -21,6 +21,7 @@ from app.models import (
     Estate,
     EstateUpgrade,
     Inventory,
+    RealmState,
     RewardLog,
 )
 
@@ -77,7 +78,7 @@ def _lock_active_action(
 def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
     character = session.get(Character, character_id)
     currency = session.get(Currency, character_id)
-    estate = session.scalar(select(Estate).where(Estate.character_id == character_id))
+    estate = session.get(Estate, character.home_estate_id) if character else None
     if character is None or currency is None or estate is None:
         raise RuntimeError(f"character {character_id} has incomplete action state")
     skills = list(
@@ -91,15 +92,19 @@ def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
     upgrades = session.scalars(
         select(EstateUpgrade.upgrade_id).where(EstateUpgrade.estate_id == estate.id)
     )
+    realm_state = session.get(RealmState, character.realm_id)
     return CharacterState(
         skills_xp={skill.skill_id: skill.xp for skill in skills},
         skill_levels={skill.skill_id: skill.level for skill in skills},
         inventory={stack.item_id: stack.quantity for stack in inventory},
         gold=currency.gold,
-        realm_id=character.realm_id,
+        estate_form_id=estate.form_id,
+        realm_node_id=(
+            realm_state.node_id
+            if realm_state
+            else _CONTENT.realm(character.realm_id).starting_node_id
+        ),
         installed_upgrades=tuple(upgrades),
-        # Realm project state and character cap bonuses arrive in Phase 4.
-        realm_tier=0,
         cap_bonuses={},
     )
 
@@ -112,7 +117,7 @@ def load_character_state(session: Session, character_id: uuid.UUID) -> Character
 def _persist_state(
     session: Session, character_id: uuid.UUID, state: CharacterState
 ) -> None:
-    # Phase 3 actions cannot change gold, so only skills and inventory are mutable.
+    # Actions cannot change gold, so only skills and inventory are mutable here.
     for skill_id, xp in state.skills_xp.items():
         skill = session.get(CharacterSkill, (character_id, skill_id))
         if skill is None:

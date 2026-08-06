@@ -1,0 +1,4 @@
+{
+  "edges": [{"realms": ["realm.verdant_vale", "realm.ashen_reach"], "cost": {"gold": 25, "items": [], "time_ms": 60000}}],
+  "positions": {"realm.verdant_vale": {"x": 120, "y": 340}, "realm.ashen_reach": {"x": 420, "y": 180}}
+}

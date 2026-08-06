@@ -1,0 +1,6 @@
+{
+  "projects": [
+    {"id": "project.verdant_cardboard", "name": "Cardboard Canopy Prototype", "targets": [{"item_id": "item.demo_crate", "qty": 100}, {"item_id": "item.cardboard_badge", "qty": 25}], "awards": [{"edge_id": "edge.verdant_t1_t2", "progress": 100}]},
+    {"id": "project.ashen_placeholder", "name": "Placeholder Furnace Facade", "targets": [{"item_id": "item.prototype_widget", "qty": 75}, {"item_id": "item.placeholder_token", "qty": 30}], "awards": [{"edge_id": "edge.ashen_t1_t2", "progress": 100}]}
+  ]
+}

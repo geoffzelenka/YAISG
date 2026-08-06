@@ -14,7 +14,8 @@ from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.config import STARTING_GOLD
 from app.content.loader import ContentIndex
-from app.content.schemas import Modifier
+from app.content.schemas import CapType, Modifier
+from app.engine import CharacterState, resolve_caps
 from app.engine.levels import level_for_xp, xp_progress
 from app.errors import api_error
 from app.models import (
@@ -22,8 +23,10 @@ from app.models import (
     CharacterSkill,
     Currency,
     Estate,
+    EstateOwnershipHistory,
     EstateUpgrade,
     Inventory,
+    RealmState,
 )
 from app.services.actions import resolve_character
 
@@ -84,6 +87,13 @@ class EstateSummary(BaseModel):
     installed_upgrades: list[InstalledUpgrade]
 
 
+class CapSummary(BaseModel):
+    """A global base and character-effective cap value."""
+
+    base: float
+    effective: float
+
+
 class ProfileResponse(BaseModel):
     """Complete character profile response."""
 
@@ -92,6 +102,7 @@ class ProfileResponse(BaseModel):
     gold: int
     realm: RealmSummary
     estate: EstateSummary
+    caps: dict[CapType, CapSummary]
 
 
 class InventoryStack(BaseModel):
@@ -146,12 +157,31 @@ async def create_character(
             422, "UNKNOWN_REALM", "The selected realm does not exist"
         ) from None
 
+    realm_state = session.get(RealmState, body.realm_id)
+    if realm_state is None:
+        try:
+            with session.begin_nested():
+                session.add(
+                    RealmState(
+                        realm_id=body.realm_id,
+                        node_id=content.realm(body.realm_id).starting_node_id,
+                        treasury=0,
+                        data={},
+                    )
+                )
+                session.flush()
+        except IntegrityError:
+            # Another character creation initialized this realm concurrently.
+            pass
+
+    estate_id = uuid.uuid4()
     character = Character(
         id=uuid.uuid4(),
         player_id=player.id,
         name=name,
         name_normalized=name.casefold(),
         realm_id=body.realm_id,
+        home_estate_id=estate_id,
         created_at=now,
     )
     session.add(character)
@@ -168,11 +198,21 @@ async def create_character(
     session.add(Currency(character_id=character.id, gold=STARTING_GOLD, premium=0))
     session.add(
         Estate(
-            character_id=character.id,
+            id=estate_id,
+            owner_character_id=character.id,
             realm_id=body.realm_id,
+            form_id="form.camp",
+            status="active",
             level=1,
             upgrade_slots=content.caps.estate_upgrade_slots,
             data={},
+        )
+    )
+    session.add(
+        EstateOwnershipHistory(
+            estate_id=estate_id,
+            character_id=character.id,
+            acquired_at=now,
         )
     )
     try:
@@ -193,10 +233,14 @@ def _profile(
     session: DatabaseSession, content: ContentIndex, character: Character
 ) -> ProfileResponse:
     currency = session.get(Currency, character.id)
-    estate = session.scalar(select(Estate).where(Estate.character_id == character.id))
+    estate = session.get(Estate, character.home_estate_id)
     if currency is None or estate is None:
         raise RuntimeError(f"character {character.id} has incomplete profile state")
     realm = content.realm(character.realm_id)
+    realm_state = session.get(RealmState, character.realm_id)
+    node = content.development_node(
+        realm_state.node_id if realm_state else realm.starting_node_id
+    )
     stored_skills = {
         skill.skill_id: skill
         for skill in session.scalars(
@@ -240,11 +284,35 @@ def _profile(
         )
     if profile_changed:
         session.commit()
-    upgrades = session.scalars(
-        select(EstateUpgrade)
-        .where(EstateUpgrade.estate_id == estate.id)
-        .order_by(EstateUpgrade.slot_index)
+    upgrades = list(
+        session.scalars(
+            select(EstateUpgrade)
+            .where(EstateUpgrade.estate_id == estate.id)
+            .order_by(EstateUpgrade.slot_index)
+        )
     )
+    state = CharacterState(
+        skills_xp={skill.id: skill.xp for skill in skills},
+        skill_levels={skill.id: skill.level for skill in skills},
+        inventory={},
+        gold=currency.gold,
+        estate_form_id=estate.form_id,
+        realm_node_id=node.id,
+        installed_upgrades=tuple(upgrade.upgrade_id for upgrade in upgrades),
+    )
+    resolved = resolve_caps(state, content)
+    active_modifiers = [*node.modifiers, *content.estate_form(estate.form_id).modifiers]
+    node_tags = set(node.tags)
+    for installed in upgrades:
+        upgrade = content.upgrade(installed.upgrade_id)
+        if "*" in upgrade.realm_tags or node_tags.intersection(upgrade.realm_tags):
+            active_modifiers.extend(upgrade.modifiers)
+    effective_caps = {
+        CapType.OFFLINE_HOURS: resolved.offline_hours,
+        CapType.INVENTORY_SLOTS: resolved.inventory_slots,
+        CapType.MARKET_LISTINGS: resolved.market_listings,
+        CapType.ESTATE_UPGRADE_SLOTS: resolved.estate_upgrade_slots,
+    }
     return ProfileResponse(
         character=CharacterSummary.model_validate(character, from_attributes=True),
         skills=skills,
@@ -252,8 +320,8 @@ def _profile(
         realm=RealmSummary(
             id=realm.id,
             name=realm.name,
-            tags=realm.tags,
-            active_modifiers=realm.modifiers,
+            tags=node.tags,
+            active_modifiers=tuple(active_modifiers),
         ),
         estate=EstateSummary(
             id=estate.id,
@@ -266,6 +334,13 @@ def _profile(
                 for upgrade in upgrades
             ],
         ),
+        caps={
+            cap: CapSummary(
+                base=float(getattr(content.caps, cap.value)),
+                effective=float(value),
+            )
+            for cap, value in effective_caps.items()
+        },
     )
 
 

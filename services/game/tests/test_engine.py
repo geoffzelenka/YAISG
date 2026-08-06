@@ -17,6 +17,9 @@ from app.content.schemas import (
     CapBonus,
     CapType,
     EstateUpgrade,
+    MapCost,
+    MapEdge,
+    MapPack,
     Modifier,
     ModifierType,
 )
@@ -32,6 +35,8 @@ from app.engine import (
     effective_cycle_time,
     effective_drops,
     effective_xp,
+    path_cost,
+    relocation_cost,
     resolve,
     resolve_caps,
 )
@@ -63,7 +68,8 @@ def make_state(
     xp: int = 0,
     level: int = 1,
     upgrades: tuple[str, ...] = (),
-    tier: int = 0,
+    node_id: str = "node.verdant_t1",
+    form_id: str = "form.camp",
 ) -> CharacterState:
     """Build a minimal gathering character for engine tests."""
     return CharacterState(
@@ -71,9 +77,9 @@ def make_state(
         skill_levels={"gathering": level, "refining": 1},
         inventory=inventory or {},
         gold=0,
-        realm_id="realm.verdant_vale",
+        estate_form_id=form_id,
+        realm_node_id=node_id,
         installed_upgrades=upgrades,
-        realm_tier=tier,
     )
 
 
@@ -339,7 +345,7 @@ def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> 
 def test_modifiers_stack_additively_and_inert_upgrade_is_excluded(
     content: ContentIndex,
 ) -> None:
-    """Realm, tier, and active upgrades sum once; mismatched upgrades do nothing."""
+    """Node, form, and active upgrades sum once; inert upgrades do nothing."""
     active_upgrade = EstateUpgrade(
         id="upgrade.active",
         name="Active Test Upgrade",
@@ -355,10 +361,13 @@ def test_modifiers_stack_additively_and_inert_upgrade_is_excluded(
         update={"id": "upgrade.inert", "realm_tags": ("ashen",)}
     )
     custom = content.with_overrides(upgrades=(active_upgrade, inert_upgrade))
-    state = make_state(upgrades=(active_upgrade.id, inert_upgrade.id), tier=1)
+    state = make_state(
+        upgrades=(active_upgrade.id, inert_upgrade.id),
+        node_id="node.verdant_t2",
+    )
     action = custom.action("gathering.fake_sprigs")
     assert effective_cycle_time(action, state, custom) == 2_550
-    assert effective_xp(action, state, custom) == 11  # tier +5%, upgrade +10%
+    assert effective_xp(action, state, custom) == 11  # node +5%, upgrade +10%
     button = effective_drops(action, state, custom)[1]
     assert button.chance == pytest.approx(0.06)
 
@@ -380,6 +389,61 @@ def test_caps_include_active_upgrades_and_ignore_inert_ones(
     custom = content.with_overrides(upgrades=(active, inert))
     caps = resolve_caps(make_state(upgrades=(active.id, inert.id)), custom)
     assert caps.inventory_slots == content.caps.inventory_slots + 3
+
+
+def test_form_and_node_sources_resolve_without_changing_t1_rate(
+    content: ContentIndex,
+) -> None:
+    """Camp plus the migrated t1 node preserves the former realm rate."""
+    action = content.action("gathering.fake_sprigs")
+    state = make_state()
+
+    assert effective_cycle_time(action, state, content) == 2_700
+    assert effective_xp(action, state, content) == 10
+    assert resolve_caps(state, content).estate_upgrade_slots == 4
+
+    homestead = make_state(form_id="form.homestead")
+    assert effective_cycle_time(action, homestead, content) == 2_700
+    assert effective_xp(action, homestead, content) == 10
+
+
+def test_placeholder_path_and_relocation_cost(content: ContentIndex) -> None:
+    """Map costs are summed and relocation multipliers truncate to integers."""
+    path = path_cost("realm.verdant_vale", "realm.ashen_reach", content)
+    assert path.gold == 25
+    assert path.items == ()
+    assert path.time_ms == 60_000
+
+    moved = relocation_cost(path, content.estate_form("form.homestead"), content)
+    assert moved.gold == 62
+    assert moved.time_ms == 120_000
+
+
+def test_path_cost_prefers_cheaper_indirect_route_then_lower_time(
+    content: ContentIndex,
+) -> None:
+    """Four-node routing sums costs and breaks equal-gold ties by time."""
+    realms = tuple(
+        content.realms[0].model_copy(
+            update={"id": f"realm.{letter}", "starting_node_id": "node.verdant_t1"}
+        )
+        for letter in "abcd"
+    )
+    map_pack = MapPack(
+        edges=(
+            MapEdge(realms=("realm.a", "realm.d"), cost=MapCost(gold=20, time_ms=1)),
+            MapEdge(realms=("realm.a", "realm.b"), cost=MapCost(gold=4, time_ms=20)),
+            MapEdge(realms=("realm.b", "realm.d"), cost=MapCost(gold=4, time_ms=20)),
+            MapEdge(realms=("realm.a", "realm.c"), cost=MapCost(gold=4, time_ms=5)),
+            MapEdge(realms=("realm.c", "realm.d"), cost=MapCost(gold=4, time_ms=5)),
+        )
+    )
+    synthetic = replace(content, realms=realms, map=map_pack)
+
+    cost = path_cost("realm.a", "realm.d", synthetic)
+
+    assert cost.gold == 8
+    assert cost.time_ms == 10
 
 
 def test_seeded_drop_frequency_is_close_to_declared_chance(

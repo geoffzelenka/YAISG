@@ -160,7 +160,7 @@ async def available_actions(
     resolve_character(session, character.id, now)
     session.commit()
     state = load_character_state(session, character.id)
-    realm_tags = set(content.realm(character.realm_id).tags)
+    realm_tags = set(content.development_node(state.realm_node_id).tags)
     groups: list[AvailableSkillGroup] = []
     for skill in content.skills:
         actions: list[AvailableAction] = []

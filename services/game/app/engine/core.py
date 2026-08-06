@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import heapq
+import itertools
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -10,7 +12,16 @@ from enum import StrEnum
 from typing import Protocol
 
 from app.content.loader import ContentIndex
-from app.content.schemas import Action, CapType, Drop, Modifier, ModifierType
+from app.content.schemas import (
+    Action,
+    CapType,
+    Drop,
+    EstateForm,
+    ItemQuantity,
+    MapCost,
+    Modifier,
+    ModifierType,
+)
 from app.engine.levels import level_for_xp
 
 
@@ -32,9 +43,9 @@ class CharacterState:
     skill_levels: Mapping[str, int]
     inventory: Mapping[str, int]
     gold: int
-    realm_id: str
+    estate_form_id: str
+    realm_node_id: str
     installed_upgrades: tuple[str, ...] = ()
-    realm_tier: int = 0
     cap_bonuses: Mapping[CapType, float] = field(default_factory=dict)
 
 
@@ -116,7 +127,7 @@ class CycleRewardStrategy(Protocol):
 
 
 def _realm_tags(state: CharacterState, content: ContentIndex) -> set[str]:
-    return set(content.realm(state.realm_id).tags)
+    return set(content.development_node(state.realm_node_id).tags)
 
 
 def _tags_match(required: Sequence[str], actual: set[str]) -> bool:
@@ -126,12 +137,9 @@ def _tags_match(required: Sequence[str], actual: set[str]) -> bool:
 def _active_modifiers(
     action: Action, state: CharacterState, content: ContentIndex
 ) -> list[Modifier]:
-    realm = content.realm(state.realm_id)
-    modifiers = list(realm.modifiers)
-    for tier in realm.project.tiers:
-        if tier.tier <= state.realm_tier:
-            modifiers.extend(tier.modifiers)
-    realm_tags = set(realm.tags)
+    node = content.development_node(state.realm_node_id)
+    modifiers = [*node.modifiers, *content.estate_form(state.estate_form_id).modifiers]
+    realm_tags = set(node.tags)
     for upgrade_id in state.installed_upgrades:
         upgrade = content.upgrade(upgrade_id)
         if _tags_match(upgrade.realm_tags, realm_tags):
@@ -217,14 +225,15 @@ STANDARD_REWARDS = StandardCycleRewards()
 
 
 def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
-    """Resolve base caps plus active realm-tier, upgrade, and state bonuses."""
+    """Resolve global, estate-form, development-node, and upgrade caps."""
     bonuses: defaultdict[CapType, float] = defaultdict(float, state.cap_bonuses)
-    realm = content.realm(state.realm_id)
-    for tier in realm.project.tiers:
-        if tier.tier <= state.realm_tier:
-            for bonus in tier.cap_bonuses:
-                bonuses[bonus.cap] += bonus.value
-    realm_tags = set(realm.tags)
+    form = content.estate_form(state.estate_form_id)
+    for cap, value in form.base_caps.items():
+        bonuses[cap] += value
+    node = content.development_node(state.realm_node_id)
+    for bonus in node.cap_bonuses:
+        bonuses[bonus.cap] += bonus.value
+    realm_tags = set(node.tags)
     for upgrade_id in state.installed_upgrades:
         upgrade = content.upgrade(upgrade_id)
         if _tags_match(upgrade.realm_tags, realm_tags):
@@ -237,6 +246,76 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
         market_listings=int(base.market_listings + bonuses[CapType.MARKET_LISTINGS]),
         estate_upgrade_slots=int(
             base.estate_upgrade_slots + bonuses[CapType.ESTATE_UPGRADE_SLOTS]
+        ),
+    )
+
+
+def path_cost(realm_a: str, realm_b: str, content: ContentIndex) -> MapCost:
+    """Return the cheapest map path, tied by gold and then elapsed time.
+
+    Item quantities do not participate in ordering because different item bags
+    are not inherently comparable. They are summed along the selected path.
+    """
+    if realm_a not in {realm.id for realm in content.realms} or realm_b not in {
+        realm.id for realm in content.realms
+    }:
+        raise ValueError("path endpoint is not a known realm")
+    if realm_a == realm_b:
+        return MapCost(gold=0, items=(), time_ms=0)
+    graph: defaultdict[str, list[tuple[str, MapCost]]] = defaultdict(list)
+    for edge in content.map.edges:
+        left, right = edge.realms
+        graph[left].append((right, edge.cost))
+        graph[right].append((left, edge.cost))
+    sequence = itertools.count()
+    queue: list[tuple[int, int, int, str, dict[str, int]]] = [
+        (0, 0, next(sequence), realm_a, {})
+    ]
+    best: dict[str, tuple[int, int]] = {}
+    while queue:
+        gold, elapsed, _, realm, items = heapq.heappop(queue)
+        if best.get(realm, (gold + 1, elapsed + 1)) <= (gold, elapsed):
+            continue
+        best[realm] = (gold, elapsed)
+        if realm == realm_b:
+            return MapCost(
+                gold=gold,
+                time_ms=elapsed,
+                items=tuple(
+                    ItemQuantity(item_id=item_id, qty=qty)
+                    for item_id, qty in sorted(items.items())
+                ),
+            )
+        for destination, edge_cost in graph[realm]:
+            edge_items = dict(items)
+            for entry in edge_cost.items:
+                edge_items[entry.item_id] = edge_items.get(entry.item_id, 0) + entry.qty
+            heapq.heappush(
+                queue,
+                (
+                    gold + edge_cost.gold,
+                    elapsed + edge_cost.time_ms,
+                    next(sequence),
+                    destination,
+                    edge_items,
+                ),
+            )
+    raise ValueError(f"no map path from {realm_a!r} to {realm_b!r}")
+
+
+def relocation_cost(cost: MapCost, form: EstateForm, content: ContentIndex) -> MapCost:
+    """Apply relocation multipliers, omitting item quantities truncated to zero."""
+    relocation_class = content.relocation_classes[form.relocation_class]
+    return MapCost(
+        gold=int(cost.gold * relocation_class.cost_multiplier),
+        time_ms=int(cost.time_ms * relocation_class.time_multiplier),
+        items=tuple(
+            ItemQuantity(
+                item_id=entry.item_id,
+                qty=int(entry.qty * relocation_class.cost_multiplier),
+            )
+            for entry in cost.items
+            if int(entry.qty * relocation_class.cost_multiplier) > 0
         ),
     )
 

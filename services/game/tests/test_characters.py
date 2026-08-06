@@ -19,7 +19,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.auth import jwks_cache
 from app.db import Base, get_db
 from app.main import app
-from app.models import Character, CharacterSkill, Currency, Estate
+from app.models import (
+    Character,
+    CharacterSkill,
+    Currency,
+    Estate,
+    EstateUpgrade,
+    RealmState,
+)
 
 pytestmark = pytest.mark.anyio
 _KEY_ID = "character-test-key"
@@ -113,6 +120,11 @@ async def test_creation_builds_complete_profile(
     assert profile["realm"]["name"] == "Verdant Vale"
     assert profile["estate"]["upgrade_slots"] == 2
     assert profile["estate"]["installed_upgrades"] == []
+    assert profile["caps"]["inventory_slots"] == {"base": 30.0, "effective": 30.0}
+    assert profile["caps"]["estate_upgrade_slots"] == {
+        "base": 2.0,
+        "effective": 4.0,
+    }
     assert all(
         skill["level"] == 1 and skill["xp_to_next"] == 100
         for skill in profile["skills"]
@@ -121,6 +133,35 @@ async def test_creation_builds_complete_profile(
         assert session.scalar(select(func.count()).select_from(CharacterSkill)) == 4
         assert session.scalar(select(func.count()).select_from(Currency)) == 1
         assert session.scalar(select(func.count()).select_from(Estate)) == 1
+
+
+async def test_profile_caps_include_installed_upgrade_bonus(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """Profile cap exposure includes an active installed upgrade."""
+    token = _token()
+    created = await _post(client[0], token, "Upgraded Hero", "realm.verdant_vale")
+    estate_id = uuid.UUID(created.json()["estate"]["id"])
+    with client[1]() as session:
+        session.add(
+            EstateUpgrade(
+                estate_id=estate_id,
+                slot_index=0,
+                upgrade_id="upgrade.alarm_clock",
+                purchased_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+    response = await client[0].get(
+        "/characters/me", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["caps"]["offline_hours"] == {
+        "base": 12.0,
+        "effective": 14.0,
+    }
 
 
 @pytest.mark.parametrize(
@@ -182,6 +223,21 @@ async def test_concurrent_double_submit_creates_exactly_one_character(
     assert conflict.json()["error"]["code"] == "CHARACTER_EXISTS"
     with client[1]() as session:
         assert session.scalar(select(func.count()).select_from(Character)) == 1
+
+
+async def test_concurrent_first_characters_share_realm_initialization(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """A realm-state initialization race does not become a name error."""
+    responses = await asyncio.gather(
+        _post(client[0], _token(), "Realm First", "realm.verdant_vale"),
+        _post(client[0], _token(), "Realm Second", "realm.verdant_vale"),
+    )
+
+    assert [response.status_code for response in responses] == [201, 201]
+    with client[1]() as session:
+        assert session.scalar(select(func.count()).select_from(RealmState)) == 1
+        assert session.scalar(select(func.count()).select_from(Character)) == 2
 
 
 async def test_missing_character_and_empty_inventory(

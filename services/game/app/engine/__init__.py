@@ -16,6 +16,8 @@ from app.engine.core import (
     effective_cycle_time,
     effective_drops,
     effective_xp,
+    path_cost,
+    relocation_cost,
     resolve,
     resolve_caps,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "effective_cycle_time",
     "effective_drops",
     "effective_xp",
+    "path_cost",
+    "relocation_cost",
     "resolve",
     "resolve_caps",
 ]

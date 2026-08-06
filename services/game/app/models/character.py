@@ -33,6 +33,8 @@ class Character(Base):
         String(20), unique=True, nullable=False
     )
     realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Cache of the residence-defining home estate's realm (§7.5).
+    home_estate_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -77,13 +79,92 @@ class Estate(Base):
     __tablename__ = "estates"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    character_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("characters.id", ondelete="CASCADE"), unique=True, nullable=False
+    owner_character_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("characters.id", ondelete="SET NULL"), nullable=True
     )
     realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    form_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    relocating_to_realm_id: Mapped[str | None] = mapped_column(String(128))
+    relocation_completes_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     upgrade_slots: Mapped[int] = mapped_column(Integer, nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class EstateOwnershipHistory(Base):
+    """Historied ownership interval for an estate."""
+
+    __tablename__ = "estate_ownership_history"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    estate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("estates.id", ondelete="CASCADE"), nullable=False
+    )
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("characters.id"), nullable=False
+    )
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    relinquished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RealmState(Base):
+    """Current development identity for a realm."""
+
+    __tablename__ = "realm_state"
+    realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    node_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    transition_to_node_id: Mapped[str | None] = mapped_column(String(128))
+    transition_completes_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    treasury: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class RealmEdgeProgress(Base):
+    """Per-realm progress on a development edge."""
+
+    __tablename__ = "realm_edge_progress"
+    realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    edge_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class RealmProject(Base):
+    """Per-realm communal project state."""
+
+    __tablename__ = "realm_projects"
+    realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    contribution_totals: Mapped[dict[str, int]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RealmContribution(Base):
+    """Audit record for a project contribution."""
+
+    __tablename__ = "realm_contributions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("characters.id"), nullable=False
+    )
+    item_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    contributed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
 
 
 class EstateUpgrade(Base):
