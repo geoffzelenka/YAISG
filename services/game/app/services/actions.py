@@ -10,8 +10,8 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.config import CONTENT_DIR
-from app.content import load_content
+from app.content import ContentIndex
+from app.content.runtime import CONTENT
 from app.engine import ActiveAction, CharacterState, ResolveResult, resolve
 from app.models import (
     ActiveActionRecord,
@@ -24,8 +24,6 @@ from app.models import (
     RealmState,
     RewardLog,
 )
-
-_CONTENT = load_content(CONTENT_DIR)
 
 
 @dataclass(frozen=True)
@@ -102,7 +100,7 @@ def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
         realm_node_id=(
             realm_state.node_id
             if realm_state
-            else _CONTENT.realm(character.realm_id).starting_node_id
+            else CONTENT.realm(character.realm_id).starting_node_id
         ),
         installed_upgrades=tuple(upgrades),
         cap_bonuses={},
@@ -145,10 +143,25 @@ def _persist_state(
 
 
 def resolve_character(
-    session: Session, character_id: uuid.UUID, now: datetime
+    session: Session,
+    character_id: uuid.UUID,
+    now: datetime,
+    content: ContentIndex | None = None,
+    additional_realm_ids: set[str] | None = None,
 ) -> Resolution:
     """Resolve and persist one character inside the caller's transaction."""
     record = _lock_active_action(session, character_id)
+    character = session.get(Character, character_id)
+    if character is None:
+        raise RuntimeError(f"character {character_id} does not exist")
+    # Imported locally to keep the finalizers independent of the action adapter.
+    from app.services.realms import finalize_realms, finalize_relocation
+
+    finalize_relocation(session, character, now)
+    resolved_content = content or CONTENT
+    realm_ids = set(additional_realm_ids or ())
+    realm_ids.add(character.realm_id)
+    finalize_realms(session, realm_ids, now, resolved_content)
     if record is None:
         return Resolution(None, empty_result())
     state = _load_state(session, character_id)
@@ -160,7 +173,7 @@ def resolve_character(
     new_state, new_active, result = resolve(
         state,
         action,
-        _CONTENT,
+        resolved_content,
         now,
         random.Random(secrets.randbits(256)),
     )

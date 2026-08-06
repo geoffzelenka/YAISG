@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.schemas import RewardsResponse, rewards_response
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
@@ -48,18 +49,6 @@ class ActionSummary(BaseModel):
     cycle_ms: int
     started_at: datetime
     last_resolved_at: datetime
-
-
-class RewardsResponse(BaseModel):
-    """JSON representation of an engine resolve result."""
-
-    cycles_completed: int
-    xp_gained: dict[str, int]
-    items_consumed: dict[str, int]
-    items_gained: dict[str, int]
-    overflowed_items: dict[str, int]
-    level_ups: dict[str, tuple[int, ...]]
-    stop_reason: str | None
 
 
 class ActionFeedResponse(BaseModel):
@@ -113,15 +102,7 @@ def _realm_matches(required: tuple[str, ...], realm_tags: set[str]) -> bool:
 
 
 def _rewards(result: ResolveResult) -> RewardsResponse:
-    return RewardsResponse(
-        cycles_completed=result.cycles_completed,
-        xp_gained=dict(result.xp_gained),
-        items_consumed=dict(result.items_consumed),
-        items_gained=dict(result.items_gained),
-        overflowed_items=dict(result.overflowed_items),
-        level_ups=dict(result.level_ups),
-        stop_reason=result.stop_reason,
-    )
+    return rewards_response(result)
 
 
 def _prefer_current_stop_reason(
@@ -157,7 +138,7 @@ async def available_actions(
     """Return every action permitted by the realm with start blockers."""
     character = _character(session, player.id)
     content = _content(request)
-    resolve_character(session, character.id, now)
+    resolve_character(session, character.id, now, content)
     session.commit()
     state = load_character_state(session, character.id)
     realm_tags = set(content.development_node(state.realm_node_id).tags)
@@ -202,7 +183,7 @@ async def start_action(
     """Resolve the prior action and atomically replace it with a validated one."""
     character = _character(session, player.id)
     content = _content(request)
-    resolve_character(session, character.id, now)
+    resolve_character(session, character.id, now, content)
     state = load_character_state(session, character.id)
     try:
         action = content.action(body.action_id)
@@ -244,9 +225,9 @@ async def get_action(
 ) -> ActionFeedResponse:
     """Resolve the active action and return this request's reward feed."""
     character = _character(session, player.id)
-    resolution = resolve_character(session, character.id, now)
-    state = load_character_state(session, character.id)
     content = _content(request)
+    resolution = resolve_character(session, character.id, now, content)
+    state = load_character_state(session, character.id)
     cycle_ms = None
     if resolution.active is not None:
         cycle_ms = effective_cycle_time(
@@ -266,13 +247,14 @@ async def get_action(
 
 @router.delete("/action", response_model=ActionFeedResponse)
 async def stop_action(
+    request: Request,
     now: ServerNow,
     player: CurrentPlayer,
     session: DatabaseSession,
 ) -> ActionFeedResponse:
     """Resolve final rewards, then stop the current action."""
     character = _character(session, player.id)
-    resolution = resolve_character(session, character.id, now)
+    resolution = resolve_character(session, character.id, now, _content(request))
     feed = claim_rewards(session, character.id, now)
     feed = _prefer_current_stop_reason(feed, resolution.result)
     clear_active_action(session, character.id)

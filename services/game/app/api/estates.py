@@ -19,6 +19,7 @@ from app.engine import resolve_caps
 from app.errors import api_error
 from app.models import Character, Estate, EstateUpgrade, Inventory, RealmState
 from app.services.actions import load_character_state, resolve_character
+from app.services.realms import finalize_realm, finalize_relocation
 
 router = APIRouter(prefix="/estates", tags=["estates"])
 audit_logger = logging.getLogger("yaisg.audit")
@@ -212,12 +213,19 @@ def _audit(change: str, character: Character, estate: Estate, **details: str) ->
 
 @router.get("/me", response_model=EstateResponse)
 async def get_estate(
-    request: Request, player: CurrentPlayer, session: DatabaseSession
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
 ) -> EstateResponse:
     """Return the caller's home estate without resolving active work."""
     character = _character(session, player.id)
-    estate = _home_estate(session, character)
-    return _estate_response(session, _content(request), character, estate)
+    content = _content(request)
+    estate = finalize_relocation(session, character, now, prepare_sqlite=True)
+    finalize_realm(session, character.realm_id, now, content)
+    response = _estate_response(session, content, character, estate)
+    session.commit()
+    return response
 
 
 @router.post("/me/upgrades/{upgrade_id}", response_model=EstateResponse)
@@ -231,7 +239,7 @@ async def purchase_upgrade(
     """Resolve work, charge item inputs, and install an estate upgrade."""
     character = _character(session, player.id)
     content = _content(request)
-    resolve_character(session, character.id, now)
+    resolve_character(session, character.id, now, content)
     # On SQLite, resolve_character has already acquired BEGIN IMMEDIATE. This
     # ordering is the SQLite equivalent of the estate row lock below.
     estate = _home_estate(session, character, lock=True)
@@ -281,7 +289,7 @@ async def transform_estate(
     """Resolve work, charge a transformation edge, and change estate form."""
     character = _character(session, player.id)
     content = _content(request)
-    resolve_character(session, character.id, now)
+    resolve_character(session, character.id, now, content)
     # On SQLite, resolve_character has already acquired BEGIN IMMEDIATE. This
     # ordering is the SQLite equivalent of the estate row lock below.
     estate = _home_estate(session, character, lock=True)

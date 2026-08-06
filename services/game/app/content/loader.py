@@ -90,6 +90,8 @@ class ContentIndex:
     _upgrades_by_id: MappingProxyType[str, EstateUpgrade]
     _forms_by_id: MappingProxyType[str, EstateForm]
     _nodes_by_id: MappingProxyType[str, DevelopmentNode]
+    _edges_by_id: MappingProxyType[str, DevelopmentEdge]
+    _projects_by_id: MappingProxyType[str, Project]
 
     def skill(self, skill_id: str) -> Skill:
         """Look up a skill."""
@@ -122,6 +124,14 @@ class ContentIndex:
     def development_node(self, node_id: str) -> DevelopmentNode:
         """Look up a development node."""
         return self._nodes_by_id[node_id]
+
+    def development_edge(self, edge_id: str) -> DevelopmentEdge:
+        """Look up a development edge."""
+        return self._edges_by_id[edge_id]
+
+    def project(self, project_id: str) -> Project:
+        """Look up a realm project."""
+        return self._projects_by_id[project_id]
 
     def with_overrides(
         self,
@@ -405,4 +415,6 @@ def load_content(content_dir: Path) -> ContentIndex:
         MappingProxyType(upgrades),
         MappingProxyType(forms),
         MappingProxyType(nodes),
+        MappingProxyType(edges),
+        MappingProxyType(projects),
     )

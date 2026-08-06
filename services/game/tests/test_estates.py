@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import AsyncMock
 
 import jwt
@@ -25,10 +26,28 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.estates import purchase_upgrade
 from app.auth import jwks_cache
 from app.clock import utc_now
-from app.content.schemas import CapBonus, CapType, FormTransformation, ItemQuantity
+from app.content.schemas import (
+    CapBonus,
+    CapType,
+    FormTransformation,
+    ItemQuantity,
+    MapCost,
+    MapEdge,
+)
 from app.db import Base, configure_sqlite_engine, get_db
 from app.main import app
-from app.models import Character, Estate, EstateUpgrade, Inventory, Player
+from app.models import (
+    Character,
+    Currency,
+    Estate,
+    EstateUpgrade,
+    Inventory,
+    Player,
+    RealmContribution,
+    RealmEdgeProgress,
+    RealmProject,
+    RealmState,
+)
 
 pytestmark = pytest.mark.anyio
 _KEY_ID = "estate-test-key"
@@ -517,3 +536,198 @@ async def test_transform_rejects_busy_estate_before_charging(
     with factory() as session:
         stack = session.get(Inventory, (character_id, "item.fake_plank"))
         assert stack is not None and stack.quantity == 5
+
+
+async def test_map_is_public_and_returns_content_graph(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Map topology is available without a bearer token."""
+    client, _, _, _ = estate_client
+
+    response = await client.get("/map")
+
+    assert response.status_code == 200
+    assert {node["realm_id"] for node in response.json()["nodes"]} == {
+        "realm.verdant_vale",
+        "realm.ashen_reach",
+    }
+    assert response.json()["edges"][0]["cost"]["gold"] == 25
+
+
+async def test_contribution_clamps_consumes_and_completes_with_one_award(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Contributions conserve inputs and completion awards its edge once."""
+    client, factory, headers, _ = estate_client
+    content = app.state.content
+    definition = content.project("project.verdant_cardboard")
+    multi_award = definition.model_copy(
+        update={"awards": (definition.awards[0], definition.awards[0])}
+    )
+    projects = tuple(
+        multi_award if project.id == definition.id else project
+        for project in content.projects
+    )
+    app.state.content = replace(
+        content,
+        projects=projects,
+        _projects_by_id=MappingProxyType({project.id: project for project in projects}),
+    )
+    character_id = _give(factory, "item.demo_crate", 150)
+    _give(factory, "item.cardboard_badge", 25)
+
+    crates = await client.post(
+        "/realms/realm.verdant_vale/projects/project.verdant_cardboard/contribute",
+        headers=headers,
+        json={"item_id": "item.demo_crate", "quantity": 150},
+    )
+    badges = await client.post(
+        "/realms/realm.verdant_vale/projects/project.verdant_cardboard/contribute",
+        headers=headers,
+        json={"item_id": "item.cardboard_badge", "quantity": 25},
+    )
+
+    assert crates.status_code == 200
+    assert crates.json()["accepted_quantity"] == 100
+    assert badges.status_code == 200
+    assert badges.json()["completed"] is True
+    with factory() as session:
+        crates_left = session.get(Inventory, (character_id, "item.demo_crate"))
+        assert crates_left is not None and crates_left.quantity == 50
+        assert session.get(Inventory, (character_id, "item.cardboard_badge")) is None
+        contributions = list(session.scalars(select(RealmContribution)))
+        assert sum(value.quantity for value in contributions) == 125
+        project = session.get(
+            RealmProject,
+            ("realm.verdant_vale", "project.verdant_cardboard"),
+        )
+        assert project is not None and project.status == "completed"
+        progress = session.get(
+            RealmEdgeProgress,
+            ("realm.verdant_vale", "edge.verdant_t1_t2"),
+        )
+        # The first award opened a transition, so the duplicate later award was
+        # skipped rather than escaping as INVALID_EDGE_AWARD.
+        assert progress is not None and progress.progress == 100
+
+
+async def test_contribution_rejects_pending_transition_without_consuming(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Projects cannot complete or consume goods while their node is leaving."""
+    client, factory, headers, clock = estate_client
+    character_id = _give(factory, "item.demo_crate", 1)
+    with factory() as session:
+        state = session.get(RealmState, "realm.verdant_vale")
+        assert state is not None
+        state.transition_to_node_id = "node.verdant_t2"
+        state.transition_completes_at = clock["now"] + timedelta(minutes=5)
+        session.commit()
+
+    response = await client.post(
+        "/realms/realm.verdant_vale/projects/project.verdant_cardboard/contribute",
+        headers=headers,
+        json={"item_id": "item.demo_crate", "quantity": 1},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "REALM_TRANSITIONING"
+    with factory() as session:
+        stack = session.get(Inventory, (character_id, "item.demo_crate"))
+        assert stack is not None and stack.quantity == 1
+        assert session.scalar(select(func.count()).select_from(RealmContribution)) == 0
+
+
+async def test_delayed_relocation_charges_and_arrives_lazily(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """A normal map move charges now but retains origin identity until arrival."""
+    client, factory, headers, clock = estate_client
+    character_id = _character_id(factory)
+
+    moved = await client.post(
+        "/characters/me/relocate",
+        headers=headers,
+        json={"realm_id": "realm.ashen_reach"},
+    )
+
+    assert moved.status_code == 200
+    assert moved.json()["cost"] == {"gold": 25, "items": [], "time_ms": 60000}
+    assert moved.json()["realm_id"] == "realm.verdant_vale"
+    assert moved.json()["relocating_to_realm_id"] == "realm.ashen_reach"
+    with factory() as session:
+        assert session.get(Currency, character_id).gold == 75  # type: ignore[union-attr]
+        assert session.get(Character, character_id).realm_id == "realm.verdant_vale"  # type: ignore[union-attr]
+    clock["now"] += timedelta(minutes=1)
+
+    arrived = await client.get("/characters/me", headers=headers)
+
+    assert arrived.status_code == 200
+    assert arrived.json()["character"]["realm_id"] == "realm.ashen_reach"
+    with factory() as session:
+        estate = session.scalar(select(Estate))
+        assert estate is not None
+        assert estate.realm_id == "realm.ashen_reach"
+        assert estate.status == "active"
+
+
+async def test_instant_relocation_and_unreachable_rollback(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Zero-time paths arrive immediately; unreachable paths charge nothing."""
+    client, factory, headers, _ = estate_client
+    content = app.state.content
+    edge = MapEdge(
+        realms=("realm.verdant_vale", "realm.ashen_reach"),
+        cost=MapCost(gold=25, items=(), time_ms=0),
+    )
+    app.state.content = replace(
+        content, map=content.map.model_copy(update={"edges": (edge,)})
+    )
+
+    instant = await client.post(
+        "/characters/me/relocate",
+        headers=headers,
+        json={"realm_id": "realm.ashen_reach"},
+    )
+
+    assert instant.status_code == 200
+    assert instant.json()["realm_id"] == "realm.ashen_reach"
+    assert instant.json()["relocating_to_realm_id"] is None
+
+    with factory() as session:
+        character = session.scalar(select(Character))
+        currency = session.scalar(select(Currency))
+        estate = session.scalar(select(Estate))
+        assert character is not None and currency is not None and estate is not None
+        character.realm_id = "realm.verdant_vale"
+        estate.realm_id = "realm.verdant_vale"
+        gold_before = currency.gold
+        session.commit()
+    app.state.content = replace(
+        content, map=content.map.model_copy(update={"edges": ()})
+    )
+
+    unreachable = await client.post(
+        "/characters/me/relocate",
+        headers=headers,
+        json={"realm_id": "realm.ashen_reach"},
+    )
+
+    assert unreachable.status_code == 409
+    assert unreachable.json()["error"]["code"] == "UNREACHABLE"
+    with factory() as session:
+        currency = session.scalar(select(Currency))
+        estate = session.scalar(select(Estate))
+        assert currency is not None and currency.gold == gold_before
+        assert estate is not None and estate.realm_id == "realm.verdant_vale"

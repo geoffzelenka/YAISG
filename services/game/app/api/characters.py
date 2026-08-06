@@ -353,9 +353,10 @@ async def get_profile(
 ) -> ProfileResponse:
     """Return the caller's character profile."""
     character = _character_for_player(session, player.id)
-    resolve_character(session, character.id, now)
+    content = _content(request)
+    resolve_character(session, character.id, now, content)
     session.commit()
-    return _profile(session, _content(request), character)
+    return _profile(session, content, character)
 
 
 @router.get("/me/inventory", response_model=InventoryResponse)

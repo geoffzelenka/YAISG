@@ -14,21 +14,23 @@ from app.api.content import PUBLIC_CONTENT_PATHS
 from app.api.content import router as content_router
 from app.api.estates import router as estates_router
 from app.api.players import router as players_router
+from app.api.realms import router as realms_router
 from app.auth import verify_access_token
-from app.config import CONTENT_DIR, CORS_ORIGINS, VERSION
-from app.content import load_content
+from app.config import CORS_ORIGINS, VERSION
+from app.content.runtime import CONTENT
 from app.logging import log_request
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 app = FastAPI(title="YAISG Game")
-app.state.content = load_content(CONTENT_DIR)
+app.state.content = CONTENT
 app.middleware("http")(log_request)
 app.include_router(content_router)
 app.include_router(players_router)
 app.include_router(characters_router)
 app.include_router(estates_router)
 app.include_router(actions_router)
+app.include_router(realms_router)
 
 
 @app.middleware("http")
@@ -38,6 +40,7 @@ async def require_authentication(
     """Require a verified identity for every route other than service health."""
     if (
         request.url.path == "/healthz"
+        or request.url.path == "/map"
         or request.url.path in PUBLIC_CONTENT_PATHS
         or request.method == "OPTIONS"
     ):
