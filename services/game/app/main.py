@@ -12,6 +12,7 @@ from app.api.actions import router as actions_router
 from app.api.characters import router as characters_router
 from app.api.content import PUBLIC_CONTENT_PATHS
 from app.api.content import router as content_router
+from app.api.estates import router as estates_router
 from app.api.players import router as players_router
 from app.auth import verify_access_token
 from app.config import CONTENT_DIR, CORS_ORIGINS, VERSION
@@ -26,6 +27,7 @@ app.middleware("http")(log_request)
 app.include_router(content_router)
 app.include_router(players_router)
 app.include_router(characters_router)
+app.include_router(estates_router)
 app.include_router(actions_router)
 
 

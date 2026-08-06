@@ -19,6 +19,7 @@ from app.content.schemas import (
     EstateForm,
     EstateFormsPack,
     EstateUpgrade,
+    FormTransformation,
     Item,
     ItemsPack,
     MapPack,
@@ -73,6 +74,7 @@ class ContentIndex:
     upgrades: tuple[EstateUpgrade, ...]
     map: MapPack
     estate_forms: tuple[EstateForm, ...]
+    transformations: tuple[FormTransformation, ...]
     development_nodes: tuple[DevelopmentNode, ...]
     development_edges: tuple[DevelopmentEdge, ...]
     projects: tuple[Project, ...]
@@ -387,6 +389,7 @@ def load_content(content_dir: Path) -> ContentIndex:
         tuple(upgrades.values()),
         map_pack,
         tuple(forms.values()),
+        forms_pack.transformations,
         tuple(nodes.values()),
         tuple(edges.values()),
         tuple(projects.values()),
