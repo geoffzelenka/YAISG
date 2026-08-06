@@ -25,6 +25,13 @@ export type CharacterProfile = {
     tags: string[]
     active_modifiers: Modifier[]
   }
+  caps: Record<
+    | 'offline_hours'
+    | 'inventory_slots'
+    | 'market_listings'
+    | 'estate_upgrade_slots',
+    { base: number; effective: number }
+  >
   estate: {
     id: string
     level: number

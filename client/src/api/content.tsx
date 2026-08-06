@@ -41,15 +41,7 @@ export type Item = {
 export type Realm = {
   id: string
   name: string
-  tags: string[]
-  modifiers: Modifier[]
-  market_offers: { item_id: string; buy_price: number; sell_price: number }[]
-  project: {
-    id: string
-    name: string
-    contribution_targets: ItemQuantity[]
-    tiers: { tier: number; modifiers: Modifier[] }[]
-  }
+  starting_node_id: string
 }
 export type EstateUpgrade = {
   id: string
@@ -73,12 +65,63 @@ export type Caps = {
   estate_upgrade_slots: number
 }
 
+export type EstateForm = {
+  id: string
+  name: string
+  specialty_tags: string[]
+  relocation_class: string
+  base_caps: Partial<Caps>
+  modifiers: Modifier[]
+}
+export type FormTransformation = {
+  from: string
+  to: string
+  cost: ItemQuantity[]
+}
+export type DevelopmentNode = {
+  id: string
+  archetype: string
+  name: string
+  tags: string[]
+  modifiers: Modifier[]
+  cap_bonuses: { cap: keyof Caps; value: number }[]
+  projects: string[]
+}
+export type DevelopmentEdge = {
+  id: string
+  from: string
+  to: string
+  progress_target: number
+  kind: 'development' | 'regression'
+  transition_ms?: number
+}
+export type Project = {
+  id: string
+  name: string
+  targets: ItemQuantity[]
+  awards: { edge_id: string; progress: number }[]
+}
+export type MapEdge = {
+  realms: [string, string]
+  cost: { gold: number; items: ItemQuantity[]; time_ms: number }
+}
+
 type ContentPacks = {
   skills: { skills: Skill[] }
   items: { items: Item[] }
   realms: { realms: Realm[] }
   upgrades: { upgrades: EstateUpgrade[] }
   caps: Caps
+  map: {
+    edges: MapEdge[]
+    positions: Record<string, { x: number; y: number }>
+  }
+  estate_forms: {
+    forms: EstateForm[]
+    transformations: FormTransformation[]
+  }
+  development: { nodes: DevelopmentNode[]; edges: DevelopmentEdge[] }
+  projects: { projects: Project[] }
 }
 type PackName = keyof ContentPacks
 type Manifest = { version: string; packs: Record<PackName, string> }
@@ -88,7 +131,17 @@ type ContentState =
   | { status: 'ready'; content: Content; error: null }
   | { status: 'error'; content: null; error: Error }
 
-const PACKS: PackName[] = ['skills', 'items', 'realms', 'upgrades', 'caps']
+const PACKS: PackName[] = [
+  'skills',
+  'items',
+  'realms',
+  'upgrades',
+  'caps',
+  'map',
+  'estate_forms',
+  'development',
+  'projects',
+]
 const MANIFEST_KEY = 'yaisg:content:manifest'
 const PACK_KEY_PREFIX = 'yaisg:content:'
 const ContentContext = createContext<ContentState | null>(null)

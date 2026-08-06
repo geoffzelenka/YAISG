@@ -1,17 +1,19 @@
 import { useInventory } from '../../api/inventory'
 import { useContent } from '../../api/content'
+import { useCharacterProfile } from '../../api/characters'
 
 export function InventoryPanel() {
   const inventory = useInventory()
   const content = useContent()
-  if (inventory.isPending || content.status === 'loading')
+  const profile = useCharacterProfile()
+  if (inventory.isPending || profile.isPending || content.status === 'loading')
     return <p className="mt-8">Loading inventory…</p>
-  if (inventory.isError || content.status === 'error')
+  if (inventory.isError || profile.isError || content.status === 'error')
     return <p className="mt-8 text-red-300">Unable to load inventory.</p>
   const names = new Map(
     content.content.items.items.map((item) => [item.id, item.name]),
   )
-  const cap = content.content.caps.inventory_slots
+  const cap = profile.data?.caps.inventory_slots.effective ?? 0
   return (
     <section className="mt-10">
       <div className="flex items-end justify-between">

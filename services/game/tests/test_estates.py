@@ -210,6 +210,67 @@ async def test_estate_payload_and_inert_annotation(
     ]
 
 
+async def test_relocation_preview_returns_terms_without_changing_state(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Preview uses the relocation cost function but performs no charge or move."""
+    client, factory, headers, _ = estate_client
+
+    response = await client.get(
+        "/characters/me/relocate/preview",
+        headers=headers,
+        params={"realm_id": "realm.ashen_reach"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "realm_id": "realm.verdant_vale",
+        "destination_realm_id": "realm.ashen_reach",
+        "cost": {"gold": 25, "items": [], "time_ms": 60000},
+    }
+    with factory() as session:
+        estate = session.scalar(select(Estate))
+        currency = session.scalar(select(Currency))
+        assert estate is not None and currency is not None
+        assert estate.realm_id == "realm.verdant_vale"
+        assert estate.status == "active"
+        assert currency.gold == 100
+
+
+async def test_relocation_preview_finalizes_due_arrival_before_pricing(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """A preview read observes a completed prior trip before computing its route."""
+    client, factory, headers, clock = estate_client
+    with factory() as session:
+        estate = session.scalar(select(Estate))
+        assert estate is not None
+        estate.status = "relocating"
+        estate.relocating_to_realm_id = "realm.ashen_reach"
+        estate.relocation_completes_at = clock["now"]
+        session.commit()
+
+    response = await client.get(
+        "/characters/me/relocate/preview",
+        headers=headers,
+        params={"realm_id": "realm.verdant_vale"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["realm_id"] == "realm.ashen_reach"
+    with factory() as session:
+        estate = session.scalar(select(Estate))
+        character = session.scalar(select(Character))
+        assert estate is not None and character is not None
+        assert estate.status == "active"
+        assert estate.realm_id == "realm.ashen_reach"
+        assert character.realm_id == "realm.ashen_reach"
+
+
 async def test_upgrade_changes_subsequent_action_resolution(
     estate_client: tuple[
         AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]

@@ -88,6 +88,14 @@ describe('skill panel', () => {
             market_listings: 5,
             estate_upgrade_slots: 2,
           },
+          '/content/map': { edges: [], positions: {} },
+          '/content/estate_forms': {
+            forms: [],
+            transformations: [],
+            relocation_classes: {},
+          },
+          '/content/development': { nodes: [], edges: [] },
+          '/content/projects': { projects: [] },
           '/characters/me/actions/available': {
             skills: [
               {

@@ -20,6 +20,11 @@ import { useAuth } from './features/auth/AuthProvider'
 import { ActionExperience } from './features/actions/ActionExperience'
 import { InventoryPanel } from './features/profile/InventoryPanel'
 import { SkillPanel } from './features/skills/SkillPanel'
+import { EstatePanel } from './features/estate/EstatePanel'
+import { MapPanel } from './features/realm/MapPanel'
+import { PendingRelocationBanner } from './features/realm/PendingRelocationBanner'
+import { RealmPanel, TransitionBanner } from './features/realm/RealmPanel'
+import { useRealm } from './api/realms'
 
 function RequireAuth() {
   const { state } = useAuth()
@@ -101,16 +106,25 @@ function CharacterCreation() {
                   onChange={() => setRealmId(realm.id)}
                 />
                 <strong>{realm.name}</strong>
-                <p className="mt-2 text-sm text-slate-400">
-                  Tags: {realm.tags.join(', ')}
-                </p>
-                <ul className="mt-2 text-sm text-slate-300">
-                  {realm.modifiers.map((modifier, index) => (
-                    <li key={`${modifier.type}-${index}`}>
-                      {describeModifier(modifier)}
-                    </li>
-                  ))}
-                </ul>
+                {(() => {
+                  const node = content.content.development.nodes.find(
+                    (candidate) => candidate.id === realm.starting_node_id,
+                  )
+                  return (
+                    <>
+                      <p className="mt-2 text-sm text-slate-400">
+                        Tags: {node?.tags.join(', ') || 'none'}
+                      </p>
+                      <ul className="mt-2 text-sm text-slate-300">
+                        {node?.modifiers.map((modifier, index) => (
+                          <li key={`${modifier.type}-${index}`}>
+                            {describeModifier(modifier)}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )
+                })()}
               </label>
             ))}
           </div>
@@ -134,14 +148,43 @@ function CharacterCreation() {
 }
 
 function ProfilePanel({ profile }: { profile: CharacterProfile }) {
+  const realm = useRealm(profile.character.realm_id)
+  const content = useContent()
+  const currentNode =
+    content.status === 'ready' && realm.data
+      ? content.content.development.nodes.find(
+          (node) => node.id === realm.data.node.id,
+        )
+      : undefined
   return (
     <section>
+      {realm.data?.pending_transition && (
+        <TransitionBanner
+          realmId={realm.data.id}
+          toNodeId={realm.data.pending_transition.to_node_id}
+          completesAt={realm.data.pending_transition.completes_at}
+        />
+      )}
       <h2 className="text-3xl font-bold">{profile.character.name}</h2>
       <div className="mt-2 flex flex-wrap gap-3 text-slate-400">
         <span>{profile.realm.name}</span>
         <span>Gold: {profile.gold.toLocaleString()}</span>
         <span>Realm tags: {profile.realm.tags.join(', ')}</span>
       </div>
+      {realm.data && (
+        <div className="mt-5 rounded-lg border border-slate-700 bg-slate-900 p-4">
+          <strong>
+            {realm.data.node.name}
+            {currentNode ? ` · ${currentNode.archetype}` : ''}
+          </strong>
+          <p className="mt-1 text-sm text-slate-400">
+            Active modifiers:{' '}
+            {profile.realm.active_modifiers.length
+              ? profile.realm.active_modifiers.map(describeModifier).join(', ')
+              : 'None'}
+          </p>
+        </div>
+      )}
       <div className="mt-8 grid gap-4 lg:grid-cols-2">
         {profile.skills.map((skill) => {
           const total = skill.xp_into_level + skill.xp_to_next
@@ -183,7 +226,9 @@ function Shell({ profile }: { profile: CharacterProfile }) {
       { name: 'Profile', path: '/' },
       { name: 'Player Market' },
       { name: 'Realm Market' },
-      { name: 'Estate' },
+      { name: 'Estate', path: '/estate' },
+      { name: 'Realm', path: '/realm' },
+      { name: 'Map', path: '/realm/map' },
     ],
     [{ name: 'Combat' }],
     [
@@ -245,6 +290,9 @@ function Shell({ profile }: { profile: CharacterProfile }) {
         <main className="flex-1 p-8">
           <Routes>
             <Route index element={<ProfilePanel profile={profile} />} />
+            <Route path="estate" element={<EstatePanel />} />
+            <Route path="realm" element={<RealmPanel profile={profile} />} />
+            <Route path="realm/map" element={<MapPanel profile={profile} />} />
             <Route
               path="skills/gathering"
               element={<SkillPanel skillId="gathering" />}
@@ -260,6 +308,7 @@ function Shell({ profile }: { profile: CharacterProfile }) {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
+        <PendingRelocationBanner />
         <ActionExperience />
       </div>
     </div>

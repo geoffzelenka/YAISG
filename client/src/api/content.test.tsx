@@ -12,6 +12,10 @@ const manifest = {
     realms: 'c',
     upgrades: 'd',
     caps: 'e',
+    map: 'f',
+    estate_forms: 'g',
+    development: 'h',
+    projects: 'i',
   },
 }
 const packBodies = {
@@ -25,6 +29,10 @@ const packBodies = {
     market_listings: 5,
     estate_upgrade_slots: 2,
   },
+  map: { edges: [], positions: {} },
+  estate_forms: { forms: [], transformations: [], relocation_classes: {} },
+  development: { nodes: [], edges: [] },
+  projects: { projects: [] },
 }
 
 function wrapper({ children }: PropsWithChildren) {
@@ -58,7 +66,7 @@ describe('content cache', () => {
     const { result } = renderHook(() => useContent(), { wrapper })
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
-    expect(fetchMock).toHaveBeenCalledTimes(6)
+    expect(fetchMock).toHaveBeenCalledTimes(10)
     expect(result.current.content?.version).toBe(manifest.version)
     expect(localStorage.getItem('yaisg:content:manifest')).toContain(
       manifest.version,
@@ -100,7 +108,7 @@ describe('content cache', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
     expect(result.current.content?.version).toBe(manifest.version)
-    expect(fetchMock).toHaveBeenCalledTimes(6)
+    expect(fetchMock).toHaveBeenCalledTimes(10)
   })
 
   it('prunes stale content versions without touching unrelated storage', async () => {

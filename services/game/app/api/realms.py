@@ -30,6 +30,7 @@ from app.services.actions import claim_rewards, clear_active_action, resolve_cha
 from app.services.realms import (
     award_edge_progress,
     finalize_realm,
+    finalize_relocation,
     prepare_sqlite_write,
 )
 
@@ -112,6 +113,14 @@ class RelocateResponse(BaseModel):
     final_rewards: RewardsResponse
 
 
+class RelocationPreviewResponse(BaseModel):
+    """Computed relocation terms without changing character state."""
+
+    realm_id: str
+    destination_realm_id: str
+    cost: MapCost
+
+
 def _content(request: Request) -> ContentIndex:
     return cast(ContentIndex, request.app.state.content)
 
@@ -123,6 +132,29 @@ def _character(session: DatabaseSession, player_id: uuid.UUID) -> Character:
     if character is None:
         raise api_error(404, "NO_CHARACTER", "Create a character to continue")
     return character
+
+
+def _relocation_cost_for(
+    content: ContentIndex, estate: Estate, destination_realm_id: str
+) -> MapCost:
+    """Validate a destination and compute the estate's path-based cost."""
+    try:
+        content.realm(destination_realm_id)
+    except KeyError:
+        raise api_error(
+            404, "UNKNOWN_REALM", "The destination does not exist"
+        ) from None
+    if destination_realm_id == estate.realm_id:
+        raise api_error(409, "ALREADY_THERE", "The estate is already in that realm")
+    if estate.status != "active" or estate.relocating_to_realm_id is not None:
+        raise api_error(409, "ESTATE_BUSY", "The estate is not active")
+    try:
+        route = path_cost(estate.realm_id, destination_realm_id, content)
+    except ValueError:
+        raise api_error(
+            409, "UNREACHABLE", "No route reaches the destination"
+        ) from None
+    return relocation_cost(route, content.estate_form(estate.form_id), content)
 
 
 def _get_or_create_realm_state(
@@ -402,23 +434,7 @@ async def relocate(
     currency = session.get(Currency, character.id)
     if estate is None or currency is None:
         raise RuntimeError(f"character {character.id} has incomplete relocation state")
-    try:
-        content.realm(body.realm_id)
-    except KeyError:
-        raise api_error(
-            404, "UNKNOWN_REALM", "The destination does not exist"
-        ) from None
-    if body.realm_id == estate.realm_id:
-        raise api_error(409, "ALREADY_THERE", "The estate is already in that realm")
-    if estate.status != "active" or estate.relocating_to_realm_id is not None:
-        raise api_error(409, "ESTATE_BUSY", "The estate is not active")
-    try:
-        route = path_cost(estate.realm_id, body.realm_id, content)
-    except ValueError:
-        raise api_error(
-            409, "UNREACHABLE", "No route reaches the destination"
-        ) from None
-    cost = relocation_cost(route, content.estate_form(estate.form_id), content)
+    cost = _relocation_cost_for(content, estate, body.realm_id)
     relocation_stacks: dict[str, Inventory] = {}
     for entry in cost.items:
         stack = session.get(Inventory, (character.id, entry.item_id))
@@ -452,4 +468,25 @@ async def relocate(
         relocation_completes_at=completes_at,
         cost=cost,
         final_rewards=final_rewards,
+    )
+
+
+@router.get("/characters/me/relocate/preview", response_model=RelocationPreviewResponse)
+async def preview_relocation(
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> RelocationPreviewResponse:
+    """Lazily finalize arrival, then return terms without starting a new move."""
+    content = _content(request)
+    character = _character(session, player.id)
+    estate = finalize_relocation(session, character, now, prepare_sqlite=True)
+    cost = _relocation_cost_for(content, estate, realm_id)
+    session.commit()
+    return RelocationPreviewResponse(
+        realm_id=estate.realm_id,
+        destination_realm_id=realm_id,
+        cost=cost,
     )
