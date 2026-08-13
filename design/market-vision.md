@@ -1,10 +1,12 @@
 # Yet Another Idle Skilling Game — Market Vision Document
 
-**Version:** 1.0 (supersedes the market portions of `realm-vision.md` §4; see §9 for the exact paragraphs invalidated)
+**Version:** 1.1 (supersedes the market portions of `realm-vision.md` §4; see §9 for the exact paragraphs invalidated — now applied in realm-vision v0.5)
 **Scope:** The trade side of the world economy — the global player market (order book, order slots, tax), the realm markets (stores, reference prices, treasury-constrained bids), how the two interlock, and the player archetypes this shapes. Sibling visions: **Market Vision / realm-vision.md** (realms, estates, upkeep, decay — still authoritative on everything outside §4), **Skills and Goods** (supply side), and the planned **Combat** and **XP Curve** documents.
 **Relationship to other documents:** Vision documents describe *what the game should feel like and why*. `design.md` is authoritative on mechanics; where this vision implies a mechanic the engine doesn't yet support, that is a design-doc work item (§8), not a license to improvise. The future content design document turns this vision into concrete goods lists, prices, tax rates, and decay curves.
 
 **Provenance:** v1.0 consolidates the two-market economy of realm-vision.md v0.4 §4 with the order-book draft (`market-vision.md` rough draft) and the decisions ratified in the design chat: full order book with buy and sell orders; **continuous matching** (price-time priority, taker at maker's price); pure global book with instantaneous goods travel; order-slot escrow and explicit collection; treasury as hard budget constraint with content-defined reference prices for cold start; flat seller-side global tax; market access as a losable realm development tag; the hauler redefined as a realm-market arbitrageur and frontier supplier.
+
+**Changes from 1.0:** Two ratifications from the realm-vision v0.5 review pass. (1) **Visibility is settled: full** — §7.7 is closed (the settled text now lives in §2.7) and a read-side work item is added to §8. (2) **Frontier realm markets confirmed:** every realm operates a realm market at every development stage; the access tag gates only the global book — §2.6 and §5.1 annotated (realm-vision §6.13 is the authoritative statement). §9's patch list has been applied — realm-vision v0.5 is the current sibling.
 
 ---
 
@@ -69,6 +71,14 @@ The global market is reachable only from realms carrying a **market-access tag**
 - **Frontier realms start off the book.** Venturing into the wilderness means leaving the global economy behind — everything a frontier realm imports arrives in someone's carried inventory (§5.2). This is the added risk the rough draft wanted, expressed through an existing mechanism.
 - **Access can be lost.** A realm that decays past the node that grants the tag falls off the global economy — no listing, no buying, no tax revenue — which is among the most legible and frightening consequences of communal neglect this game can offer. Frontier is not a special case; it is simply the set of realms that haven't earned, or have lost, the tag.
 
+One boundary ratified in review (realm-vision §6.13): the tag gates **only the global book**. Every realm operates its own realm market (§3) at every development stage — a frontier realm's is merely *thin*: minor upkeep demand, a near-empty treasury, near-empty stores. Off the book never means off the economy; it means the only counterparties are the local realm market and whoever physically shows up.
+
+### 2.7 Visibility: the whole market is readable from anywhere
+
+**Settled (was open question §7.7): full visibility.** Any player can *view* the global order book and every realm's market state — store levels, bids and asks, realm health — from anywhere on the map. Only *trading* is gated: the access tag for the book, physical presence for realm markets. Information is free; action is earned.
+
+Rationale, in the order it was decided: full visibility makes the simulation and the user experience simpler (one world-visible state, no per-player fog to compute or explain), and it maximizes the signal layer's recruiting power — starving stores and desperate bids can only summon haulers and tycoons if they can be seen. Fog-of-war or scouting mechanics are off the table for v1 and would be a purely additive feature if ever wanted. Treasury *balances* remain the one non-exposed figure (per the Phase 4 rule); realm health and bid behavior are the public signals through which treasury state is legible.
+
 ---
 
 ## 3. The realm markets
@@ -127,7 +137,7 @@ The balancing network remains deliberately second-choice: transport costs must k
 The original hauler read *player-market* price gradients preserved by transport costs. Those gradients no longer exist — the player book has one price worldwide. The hauler's livelihood moves to two loops the new architecture creates naturally, both anchored in physical presence (§3.5):
 
 - **Realm arbitrage.** Buy from a realm market selling cheap out of full stores; travel; sell into a starving realm's scarcity-inflated bids. The spread is generated by differential store levels and treasury health — *decay literally pays the hauler to fix it*. The counterparty is the world itself: this is players-versus-world gameplay, and the realm-market signal layer (§3.3) is its user interface.
-- **Frontier supply runs.** Realms without market access (§2.6) import *everything* in someone's carried inventory. Provisioning an establishing frontier realm is pure hauler gameplay — and it self-obsoletes per location: once the realm develops access, the run dries up and the frontier has moved. Haulers are the players who bootstrap realms *into* the global economy, then move on.
+- **Frontier supply runs.** Realms without market access (§2.6) import *everything* in someone's carried inventory. The counterparty exists from day one — every realm runs a realm market, however thin (§2.6, realm-vision §6.13) — but a frontier treasury pays out of a shallow purse, so early runs are as much groundwork as profit. Provisioning an establishing frontier realm is pure hauler gameplay — and it self-obsoletes per location: once the realm develops access, the run dries up and the frontier has moved. Haulers are the players who bootstrap realms *into* the global economy, then move on.
 
 ### 5.2 The other archetypes, unchanged but sharpened
 
@@ -161,7 +171,7 @@ The standing test from realm-vision §5 applies: any future market feature must 
 4. **Tax rate value and incidence.** The number itself; whether buy-side or split incidence is ever wanted (mechanically trivial to change).
 5. **Slot cap numbers and sources.** Base count, and which estate upgrades / realm perks grant more.
 6. **Realm sale prices.** Realms sell from stores — at reference price, at a store-level-driven ask, or at a fixed markup? Must stay above the realm's own bid to prevent a player milking the spread in place.
-7. **Visibility scope.** Can players view (not trade) the global book and other realms' store/bid levels from anywhere? Full visibility maximizes the signal layer's recruiting power; fog rewards scouting. Leans toward full visibility for v1 (the map already shows realm health).
+7. **Visibility scope.** **Settled: full visibility** — see §2.7 (ratified in the realm-vision v0.5 review; realm-vision §6.15). Residual is engineering surface only: market/store read endpoints must be location-free (see §8).
 8. **Inherited opens.** Inter-realm balancing rules (realm-vision §6.6); treasury seeding details beyond §3.4's content approach (realm-vision §6.5); estate-production accounting shape (credited to stores directly per §3.2 — confirm against upkeep-mechanics design, realm-vision §6.4).
 
 ---
@@ -176,6 +186,7 @@ Roughly in build order:
 - **Realm stores.** `realm_state` (or a child table) grows per-good store levels; decay processed in the scheduled-job slot alongside upkeep ticks (realm-vision §7's processing model); estate production credits stores at reconciliation. Bid computation reads (reference price, store level, treasury). *(Phase 5 for the read side; decay processing lands with the upkeep phase, 5.5.)*
 - **Reference prices in content.** A per-good (or per-tier with overrides) `reference_price` content property, validated at boot. *(Phase 5.)*
 - **Presence checks on realm-market trades.** Requires the character-location concept from the visiting design; until it exists, "current realm = home realm" is the interim rule and residents-only is the interim behavior. Record the invariant now: **no remote realm-market trading, ever.** *(Interim rule Phase 5; full rule with visiting.)*
+- **Location-free market reads.** Full visibility (§2.7) means the read side of both markets is ungated by location: order-book views and per-realm store/bid/health views are readable by any player from anywhere (following the precedent of the unauthenticated `GET /map`; whether book/store reads also skip auth or merely skip location checks is an implementation choice). Presence and access gating apply to *mutations only*. Treasury balances stay out of every response, per the Phase 4 rule. *(Phase 5, alongside the endpoints themselves — cheap now, awkward to open up later if the reads were built location-scoped.)*
 - **Carried inventory as cargo.** The hauler loop assumes players physically carry goods between realms; no engine concept distinguishes carried from stored today (there is only one inventory). Nothing needs building yet, but nothing should be built that *prevents* a carried/stored split later — flagged for the estate-storage and visiting designs. *(Watch item.)*
 - **NPC estates as content.** Seeded estates with production profiles but no owning player — the cold-start tool of §3.4. Likely just estates with a null/system owner, which the Phase 4 ownership-history schema should already tolerate — verify. *(Content-design time; verify schema now.)*
 
@@ -183,7 +194,7 @@ Roughly in build order:
 
 ## 9. What this supersedes in realm-vision.md
 
-To be patched in the next realm-vision revision (bump past v0.4):
+**Status: applied.** realm-vision v0.5 incorporates every item below; this list is retained as the record of what changed and why. Section references are into realm-vision v0.4.
 
 - **§3.5 "The trader/hauler"** — rewritten per §5.1/§5.2 here: the hauler works realm-market arbitrage and frontier supply, not player-market gradients; the pure global-book trader splits off as their own archetype.
 - **§4.1 "Two markets, two functions"** — survives in spirit; the player market is now explicitly one global, instant, location-less order book (§2.1 here).

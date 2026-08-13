@@ -1,9 +1,16 @@
 # Yet Another Idle Skilling Game — Technical Design Document
 
-**Version:** 0.5 (realm/estate model settled for Phase 4; aligns with Market Vision v0.4)
-**Scope:** Code architecture and implementation plan only. Game content (specific items, action tables, balance numbers, realm definitions) is deferred to a later content design document. All systems in this document must be built to load content from data, not code, so content can be added later without engine changes. The **Market Vision document** (v0.4) is the economic north star; this document implements its structures incrementally.
+**Version:** 0.6 (ratification + market-model revision)
+**Scope:** Code architecture and implementation plan only. Game content (specific items, action tables, balance numbers, realm definitions) is deferred to the content design document. All systems load content from data, not code.
 
-**Changes from 0.4:** Four schema-shaping decisions ratified ahead of Phase 4 (log #13–17): map topology as a content-defined undirected graph with typed edge costs (§7.2); estate forms as content types with transformation edges (§7.3); realm identity as a node in a content-defined development graph, with progress stored on edges, filled only through a project/quest award interface (plus the upkeep-driven regression gauge), and transitions taking effect after a transitory phase (§7.4); estate ownership as nullable + historied, with home-estate-defines-residence (§7.5). Schema (§6.2), content schemas (§6.3), Phase 4 scope and a new Phase 5.5 (§11) updated accordingly. Upkeep, decay, solvency, inter-realm balancing, visiting, and morphing traversal remain deferred (§10) — v0.5 builds their structures, not their mechanics.
+**What changed in v0.6:**
+1. **Ratified** the six open items carried out of Phase 4 (§12 log #18–23).
+2. **Absorbed the v0.5 implementation reality** (Phase 4 as shipped): estate forms, the realm development graph, decoupled estate ownership, the map pack, nine served content packs, path-cost relocation, resolved-caps API (§5, §6, §7).
+3. **Rewrote the market design** (§5.4, §5.5, §6.2, §8.3) to the order-book + realm-stores model per `market-vision.md` v1.0, superseding the escrowed-listings design. Phase 5 prompts must be written against *this* version, not v0.3–0.5.
+4. Added §13, a **work-item ledger** tracking engine changes implied by the vision documents (`realm-vision.md` v0.4, `skills-and-goods-vision.md` v0.2, `market-vision.md` v1.0) that are accepted in principle but not yet scheduled.
+5. Revised the non-goals list (§10) where visions moved the line (multiple estates, exploration permanence).
+
+**Version policy:** this document stays at v0.6 until the remaining vision documents (**Combat**, **XP Curve**, **Exploration & Keys**, **Visiting**) exist and have been aligned. Vision-driven engine implications land in the §13 ledger in the meantime; only ratified decisions move into the body.
 
 ---
 
@@ -11,525 +18,305 @@
 
 A multiplayer, web-based idle skilling game in the genre of Melvor Idle, Idle Clans, and Ironwood RPG. Players train skills in real time via timed action cycles, accumulate resources, and trade with other players.
 
-**Differentiator:** Players choose a *realm* in which to establish their *estate*. Realms provide different resources and modify skill rates. Players contribute resources to improve their estate and realm as a very-long-term progression goal.
+**Differentiator:** Players choose a *realm* in which to establish their *estate*. Realms are regions of one shared, living map: they specialize, develop along a content-defined graph, and must be sustained by their residents' economy. Estates express the player's relationship to the map along a mobility ↔ rootedness axis.
 
 ### 1.1 Design pillars (engineering implications)
 
-1. **Server-authoritative.** All progression math happens on the server. The client is a view; client timers are cosmetic. This is the single most important rule — an idle game with client-trusted timers is trivially cheated.
-2. **Content is data.** Skills, actions, items, recipes, realms, and modifiers are defined in versioned content files (JSON) loaded by the server. The engine knows *mechanics* (cycles, XP curves, drop tables); it never hardcodes *content*.
-3. **Offline progress by design.** Progress is computed from timestamps, not from a running per-player loop. A player who returns after 8 hours has their elapsed cycles resolved lazily on their next request. This makes the server nearly stateless per player and cheap to scale.
-4. **Simple first, swappable later.** SQLite → PostgreSQL, monorepo services → separate deployments. Interfaces are chosen so these swaps are migrations, not rewrites.
+1. **Server-authoritative.** All progression math happens on the server. The client is a view; client timers are cosmetic.
+2. **Content is data.** Skills, actions, items, recipes, realms, development graphs, estate forms, and modifiers are defined in versioned content files (JSON) loaded by the server. The engine knows *mechanics*; it never hardcodes *content*. Corollary (proven through Phase 4): **new sources are content; new types are engine changes.** This rule now governs modifiers, caps, and (per §13) availability tags.
+3. **Offline progress by design.** Progress is computed from timestamps, not per-player loops. Realm-scale world processes (upkeep ticks, store decay, inter-realm balancing — future) run in the single scheduled-job slot (§8.3); realms are few, so discrete ticks are cheap and the pillar holds.
+4. **Simple first, swappable later.** SQLite → PostgreSQL (CI matrix already runs both), monorepo services → separate deployments.
 
 ---
 
-## 2. Technology choices (decisions, with rationale)
+## 2. Technology choices
+
+Unchanged from v0.3 (Python 3.12 + FastAPI, SQLAlchemy 2.x + Alembic, SQLite→PostgreSQL, separate auth service with RS256 + JWKS, React 18 + Vite + TS, TanStack Query, Tailwind, REST + JSON). One addition:
 
 | Concern | Decision | Rationale |
 |---|---|---|
-| API language | **Python 3.12 + FastAPI** | Fast iteration, excellent typing/validation via Pydantic, async-native. Go was the alternative; raw throughput is not the bottleneck for an idle game (low request rates, tiny payloads). Revisit only if load testing demands it. |
-| ORM / migrations | **SQLAlchemy 2.x + Alembic** | Dialect-agnostic; makes the SQLite → PostgreSQL move a config change plus a migration test pass. |
-| Database | **SQLite (WAL mode)** first; **PostgreSQL** when concurrency or features demand | Per pillar 4. Rules that ease migration listed in §6.4. PostgreSQL 16 already runs in the game-service CI matrix (pulled forward from Phase 7). |
-| Auth service | **Separate FastAPI service** issuing JWTs | Matches the stated microservice requirement while sharing language/tooling with the game API. May be deployed co-located initially. |
-| Client framework | **React 18 + Vite + TypeScript** | Mature ecosystem, best coding-agent familiarity, and the UI is menu/panel-driven — no canvas or high-FPS needs. |
-| Client server-state | **TanStack Query** | Polling, cache invalidation, and optimistic updates map exactly onto the skilling loop. |
-| Client styling | **Tailwind CSS** | Fast to build the panel-based layout; no design system needed for v1. |
-| API style | **REST + JSON**, OpenAPI generated by FastAPI | Per requirement. A future WebSocket channel for market/chat push is noted in §10 but out of scope for v1. |
-| Auth tokens | **Short-lived JWT access token (15 min) + rotating refresh token (httpOnly cookie)** | Standard, stateless verification in the game API. |
+| Scheduled world processes | **APScheduler in-process** (existing §8.3 slot) grows from "listing expiry" to the world-tick host: order expiry, store decay/upkeep ticks (Phase 5.5), inter-realm balancing (Phase 5.5) | Realms are few; discrete ticks are cheap; no per-player timers introduced. Revisit (external scheduler) only if job runtime threatens request latency. |
 
 ---
 
 ## 3. System architecture
 
-```
-┌──────────────┐        HTTPS/JSON         ┌──────────────────┐
-│ React client │ ─────────────────────────▶ │  Auth service     │  issues/refreshes JWT
-│ (Vite build, │                            │  (FastAPI)        │
-│ static host) │        HTTPS/JSON          └────────┬─────────┘
-│              │ ─────────────────────────▶ ┌────────▼─────────┐
-└──────────────┘   Bearer JWT on requests   │  Game API service │  all game logic
-                                            │  (FastAPI)        │
-                                            └────────┬─────────┘
-                                            ┌────────▼─────────┐
-                                            │  SQL database     │  SQLite → PostgreSQL
-                                            └──────────────────┘
-                                            ┌──────────────────┐
-                                            │  Content files    │  JSON, versioned in repo,
-                                            │  (read at boot)   │  loaded/validated at startup
-                                            └──────────────────┘
-```
-
-- The auth service and game API share a users table (or the game API trusts JWT claims only and keeps its own `player` table keyed by the auth `user_id` claim — **chosen approach**, keeps the services decoupled).
-- No per-player background workers. One small scheduled job handles market listing expiry (§8.3).
-
-### 3.1 Repository layout (monorepo)
-
-```
-/                     
-├── services/
-│   ├── auth/            # FastAPI auth service
-│   └── game/            # FastAPI game API
-│       ├── app/
-│       │   ├── api/         # routers (thin: parse, call engine, serialize)
-│       │   ├── engine/      # pure game logic (no FastAPI, no SQLAlchemy imports)
-│       │   ├── models/      # SQLAlchemy models
-│       │   ├── content/     # content loader + Pydantic schemas for content files
-│       │   └── db.py
-│       └── tests/
-├── content/             # JSON content packs (skills, actions, items, realms)
-├── client/              # React app
-│   └── src/
-│       ├── api/         # generated/typed API client + TanStack Query hooks
-│       ├── features/    # one folder per menu section (profile, market, estate, skills, combat)
-│       └── components/  # shared UI (menu, timers, item icons, panels)
-├── docker-compose.yml   # auth + game + client dev stack
-└── docs/
-```
-
-**Engine purity rule:** `engine/` contains pure functions `(state, content, now) → (new_state, results)`. All randomness goes through an injected RNG. This makes the core loop unit-testable without a database and is the part a coding agent should build test-first.
+Unchanged from v0.3 (client → auth service + game API → SQL DB; content files read at boot; no per-player background workers). Repository layout unchanged. The engine purity rule stands: `engine/` is pure functions `(state, content, now) → (new_state, results)` with injected RNG.
 
 ---
 
 ## 4. Core gameplay loop (server-authoritative skilling)
 
-### 4.1 Concepts
+Unchanged from v0.3 as implemented in Phase 3, including the ratified refinements (log #1–9): segmented level-up resolution, offline cap ends the action after granting only in-budget cycles, backwards-clock no-op, at-most-once reward feed, overflow precedence. The per-cycle reward step remains a `CycleRewardStrategy` so Phase 6 combat swaps in a resolver without framework changes.
 
-- **Action:** a content-defined activity within a skill (e.g., "chop oak"). Defined by: skill, level requirement, input items (optional), cycle duration (ms), XP reward, drop table (item rewards + probabilities).
-- **Active action:** at most **one** per character across all skills and combat (per the design requirement). Stored as a row: `(character_id, action_id, started_at, last_resolved_at)`.
-- **Cycle:** one duration-length repetition of the action. Actions repeat automatically until stopped, inputs run out, or an offline cap is hit.
-
-### 4.2 Lazy resolution algorithm
-
-The server never runs timers. Instead, **any** authenticated request that reads or mutates character state first calls `resolve(character, now)`:
-
-```
-elapsed        = now - last_resolved_at
-cycle_ms       = effective_cycle_time(action, character, realm_modifiers)
-n_full_cycles  = floor(elapsed / cycle_ms)
-n_full_cycles  = min(n_full_cycles, cycles_until_inputs_exhausted,
-                     OFFLINE_CAP_CYCLES_remaining)
-apply: consume inputs × n, grant XP × n, roll drop table × n (seeded RNG),
-       handle level-ups, append a reward summary record
-last_resolved_at += n_full_cycles * cycle_ms   # keep partial-cycle remainder
-```
-
-Properties worth noting for implementation:
-
-- Resolution is **idempotent and transactional** — one DB transaction per resolve; concurrent requests for the same character serialize on the active-action row (`SELECT ... FOR UPDATE` in Postgres; SQLite's writer lock covers it initially).
-- `effective_cycle_time` is where **realm/estate modifiers** plug in (§7). Modifiers are resolved at cycle time, not stored on the action.
-- The offline cap starts at **12 hours** of cycles and is a per-character *cap* (§7.1) upgradeable via estate upgrades or future premium features — the engine reads it from the character's resolved cap set, never from a constant.
-- Reaching the offline cap ends the active action after granting only the full
-  cycles inside that budget. This prevents repeated polls from draining an
-  arbitrarily long absence in cap-sized batches. If no full cycle fits inside
-  the offline budget, the action remains pending without progress.
-- Level-ups mid-batch that change requirements/speeds are handled by **segmented
-  resolution**: resolve until the level-up boundary, recompute effective values,
-  continue. This is the implemented and settled approach (log #11); effective
-  values are cached per segment. The earlier "snapshot at action start"
-  simplification is retired.
-- A backwards server-clock correction observed during resolve (`now` earlier
-  than `last_resolved_at`) is a **no-op**, not an error (log #12): the resolve
-  grants zero cycles and leaves all state untouched.
-
-### 4.3 Client/server flow
-
-Matches the draft's flow, generalized to repeated cycles:
-
-1. Client `POST /characters/me/action` `{action_id}` → server validates (level, inputs, realm availability), stops any current action (resolving it first), starts the new one, and returns `{action, cycle_ms, started_at}`.
-2. Client runs a **cosmetic** progress bar from `cycle_ms` and polls `GET /characters/me/action` on each cycle boundary (or every few seconds). The response includes rewards accrued since the last poll — this *is* the "request rewards" step from the draft, and it also transparently covers reconnects and offline gains.
-3. Client `DELETE /characters/me/action` to stop (server resolves first, then clears).
-
-If the client's clock drifts or it misses polls, nothing is lost or gained — the server's timestamps are the only truth.
+`effective_cycle_time` / `effective_xp` / `effective_drops` now resolve modifier and cap sources from: the realm's **current development node**, the character's **estate form**, and installed **non-inert estate upgrades** (v0.5, shipped in 4.1). Arithmetic unchanged (additive within type; `extra_drop_chance_pct` multiplies base chance by `1 + total/100`, clamped [0,1]; cycle time and XP truncate after applying the summed percentage).
 
 ---
 
 ## 5. API design (Game service)
 
-All routes require `Authorization: Bearer <JWT>` **except `/healthz` and the `/content/*` endpoints** (§5.1). Errors use a uniform envelope `{error: {code, message}}` with stable machine-readable codes (`INSUFFICIENT_LEVEL`, `MISSING_INPUTS`, `LISTING_NOT_FOUND`, ...).
+Errors use the uniform envelope `{error: {code, message}}` with stable machine-readable codes.
 
 ### 5.1 Meta / content
-- `GET /content/manifest` — content pack version + hashes (client caches content by version)
-- `GET /content/{pack}` — skills, actions, items, realms. **Drop rates are exposed to the client** as a design choice (players can see general probabilities); the server still rolls all drops itself.
-- **Content endpoints are unauthenticated** (log #8) so the client cache can populate before login. Content is public data by design; nothing per-player is served here.
-- The **XP curve** is part of the content version hash (changing it changes the manifest version) but is **not exposed as a public pack** — the served packs are limited to `skills`, `items`, `realms`, `upgrades`, `caps` (log #8). The client receives xp-to-next figures from the profile endpoint instead.
+- `GET /content/manifest` — content version + per-pack hashes; strong ETags, `If-None-Match` → 304.
+- `GET /content/{pack}` — **nine served packs** (ratifies log-#18 supersession of the original five): `skills`, `items`, `realms`, `upgrades`, `caps`, `map`, `estate_forms`, `development`, `projects`. Content endpoints are unauthenticated (log #5). Drop rates exposed (log #3). The XP curve affects the version hash but is not a public pack (log #5).
+- `GET /map` — unauthenticated map/graph view (v0.5); realm treasuries are never exposed.
 
 ### 5.2 Character & profile
-- `POST /characters` — create character (name, starting realm)
-- `GET /characters/me` — full profile: stats, skill levels/XP, realm, estate
-  summary. **Triggers resolve and may persist derived-state repairs**, such as
-  adding rows for newly introduced content skills or correcting cached skill
-  levels from the XP curve.
+- `POST /characters` — create character (name, starting realm). New characters' estates start as `form.camp` (v0.5).
+- `GET /characters/me` — full profile including **resolved caps as `{base, effective}`** (v0.5). Triggers resolve; may persist derived-state repairs.
 - `GET /characters/me/inventory`
+- `GET /characters/me/relocate/preview` — non-mutating relocation cost preview (v0.5).
+- `POST /characters/me/relocate` — cost = `path_cost(origin, destination) × estate form's relocation_cost`; charged up-front; instant and delayed paths; stops the active action with final rewards; second relocation while pending → `ESTATE_BUSY` (log #22).
 
 ### 5.3 Skilling & combat
-- `GET /characters/me/actions/available` — actions the character can currently start, grouped by skill (populates the left menu; server decides availability)
-- `POST /characters/me/action` — start action (skilling or combat encounter alike)
-- `GET /characters/me/action` — current action + accrued rewards since last poll. **Triggers resolve.**
-- `DELETE /characters/me/action` — stop
+Unchanged (available / start / poll / stop, all resolving lazily; combat group empty until Phase 6).
 
-Combat v1 is implemented as the same cycle machinery: an encounter is an action whose per-cycle resolution runs a deterministic combat round (player stats vs. monster stats from content) and whose drop table is the monster's loot. Richer combat (HP persistence, food, death penalties) is a later phase but must not require changing the action framework — it extends the per-cycle resolver (the engine's `CycleRewardStrategy` seam exists for exactly this).
+### 5.4 Global player market — **order book (supersedes the v0.3 listings design)**
 
-### 5.4 Player market
-- `GET /market/listings?item=&sort=&page=` 
-- `POST /market/listings` — create sell listing `{item_id, quantity, unit_price}` (escrows items)
-- `DELETE /market/listings/{id}` — cancel (returns escrow)
-- `POST /market/listings/{id}/buy` — `{quantity}` partial or full purchase (escrowed currency transfer, single transaction)
-- `GET /market/history/me` — my sales/purchases
+One global order book per good. Goods and gold move instantly on match; there is no per-realm player-market price fragmentation. Both sides post orders.
 
-### 5.5 Realm market (NPC vendor per realm)
-- `GET /realms/{id}/market` — realm's buy/sell offers (content-defined, realm-modified prices)
-- `POST /realms/{id}/market/trade` — `{offer_id, quantity, side}`
+**Model.**
+- **Buy order** `{item_id, quantity, unit_price}` — full gold cost escrowed at creation.
+- **Sell order** `{item_id, quantity, unit_price}` — goods escrowed at creation.
+- **Order slots.** Every order occupies a slot with lifecycle **create → fill/cancel → collect → free**. The slot holds outgoing escrow, accumulates incoming fills (goods for buys; gold net of tax for sells), and receives cancellation remainders. Nothing enters inventory or wallet except through **collection**; a filled-but-uncollected order still occupies its slot. Consequences the engine relies on: inventory caps gate *collection*, never fills (the drop-overflow discard rule **never** applies to purchased goods); partial fills accumulate in the slot with no ceremony; if located storage ever exists, collection is the single attachment point for a location rule.
+- **Matching is continuous** with price-time priority: a new order sweeps crossing resting orders best-price-first, oldest-first within a price, trading **at the maker's price**; any remainder rests at the taker's price. Implemented as one transaction per insert with row locks on swept orders. No clearing windows.
+- **Tax:** flat, content-defined, global rate taken from the **seller's** proceeds per match, at match time, credited to `realm_state.treasury` of the realm where the seller's order was placed (the seller's physical realm at order creation). This is the treasury's first writer, as reserved in Phase 4.
+- **Slot cap:** the former `market_listings` cap generalizes to **`order_slots`**, covering both sides (rename in caps content + resolution; same cap machinery).
+- **Access gate:** all global-market endpoints require the character's current realm to carry the **market-access tag** (granted/lost via development nodes per §7.3). Error code `NO_MARKET_ACCESS`. *Prerequisite:* tag emission engine work (§13.1).
+
+**Endpoints.**
+- `GET /market/book/{item_id}?depth=` — aggregated book view (price levels + quantities, both sides)
+- `GET /market/orders/me` — my slots with statuses and pending fills
+- `POST /market/orders` — `{side, item_id, quantity, unit_price}` → escrow, match, rest remainder; response reports immediate fills
+- `POST /market/orders/{id}/cancel` — remainder moves to the slot's collectable state
+- `POST /market/orders/{id}/collect` — move fills/refunds to inventory/wallet (gated by inventory caps), free the slot when emptied
+- `GET /market/history/me`
+
+**Expiry:** orders expire (default duration from content); expiry transitions the order to `collectable` — remaining escrow joins any fills awaiting collection, and the slot stays occupied until collected. Processed by the scheduled job (§8.3), which also purges `closed` orders past a retention window (`market_matches` is the durable history).
+
+**Conservation invariant (property-tested):** every unit of gold and goods is at all times in exactly one of — inventory/wallet, slot escrow, slot fills, or realm treasury (tax). Concurrency tests must cover two takers racing for the same maker.
+
+### 5.5 Realm market — **stores, reference prices, treasury-bounded bids (supersedes static `market_offers`)**
+
+Each realm's market is a *place* (presence-gated, §7.6) with two faces:
+
+- **It buys** what its upkeep quotas and active projects demand; purchased goods are consumed (the economy's primary sink).
+- **It sells** goods its identity produces **out of its stores** — never minted. Self-limiting by store level.
+
+**Pricing, three layers:**
+1. **Reference prices** — content property per good (per-tier defaults with per-good overrides), validated at boot. Fixed in v1; solves cold start and anchors solvency accounting later.
+2. **Bid curve** — bid = f(reference price, store level): near-floor at full stores, climbing as stores drain. (Ask-side equivalent for realm sales must stay above the realm's own bid — no in-place spread milking.) Exact curve: content/balance, small engine surface.
+3. **Treasury** — hard budget constraint. A realm bids only with gold its economy earned (tax, later escheat). No minting; unfunded demand is visible as starving stores at attractive nominal prices.
+
+**Stores:** per-good inventory levels on realm state. Phase 5 builds the **read side** (stores exist, seeded by content/cold-start; bids computed from them); decay/upkeep consumption and estate-production crediting land in Phase 5.5.
+
+**Endpoints.**
+- `GET /realms/{id}/market` — store levels, current bids/asks (the signal layer; visibility scope per market-vision §7.7 — v1 leans full visibility)
+- `POST /realms/{id}/market/trade` — `{item_id, quantity, side}`; **presence-gated**: interim rule until visiting exists is *current realm = home realm* (residents only). Invariant recorded: **no remote realm-market trading, ever.**
+
+The v0.5 `realms.market_offers` content field is repurposed/replaced by reference prices + identity-produced goods lists; the Phase 5 prompts must confirm and migrate its shape (carried from the Phase 4 report's recommendation).
 
 ### 5.6 Estate & realm
-- `GET /estates/me` — the character's home estate (form, level, slots, upgrades, status)
-- `POST /estates/me/upgrades/{upgrade_id}` — spend resources on an estate upgrade
-- `POST /estates/me/transform` — `{form_id}` transform the estate along a content-defined form edge (§7.3), charging its cost
-- `GET /realms` / `GET /realms/{id}` — realm list/details: current development node identity (tags, modifiers, cap bonuses), any pending transition (§7.4), active projects with contribution progress, and outgoing-edge progress
-- `GET /map` — the realm graph: nodes (realms, with presentation coordinates) and edges (typed costs), from content
-- `POST /realms/{id}/projects/{project_id}/contribute` — `{item_id, quantity}` contribute toward a project; project completion awards development-edge progress (§7.4)
-- `POST /characters/me/relocate` — `{realm_id}` move the home estate: cost and duration derived from the map path and the estate form's relocation class (§7.2, §7.3); re-evaluates inert upgrades on arrival
+As shipped in v0.5:
+- `GET /estates/me`; `POST /estates/me/upgrades/{upgrade_id}` (`UNKNOWN_UPGRADE` / `NO_FREE_SLOT` / `ALREADY_INSTALLED` / `MISSING_INPUTS`; last-slot row-lock); `POST /estates/me/transform` (`INVALID_TRANSFORMATION` / `MISSING_INPUTS` / `ESTATE_BUSY` / `WOULD_ORPHAN_UPGRADES`).
+- `GET /realms`, `GET /realms/{id}`; `POST /realms/{id}/contribute` — clamped contributions, item conservation, single-effect completion under races; `REALM_TRANSITIONING` when the node is departing (log #21); contributions are **not residence-restricted** (log #23).
+- Edge awards serialized; regression/non-outgoing edges rejected; no awards during a pending transition (`INVALID_EDGE_AWARD`, log #21). Lazy idempotent `finalize_realm` wired into character resolve.
 
-Ownership transfer and escheat endpoints for estates are deliberately absent in v1 (§10); the schema supports them (§6.2, §7.5).
-
-### 5.7 Auth service (separate base URL)
-- `POST /auth/register`, `POST /auth/login` → sets refresh cookie, returns access JWT
-- `POST /auth/refresh`, `POST /auth/logout`
-- JWKS or shared-secret endpoint for the game API to verify tokens (**decision: RS256 + JWKS**, so the game API never holds the signing key)
-- **Refresh-token family = all of a user's refresh tokens** (log #9). The schema carries no family-id column; detected reuse of a revoked refresh token revokes every refresh token for that user. A future per-device session feature would require adding a family/device column — record that as a migration cost if it comes up.
+### 5.7 Auth service
+Unchanged (RS256 + JWKS, rotating refresh tokens, family revocation = all of a user's tokens, log #6).
 
 ---
 
 ## 6. Data model
 
-### 6.1 Auth DB (auth service owns)
-- `users(id, email, password_hash, created_at, status)`
-- `refresh_tokens(id, user_id, token_hash, expires_at, revoked_at)`
+### 6.1 Auth DB — unchanged.
 
-### 6.2 Game DB (game service owns)
+### 6.2 Game DB (reflects v0.5 as shipped + Phase 5 shapes)
 
 ```
-players            (id, auth_user_id UNIQUE, created_at)
-characters         (id, player_id UNIQUE, name, name_normalized UNIQUE,
-                    realm_id,             -- cache of home estate's realm (§7.5)
-                    home_estate_id,       -- residence-defining estate (§7.5)
-                    created_at)
-character_skills   (character_id, skill_id, xp, level)          -- level derived but cached
-active_actions     (character_id PK, action_id, started_at, last_resolved_at, meta JSON)
-inventories        (character_id, item_id, quantity)            -- PK (character_id, item_id)
-currency           (character_id PK, gold, premium)               -- premium column exists from day one, unused in v1
-reward_log         (id, character_id, action_id, cycles, xp JSON, items JSON,
-                    details JSON, resolved_at, claimed_at NULL)
-market_listings    (id, seller_character_id, item_id, quantity_remaining,
-                    unit_price, created_at, expires_at, status)
-market_trades      (id, listing_id, buyer_character_id, quantity, unit_price, traded_at)
+players             (id, auth_user_id UNIQUE, created_at)
+characters          (id, player_id UNIQUE, name, name_normalized UNIQUE,
+                     realm_id, home_estate_id, created_at)
+character_skills    (character_id, skill_id, xp, level)
+active_actions      (character_id PK, action_id, started_at, last_resolved_at, meta JSON)
+inventories         (character_id, item_id, quantity)
+currency            (character_id PK, gold, premium)          -- premium still dormant
+reward_log          (id, character_id, action_id, cycles, xp JSON, items JSON,
+                     details JSON, resolved_at, claimed_at NULL)
 
-estates            (id PK, owner_character_id NULL,   -- NULL = unowned (escheated/derelict, later phases)
-                    realm_id, form_id,                -- form from estate_forms content (§7.3)
-                    level, upgrade_slots, status,     -- v1 status: 'active' only; enum grows with decay
-                    data JSON)
-                    -- one-active-estate-per-character in v1 via application logic +
-                    -- partial unique index on owner_character_id where status='active';
-                    -- multiple holdings later is a rules migration, not a schema one (§7.5)
-estate_upgrades    (estate_id, slot_index, upgrade_id, purchased_at)
-                    -- UNIQUE(estate_id, slot_index); slots per §7.1 caps
-estate_ownership_history (id, estate_id, character_id, acquired_at, relinquished_at NULL)
-                    -- written on creation and on every future transfer/escheat (§7.5)
+-- Estates (v0.5): ownership decoupled from identity; transfer/escheat-ready
+estates             (id PK, owner_character_id NULL-able-by-design, realm_id,
+                     form_id, level, upgrade_slots, status,
+                     relocating_to_realm_id NULL, relocation_completes_at NULL,
+                     data JSON)                                 -- log #19
+estate_upgrades     (estate_id, slot_index, upgrade_id, purchased_at)
+estate_ownership_history (estate_id, character_id, from_at, to_at NULL)
 
-realm_state        (realm_id PK, node_id,             -- current development-graph node (§7.4)
-                    transition_to_node_id NULL, transition_completes_at NULL,  -- transitory phase (§7.4)
-                    treasury,                          -- gold; filled by market tax from Phase 5
-                    data JSON)
-realm_edge_progress(realm_id, edge_id, progress, updated_at)   -- PK (realm_id, edge_id) (§7.4)
-realm_projects     (realm_id, project_id, contribution_totals JSON, status,
-                    completed_at NULL)                 -- PK (realm_id, project_id) (§7.4)
-realm_contributions(id, realm_id, project_id, character_id, item_id, quantity, contributed_at)
+-- Realms as development-graph state (v0.5)
+realm_state         (realm_id PK, current_node_id, treasury,
+                     pending_transition JSON NULL, ...)
+realm_edges         (realm_id, edge_id, progress JSON, status)
+realm_projects      (realm_id, project_id, contribution_totals JSON, status)
+realm_contributions (id, realm_id, character_id, item_id, quantity, contributed_at)
+realm_stores        (realm_id, item_id, quantity)               -- Phase 5 (read side)
+
+-- Global player market (Phase 5; REPLACES market_listings/market_trades)
+market_orders       (id, character_id, side, item_id, unit_price,
+                     quantity,               -- original listed quantity (immutable)
+                     quantity_remaining,     -- unfilled units still on the book (side-neutral)
+                     escrow_gold_remaining,  -- buy orders: gold still escrowed for unfilled qty
+                     fill_items,             -- buy orders: goods received, awaiting collection
+                     fill_gold,              -- sell orders: net-of-tax proceeds, awaiting collection
+                     status,                 -- open | collectable | closed (see lifecycle below)
+                     realm_id, created_at, expires_at, closed_at NULL)
+                     -- partial index on status='open' (item_id, side, unit_price, created_at)
+                     -- for the matcher; closed rows are purge candidates
+market_matches      (id, maker_order_id, taker_order_id,
+                     buyer_character_id, seller_character_id,   -- denormalized so history
+                     item_id, quantity, unit_price, tax_gold,   -- survives order purging
+                     matched_at)
 ```
 
-- Static definitions (skills, actions, items, realms, upgrades, XP curve) live in **content files**, referenced by string IDs. The DB stores only per-player/per-world *state*.
-- v1: **one character per player**, enforced by both application logic and a
-  unique constraint on `characters.player_id` so concurrent creation requests
-  cannot create multiple characters. Supporting multiple characters later
-  requires removing that constraint in a migration.
-- `characters.name_normalized` stores the trimmed, case-folded name used for
-  database-enforced global case-insensitive uniqueness. `characters.name`
-  retains the canonical display spelling.
+**Order lifecycle and slots.** The order row *is* the slot — there is no separate
+slots table. `status` walks: **open** (resting/matching on the book) →
+**collectable** (fully filled, cancelled, or expired: off the book, slot still
+held by uncollected fills/refunds) → **closed** (collected; `closed_at` set; slot
+freed). Slot enforcement: `COUNT(orders WHERE character_id AND status != 'closed')
+< order_slots (effective)`, checked under the insert's transaction. A partially
+filled open order is both on the book *and* holding collectable fills; early
+collection of accumulated fills is allowed without closing the order. The
+scheduled job (§8.3) purges `closed` rows past a retention window;
+`market_matches` is the durable trade history (hence the denormalized character
+ids). An explicit slots table is only warranted if slots ever become individually
+upgradeable/named — count-based is the v1 rule.
 
-### 6.3 Content file schema (validated at boot with Pydantic)
+Dormant-by-design structures (built in v0.5, first readers scheduled): `realm_state.treasury` → Phase 5 tax; estate-form `upkeep_profile` / `production_profile` → Phase 5.5; regression edges → Phase 5.5 upkeep gauge; `currency.premium`; estate transfer/escheat endpoints (schema ready via nullable ownership + history).
 
-```jsonc
-// content/skills/gathering.json (illustrative shape only — real content deferred)
-{ "id": "gathering", "display_name": "Gathering",
-  "actions": [
-    { "id": "gathering.placeholder_1", "name": "Placeholder Node",
-      "level_required": 1, "cycle_ms": 3000,
-      "inputs": [], "xp": 10,
-      "drops": [ {"item_id": "item.placeholder_ore", "qty": [1,1], "chance": 1.0} ],
-      "realm_tags": ["*"] } ] }
-```
+**Verify before Phase 5 content:** NPC estates (cold-start seeding, §13.5) should be representable as estates with a null/system owner — the v0.5 ownership schema is believed to tolerate this; confirm with a fixture test.
 
-v0.5 adds four content shapes (illustrative; full Pydantic schemas defined in Phase 4):
+### 6.3 Content file schema
+As shipped (nine packs, strict frozen Pydantic, referential integrity, canonical hashing). Phase 5 additions: per-good **`reference_price`** (per-tier defaults + overrides), the global **tax rate**, order default duration, and the `order_slots` cap rename. §13 items (item `tier`, tag emission from sources) extend this further when scheduled.
 
-```jsonc
-// content/map.json — realm graph (§7.2). Undirected edges, typed cost bag.
-{ "edges": [
-    { "realms": ["realm.verdant_vale", "realm.ashen_reach"],
-      "cost": { "gold": 0, "items": [], "time_ms": 0 } } ],   // placeholder values
-  "positions": { "realm.verdant_vale": {"x": 120, "y": 340} } // presentation only
-}
-
-// content/estate_forms.json — estate types (§7.3)
-{ "forms": [
-    { "id": "form.camp", "name": "Camp",
-      "specialty_tags": [], "relocation_class": "light",
-      "base_caps": { "estate_upgrade_slots": 2 },
-      "modifiers": [], "upkeep_profile": [], "production_profile": [] },
-    { "id": "form.homestead", "name": "Homestead",
-      "specialty_tags": ["farming"], "relocation_class": "heavy",
-      "base_caps": { "estate_upgrade_slots": 4 },
-      "modifiers": [ {"type": "xp_pct", "value": 5} ],
-      "upkeep_profile": [], "production_profile": [] },
-    { "id": "form.orchard", "name": "Orchard",
-      "specialty_tags": ["farming"], "relocation_class": "heavy",
-      "base_caps": { "estate_upgrade_slots": 5 },
-      "modifiers": [ {"type": "xp_pct", "value": 5} ],
-      "upkeep_profile": [],
-      "production_profile": [ {"item_id": "item.fake_sprigs", "per_day": 10} ] } ],
-      // production_profile is schema-exercised but mechanically dormant until Phase 5.5
-  "transformations": [
-    { "from": "form.camp", "to": "form.homestead", "cost": [ {"item_id": "...", "qty": 1} ] },
-    { "from": "form.homestead", "to": "form.orchard", "cost": [ {"item_id": "...", "qty": 1} ] } ],
-  "relocation_classes": { "light": { "cost_multiplier": 1, "time_multiplier": 1 },
-                          "heavy": { "cost_multiplier": 10, "time_multiplier": 10 } }
-}
-
-// content/development.json — realm development graph (§7.4)
-{ "nodes": [
-    { "id": "node.vale_t1", "archetype": "agrarian", "name": "Verdant Vale",
-      "tags": ["farm", "*"], "modifiers": [ {"type": "xp_pct", "value": 10} ],
-      "cap_bonuses": [], "upkeep_profile": [],        // upkeep dormant until Phase 5.5
-      "projects": ["project.vale_granary"] } ],       // projects available at this node
-  "edges": [
-    { "id": "edge.vale_t1_t2", "from": "node.vale_t1", "to": "node.vale_t2",
-      "progress_target": 100, "kind": "development",
-      "transition_ms": 86400000 },                     // transitory phase length (§7.4)
-    { "id": "edge.vale_regress", "from": "node.vale_t1", "to": "node.vale_t0",
-      "progress_target": 100, "kind": "regression" } ] // gauge; traversal deferred (§10)
-}
-
-// content/projects.json — the award system (§7.4)
-{ "projects": [
-    { "id": "project.vale_granary", "name": "Placeholder Granary",
-      "targets": [ {"item_id": "item.fake_sprigs", "qty": 500} ],
-      "awards": [ {"edge_id": "edge.vale_t1_t2", "progress": 100} ] } ]
-}
-```
-
-The engine ships with a **placeholder content pack** sufficient to exercise every mechanic (one action per skill, a handful of items, two realms with a minimal development graph, three estate forms with a transformation chain, one project per realm). Real content replaces this pack later without code changes.
-
-### 6.4 SQLite → PostgreSQL rules
-- All schema through Alembic; no raw dialect-specific SQL.
-- No SQLite-only types; store JSON as `JSON` column type (maps to JSONB in PG).
-- Money/quantities as integers (no floats, no NUMERIC surprises).
-- All timestamps UTC, stored as timezone-aware.
-- CI runs the test suite against both engines from day one. *(Status: PostgreSQL 16 matrix is live as of Phase 3.)*
+### 6.4 SQLite → PostgreSQL rules — unchanged; both-DB CI matrix is live.
 
 ---
 
 ## 7. Realms, estates, and modifiers
 
-Mechanically, realms and estates are **modifier sources** plus **availability filters**:
+### 7.1 Sources and resolution (as shipped, v0.5)
+Modifiers, caps, and availability resolve per character from: the realm's **current development node**, the **estate form**, and installed **non-inert upgrades**. Additive within type; inert status derived per-resolve, never persisted. Caps API exposes `{base, effective}`.
 
-- **Availability:** each action lists `realm_tags`; a character can start an action only if their realm carries a matching tag. A realm's tags come from its **current development node** (§7.4). This is how "different realms provide different resources" works — pure data.
-- **Modifiers:** a small, closed set of modifier types the engine understands: `cycle_time_pct`, `xp_pct`, `extra_drop_chance_pct`, `market_tax_pct`. Realm development nodes, estate forms, and estate upgrades each emit modifiers; the engine sums/stacks them per a single documented stacking rule (additive within type). Development nodes and estate upgrades may also declare `cap_bonuses` (§7.1). Adding new *sources* of modifiers is content; adding new *types* is an engine change.
-- **Modifier arithmetic** (log #10): within each type, values from all active sources are summed. `cycle_time_pct` and `xp_pct` apply the summed percentage to the base value and **truncate to integer**. `extra_drop_chance_pct` **multiplies each drop's base chance by `1 + total/100`, clamped to [0, 1]**.
-- **Realm progression** runs through the development graph and its project award system (§7.4), replacing the earlier flat-tier model.
-- **Relocation:** allowed; cost and duration derive from the map path and the estate form (§7.2, §7.3). **Estates are persistent**: form, level, slots, and installed upgrades survive relocation. Realm-specific upgrade availability may make some installed upgrades inert in the new realm — inert, not lost.
+### 7.2 Caps
+`offline_hours`, `inventory_slots`, **`order_slots`** (renamed from `market_listings`, now covering both order sides), `estate_upgrade_slots`. Enforcement points unchanged, plus: order creation (slot cap) and order **collection** (inventory caps). A future estates-count cap remains anticipated (multiple estates, §10).
 
-### 7.1 Caps (upgradeable limits)
+### 7.3 Development graph
+Realm identity (tags, modifiers, cap bonuses — log #7) is a function of the realm's current node in the content-defined graph. Transitions (morphing) advance via project completion and edge awards; **regression edges exist in content but remain dormant until the Phase 5.5 upkeep gauge drives them.** The **market-access tag** is granted by early-tier nodes and lost on regression past them — this is the frontier/decay mechanism for global-market access (§5.4). Depends on §13.1 tag emission.
 
-Alongside modifiers, the engine understands a closed set of **cap types**, resolved per character the same way modifiers are (base value + bonuses from estate forms, estate upgrades, the realm's development node, and future premium sources):
+### 7.4 Estate forms and transformation
+Forms are content-defined types determining base caps, bonus profiles, relocation cost class, and (dormant) upkeep/production profiles. Transformation rules as ratified: `WOULD_ORPHAN_UPGRADES` blocks a transform whose destination capacity (excluding installed-upgrade bonuses) can't hold installed upgrades (log #20); camp = 4 slots (global 2 + form 2).
 
-| Cap | v1 base | Notes |
-|---|---|---|
-| `offline_hours` | 12 | Max offline cycles resolved per return |
-| `inventory_slots` | content-defined | Distinct item stacks in inventory |
-| `market_listings` | content-defined | Concurrent active listings |
-| `estate_upgrade_slots` | content-defined | Upgrade slots per estate |
+### 7.5 Relocation
+Cost = path over the map graph (`path_cost`, tie-break gold then time) × the form's `relocation_cost`. Charged up-front; instant and delayed variants; the estate retains **origin identity during relocation** and a second relocation is blocked (`ESTATE_BUSY`) until completion (log #22). Estates are persistent; upgrades may go inert in the destination, never lost.
 
-Enforcement points: resolve loop (offline), inventory grants (drops that would exceed slots follow a single documented rule — v1: overflow items are dropped with a logged notice; revisit later), listing creation, and upgrade purchase. Adding new cap *sources* is content; new cap *types* is an engine change — same rule as modifiers. A future "multiple estates" feature would add an `estates` count cap; the schema already supports it (§6.2).
+### 7.6 Presence (interim)
+Until the visiting design exists, a character's *current* realm equals their *home* realm. Everything presence-gated (realm-market trades §5.5; the seller-realm attribution for tax §5.4) uses this rule and must be written against a `current_realm(character)` helper so visiting swaps in without a sweep.
 
-**Overflow precedence** (log #10): when a single cycle both overflows the inventory and exhausts inputs, `inventory_full` takes precedence over `inputs_exhausted` as the reported stop reason. Per-item `stack_limit` enforcement uses the same discard-and-log rule as distinct-slot overflow.
-
-**API exposure:** resolved caps (base + all bonuses) must be exposed to the client via the profile (or inventory) response — the client must never display base values from the content pack as if they were the character's effective caps. *(Known gap after Phase 3; first Phase 4 deliverable.)*
-
-### 7.2 Map topology (log #13)
-
-Realms are nodes in a single **undirected graph defined in content** (`content/map.json`, §6.3). Each edge carries a typed cost bag `{gold, items, time_ms}`; the schema holds all three cost kinds so content and balance decide their mix later without engine changes. `time_ms` is expected to matter most for relocation (moving a heavy estate takes real time; a wagon moves in minutes — the mobility axis expressed directly in data).
-
-- **Path cost** between non-adjacent realms is the cheapest path over the graph (engine function; graph is small, any standard algorithm).
-- **Consumers of path cost:** relocation cost/duration = f(path cost, estate form's `relocation_class`) (§7.3); goods transport cost for inter-realm balancing (Phase 5.5) = f(path cost).
-- **Presentation coordinates** (`positions`) exist purely for rendering the map; no game math ever reads them.
-- Rationale for graph-over-coordinates: terrain, chokepoints, and sea routes are just edge weights; and it is less content to author than a spatially consistent 2D layout.
-
-### 7.3 Estate forms (log #14)
-
-Estates have a **form** from the `estate_forms` content pack (§6.3). A form defines: `specialty_tags`, base cap contributions, a base modifier profile, a `relocation_class` (feeding the relocation cost/duration function, §7.2), and `upkeep_profile`/`production_profile` fields that are **schema-present but mechanically dormant** until Phase 5.5. The placeholder pack ships camp → homestead → orchard, with the orchard carrying a real `production_profile` entry (a tier-1 placeholder item) so the schema is exercised, not merely reserved.
-
-- **Transformation** between forms is a content-defined edge with a cost (`transformations`); executing one charges the cost and updates `estates.form_id` — no additional schema. This answers "transform vs. rebuild" with *both, content decides which edges exist*.
-- Estate `level` remains within-form progression; `upgrade_slots` derive from form base caps plus upgrades per §7.1.
-- Inert-upgrade evaluation (§7) extends naturally: an upgrade may be inert due to realm tags *or* (future content) form mismatch.
-
-### 7.4 Realm development graph (log #15)
-
-Realm identity is a **node in a content-defined development graph** (`content/development.json`, §6.3). Each node fully defines the realm's identity — tags, modifiers, cap bonuses, upkeep composition (dormant until Phase 5.5), and the set of projects available there. There is **no separate tier mechanic**: a "tier-up" is simply an edge to a richer node of the same archetype; a "morph" is an edge to a different archetype. One mechanism; identity resolution reads the current node, done.
-
-- **Progress lives on edges.** `realm_edge_progress(realm_id, edge_id, progress)` accumulates toward each edge's content-defined `progress_target`. The graph is global content; progress is per-realm, so two forest realms industrialize independently.
-- **The award interface is the only way development edges fill.** `award_edge_progress(realm_id, edge_id, amount, source)` — in v1, called exclusively by **project completion** (a project's content declares which edges it awards and how much). Quests, achievements, or activity-driven awards plug into the same interface later. There is no direct "contribute to an edge"; contributions go to projects, keeping a narrative layer (you built *the granary*, which advanced the realm) and making project *choice* the community's steering wheel.
-- **Exception — regression edges** (`kind: "regression"`) are a pressure gauge, not an award target: failed upkeep ticks add progress, successful ones remove it. Since upkeep does not exist until Phase 5.5, regression edges are pure schema in v1 (§10).
-- **Transitions have a transitory phase.** When an edge's target is reached, the realm does not flip instantly: `realm_state` records `(transition_to_node_id, transition_completes_at)` per the edge's `transition_ms`, and during the window the realm keeps its **old** identity with the pending change visible to all (destination + completion time). Realm changes are real impacts — the window gives players time to react and adapt. v1 transitions are announced and inevitable; cancellation/opposition mechanics are a possible later feature. Completion is finalized lazily on realm-state read (consistent with pillar 3) — any read where `transition_completes_at <= now` commits the node change first.
-- **On transition:** the realm's node changes and **progress on all other outgoing edges of the departed node resets** (log #15) — abandoned paths are abandoned; the community's choice is real. Project state for projects not offered at the new node closes out (v1: mark closed; contributed goods are already sunk).
-- `realm_state` accordingly slims to `(realm_id, node_id, transition fields, treasury, data)`; project contribution tracking lives in `realm_projects` (§6.2). The `treasury` column lands now, unfilled until Phase 5's market tax routing — one column today versus a migration-plus-backfill later.
-
-### 7.5 Estate ownership (log #16)
-
-- `estates.owner_character_id` is **nullable** — `NULL` means unowned (escheated to the realm or derelict; states used by later phases). Ownership is a relationship, not identity.
-- **`characters.home_estate_id` defines residence:** your realm *is* your home estate's realm. `characters.realm_id` remains as a synced cache (half the query paths use it); relocation and (future) home changes re-sync it.
-- **v1 keeps one active estate per character**, enforced by application logic plus a partial unique index on `owner_character_id` for active estates — so the tycoon's multiple holdings and ownership transfer arrive later as *rules* migrations, not *structure* migrations.
-- **`estate_ownership_history`** records every tenure `(estate_id, character_id, acquired_at, relinquished_at)` — written on creation now, and on every future transfer/escheat. This is cheap today and is the substrate for legacy/provenance features (the tycoon's "map of estates they built") later.
-- Transfer, escheat, purchase-of-abandoned-estates, and solvency are **out of scope for v1** (§10); v0.5's schema simply stops forbidding them.
+### 7.7 Market tax note
+`market_tax_pct` **no longer exists as a per-realm stacking modifier type.** Tax is a single flat global rate in content, credited to the hosting realm (§5.4). If a realm-level tax-efficiency perk is ever wanted, it returns as a new decision, not by resurrecting the modifier.
 
 ---
 
 ## 8. Cross-cutting concerns
 
-### 8.1 Security & anti-cheat
-- All validation server-side; client requests express *intent* only.
-- Server RNG (seeded per resolve from a CSPRNG); drop probabilities never trusted from or necessarily revealed to the client.
-- Rate limiting per token on mutation endpoints (e.g., 10 req/s) — cheap middleware, prevents market spam.
-- JWT verification middleware in the game API; character ownership checked on every `/characters/me/*` implicitly via token claim → player → character.
+### 8.1 Security & anti-cheat — unchanged (server validation, CSPRNG-seeded per-resolve RNG, JWT middleware). Game-API mutation rate limiting remains deferred to Phase 7.
 
 ### 8.2 Transactions & concurrency
-- Every mutating endpoint = one DB transaction.
-- Market purchase: lock listing row, check quantity, transfer currency and items, write trade record — all-or-nothing. Escrow model (items/currency held by the listing) avoids two-party locking.
-- Resolve serializes per character (row lock on `active_actions`).
+Unchanged principles, with the market rewritten: order insert = one transaction (escrow, sweep with row locks on makers in price-time order, write matches + tax, rest remainder); cancel/collect = one transaction each; cross-realm operations lock realms in sorted-ID order (log-established rule from 4.3) — apply the same to any multi-realm balancing later.
 
-### 8.3 Background jobs
-- Single scheduled job (APScheduler in-process for v1): expire market listings past `expires_at`, returning escrow. Everything else is lazy.
+### 8.3 Background jobs (the world-tick slot)
+One APScheduler in-process scheduler hosting, in order of arrival: **order expiry** and **closed-order purge** (retention window, Phase 5), **store decay + realm upkeep ticks + estate-production reconciliation** (Phase 5.5), **inter-realm balancing** (Phase 5.5). Realm-scale only; per-character math stays lazy.
 
 ### 8.4 Testing strategy
-- **Engine unit tests** (no DB): resolution math, offline caps, modifier stacking, level-up boundaries, drop-table statistics (seeded RNG), combat rounds.
-- **API integration tests**: httpx + test DB per test; golden-path flows (register → create character → skill → market round-trip).
-- **Property tests** (hypothesis): resolve is idempotent; total items/currency conserved across market trades.
-- CI: lint (ruff), typecheck (mypy/pyright), both-DB test matrix.
+Unchanged, extended: conservation property tests over the four-state gold/goods invariant (§5.4); matching-priority tests (price-time, maker price); two-taker race tests on both engines; store/bid computation unit tests against fixture curves.
 
-### 8.5 Observability
-- Structured JSON logs (request id, player id); `/healthz` per service; basic counters (resolves, cycles granted, trades) via Prometheus client. Nothing fancier for v1.
+### 8.5 Observability — unchanged; add counters for matches, tax credited, collections.
 
 ---
 
 ## 9. Client design
-
-### 9.1 Layout
-
-Left sidebar (server-driven), main content panel. Sidebar sections and their availability come from `GET /characters/me/actions/available` plus static section metadata:
-
-```
-┌──────────┬────────────────────────────┐
-│ Profile  │                            │
-│ P.Market │      Active panel          │
-│ R.Market │  (route per section)       │
-│ Estate   │                            │
-│ ──────── │  Persistent footer strip:  │
-│ Combat   │  current action, progress  │
-│ ──────── │  bar, latest rewards       │
-│ Gathering│                            │
-│ Refining │                            │
-│ Crafting │                            │
-│ Explor.  │                            │
-└──────────┴────────────────────────────┘
-```
-
-- **Routing:** React Router, one route per sidebar section. The Exploration entry renders disabled ("coming soon") in v1 (§10).
-- **Active-action strip** is global (visible on every route) since only one action runs at a time.
-- **Timers:** a single `requestAnimationFrame`/1s-interval driven store animates the progress bar from `started_at + n*cycle_ms`; TanStack Query refetches `/characters/me/action` on cycle boundaries with jitter, and on tab refocus (covers offline catch-up automatically).
-- **Content cache:** content pack fetched once per manifest version, cached in IndexedDB/localStorage.
-
-### 9.2 Client state rules
-- Server state only via TanStack Query hooks in `src/api/` (typed from the OpenAPI schema).
-- UI-only state (selected tab, filters) in component state or a tiny zustand store.
-- No client-computed rewards ever rendered as authoritative; rewards display comes
-  from server responses backed by unclaimed `reward_log` deltas.
-- **Reward feed is at-most-once** (log #7): `reward_log` rows are marked claimed
-  in the same transaction that builds the poll response. A lost response can drop
-  a toast but never progress — character state remains authoritative regardless.
-  An acknowledged-cursor upgrade to at-least-once delivery is a possible later
-  requirement; nothing in the schema precludes it (`claimed_at` would become a
-  cursor acknowledgment).
+Unchanged shell/strip/polling architecture. Phase 5 adds: global-market panel (book view, my orders/slots with collect actions, fills feed) and realm-market panel (stores + bid/ask signal display, trade form, presence/access states). The map view (v0.5) grows store/treasury-health signals per market-vision §7.7's visibility decision.
 
 ---
 
-## 10. Explicit non-goals for v1 (recorded so the agent doesn't build them)
+## 10. Explicit non-goals for v1 (revised)
 
-- WebSockets / real-time push (polling is fine at idle-game rates)
-- **Exploration** — deferred entirely. Design intent for later: exploration lets a player discover new realms or new resources within known realms, implying a per-character *unlocks/discoveries* table and dynamic action availability. The action-availability endpoint (§5.3) already filters per character, so exploration can layer on without reworking the menu or engine. The sidebar reserves the slot but v1 renders it as "coming soon."
-- Multiple characters per account, character deletion/rename
-- Multiple estates per character, estate ownership transfer, escheat, purchase of abandoned estates (schema is ready per §7.5; features are not)
-- Upkeep, decay, estate solvency, estate passive production mechanics, and inter-realm market balancing — Market Vision systems whose *structures* v0.5 carries (dormant profile fields, regression edges, treasury column) but whose mechanics await Phase 5.5
-- Development-graph traversal beyond simple forward transitions (regression traversal, transition cancellation, activity-driven awards)
-- Visiting other realms / the adventurer role (interlocks with Exploration)
-- Premium currency mechanics (column exists; nothing earns or spends it)
-- Guilds/clans, chat, friends
-- Rich combat (equipment, consumables, death) beyond the cycle-based encounter skeleton
-- Admin tooling beyond content-file editing + a seed script
-- Horizontal scaling, caching layers, CDN concerns
-- Real content/balance (placeholder pack only)
+- WebSockets / real-time push.
+- **Exploration** — deferred to its own vision (`exploration-and-keys-vision-TODO.md`). **Revision:** do *not* build the previously sketched permanent per-character unlocks table; discoveries are expected to be realm-scoped and expiring. Nothing interim may assume unlock permanence. Sidebar slot stays reserved.
+- **Multiple characters** per account, deletion/rename — unchanged.
+- **Multiple estates per character** — *downgraded from non-goal to deferred-yes* (the tycoon archetype, realm-vision §3.5). v1 still enforces one; nothing may be built that assumes 1:1-forever (the v0.5 ownership schema already complies). Needs its cap type + "home estate" designation when scheduled.
+- **Visiting / travel** — deferred; presence interim rule per §7.6.
+- **Tutorial island** — deferred; noted as upkeep- and market-exempt when built.
+- **Upkeep, decay, solvency, estate passive production, inter-realm balancing** — Phase 5.5, not v1-Phase-5.
+- Premium currency mechanics; guilds/chat/friends; rich combat beyond the cycle skeleton; admin tooling; horizontal scaling; real content/balance.
 
 ---
 
-## 11. Implementation plan (phases for the coding agent)
+## 11. Implementation plan (revised from Phase 5 onward)
 
-Each phase ends with passing tests and a runnable `docker-compose up` stack.
+Phases 0–4: **complete** (see status reports; v0.5 shipped).
 
-**Phase 0 — Skeleton.** Monorepo layout, docker-compose (auth, game, client, volume-mounted SQLite), CI pipeline, health endpoints, Alembic baseline. ✅ *Complete.*
+**Phase 5 — Markets (rewritten; do not use pre-v0.6 prompt sketches).**
+5.A Prereq: tag emission from availability sources (§13.1) + market-access tag in content.
+5.B Global order book: migrations (`market_orders`, `market_matches`), matching engine (pure, test-first, price-time priority at maker price), order/collect/cancel endpoints, flat tax → treasury, order-slot cap, expiry job, conservation + race tests.
+5.C Realm market: reference prices in content, `realm_stores` (read side + cold-start seeding), bid/ask curve function, presence-gated trade endpoint, signal endpoints.
+5.D Client: global-market and realm-market panels; map signal layer.
 
-**Phase 1 — Auth.** Auth service: register/login/refresh/logout, RS256 JWT + JWKS. Game API: JWT middleware, `players` auto-provisioning on first authenticated call. Client: login/register screens, token refresh handling. ✅ *Complete.*
+**Phase 5.5 — World dynamics.** Upkeep quotas and store decay ticks, estate upkeep/production lazy resolution + reconciliation, solvency accounting, decay state machine, regression-edge coupling, inter-realm balancing. (Requires markets; blocked on the upkeep-mechanics design pass, §13.4.)
 
-**Phase 2 — Content pipeline + character.** Content loader with Pydantic validation, placeholder pack, `/content/*` endpoints, character creation with realm choice, profile endpoint/page. ✅ *Complete.*
+**Phase 6 — Combat skeleton.** Monster content shape, combat `CycleRewardStrategy`, consumables as cycle inputs (shape to be confirmed by the Combat vision, §13.6). Client Combat panel.
 
-**Phase 3 — Skilling core.** `engine/` resolve loop (test-first), active-action endpoints, offline cap, reward log, inventory. Client: skill panels, action start/stop, global progress strip, reward toasts. *This phase is the heart of the game — budget the most review here.* ✅ *Complete.*
-
-**Phase 4 — Realm/estate model, modifiers.** Migrations for the §6.2 v0.5 schema (estate forms/ownership/history, development graph state, map). Resolved-caps API exposure (§7.1 gap). Modifier stacking wired to development nodes and estate forms (engine stacking exists; source resolution + persistence + endpoints remain). Estate upgrades and form transformation. Projects, contributions, and the edge-award interface with lazy transition finalization. Relocation via path cost × relocation class. Client: Estate panel, Profile realm view, map view, project contribution UI.
-
-**Phase 5 — Markets.** Player market (escrowed listings, partial buys, expiry job) and realm market. **Market tax routes to `realm_state.treasury`** (cheap to build with the market, expensive to retrofit). Realm market v1 uses content-defined offers; its dynamic (need-driven) form arrives with Phase 5.5. Client: both market panels.
-
-**Phase 5.5 — World dynamics (new; requires markets).** Upkeep ticks (realm via the scheduled-job slot; estate lazily on character resolve), decay state machines, regression-gauge coupling to upkeep outcomes, estate passive production and solvency accounting, dynamic realm-market pricing from need + treasury, and inter-realm balancing with transport costs. Scoped and prompted only after Phase 5 ships and the Market Vision's balance questions get their tinkering.
-
-**Phase 6 — Combat skeleton.** Monster/encounter content shape, per-cycle combat resolver behind the same action framework (via the `CycleRewardStrategy` seam). Client: Combat panel.
-
-**Phase 7 — Hardening.** Rate limiting, property tests, load sanity check (k6 script: 500 simulated pollers), observability counters. (Both-DB CI matrix already green as of Phase 3.)
+**Phase 7 — Hardening.** Game-API rate limiting, market conservation property suite at scale, k6 load sanity, observability counters. (Both-DB CI already done.)
 
 ---
 
 ## 12. Resolved design decisions (log)
 
-Decisions 1–5 predate implementation; 6–12 were made during Phases 0–3 and ratified into v0.4.
+1–9. *(v0.3–0.4, unchanged: offline cap semantics; single currency + dormant premium; drop rates exposed; persistent estates; exploration deferred; reward feed at-most-once; `extra_drop_chance_pct` semantics; overflow precedence; unauthenticated content endpoints; refresh-token family = user; project tiers may declare cap_bonuses; segmented level-up resolution; backwards clock no-op.)*
+10–17. *(v0.5, per Phase 4: source-resolution arithmetic unchanged; GET /map unauthenticated; treasury reserved for Phase 5 market tax; estate forms/ownership/development-graph shapes as shipped.)*
 
-1. **Offline cap:** 12h base, upgradeable — generalized into the caps system (§7.1) along with inventory size, market listings, and estate upgrade slots.
-2. **Currency:** one general currency (gold); premium currency planned — schema column reserved, mechanics out of scope for v1.
-3. **Drop rates:** exposed to players via the content endpoint; server-rolled regardless.
-4. **Estates:** persistent across relocation; progression is bounded by limited, upgradeable slots rather than resets.
-5. **Exploration:** deferred to a post-v1 feature (realm/resource discovery via an unlocks table); v1 ships four skills + combat with a reserved sidebar slot.
-6. **Offline cap ends the action** after granting only the cycles inside the budget, preventing a long absence from being drained in cap-sized poll batches; if no full cycle fits the budget, the action stays pending with no progress (§4.2).
-7. **Reward feed is at-most-once:** `reward_log` rows are claimed in the response-building transaction. A lost response may drop a toast, never progress. Acknowledged-cursor at-least-once delivery is a recorded possible upgrade (§9.2).
-8. **Content endpoints are unauthenticated**; served packs are limited to `skills`, `items`, `realms`, `upgrades`, `caps`. The XP curve participates in the content version hash but is not a public pack — xp-to-next comes from the profile endpoint (§5.1).
-9. **Refresh-token family = all of a user's refresh tokens** (no family-id column); reuse of a revoked token revokes everything for that user. Per-device sessions would require a schema migration (§5.7).
-10. **Modifier/cap arithmetic:** `extra_drop_chance_pct` multiplies base chance by `1 + total/100` clamped to [0, 1]; `cycle_time_pct` and `xp_pct` truncate to integer after applying the summed percentage. Inventory overflow takes precedence over same-cycle input exhaustion as stop reason; `stack_limit` uses the same discard/overflow rule. Development nodes may declare `cap_bonuses` (§7, §7.1).
-11. **Segmented level-up resolution** is the implemented approach (per-segment caching of effective values); the snapshot simplification is retired (§4.2).
-12. **Backwards server-clock correction during resolve is a no-op**, not an error (§4.2).
+**Ratified in v0.6:**
+18. **Served packs are nine** (`skills, items, realms, upgrades, caps, map, estate_forms, development, projects`), superseding the original five-pack rule.
+19. **`estates.relocating_to_realm_id` + `relocation_completes_at`** are part of the §6.2 schema.
+20. **`WOULD_ORPHAN_UPGRADES`** transform rule: destination capacity check excludes installed-upgrade bonuses (v1 rule).
+21. **No edge awards during a pending transition** (`INVALID_EDGE_AWARD`); contributions to a departing node fail cleanly (`REALM_TRANSITIONING`) before consuming goods.
+22. **Origin identity during relocation**; second relocation blocked (`ESTATE_BUSY`).
+23. **Contributions are not residence-restricted** — confirmed as intended: civic giving is open to non-residents; presence gating applies to *market* trade (§5.5), not to projects. Revisit only if remote contribution proves exploitable.
+24. **Player market is a global order book** with continuous price-time-priority matching at maker price, order slots with explicit collection, flat seller-side hosted-realm tax (supersedes the escrowed-listings design end to end).
+25. **Realm markets: stores + fixed reference prices + treasury-bounded bids**; presence-gated with the interim residents-only rule; **no remote realm-market trading, ever**.
+26. **`market_tax_pct` retired as a modifier type**; tax is flat global content.
+27. **`market_listings` cap renamed/generalized to `order_slots`**, covering both order sides.
+28. **Inventory caps gate order collection, never fills**; the drop-overflow discard rule never applies to market goods.
+29. **The order row is the slot.** No separate slots table; slot occupancy = count of non-`closed` orders vs. the `order_slots` cap. Lifecycle `open → collectable → closed`; collection closes and frees; closed rows are purged after a retention window, with `market_matches` (denormalized character ids) as the durable trade history.
 
-Decisions 13–17 ratified for v0.5 (pre-Phase-4, from the Market Vision working sessions):
+---
 
-13. **Map topology:** undirected realm graph in content with typed edge costs `{gold, items, time_ms}`; path cost drives relocation and (later) transport; coordinates are presentation-only (§7.2).
-14. **Estate forms:** content-defined types with `relocation_class`, base caps/modifiers, and dormant upkeep/production profiles; form-to-form transformation as content edges updating `estates.form_id`; placeholder chain camp → homestead → orchard, orchard bearing a real production profile (§7.3).
-15. **Realm development graph:** identity = current node (no separate tier); progress stored per-realm on edges; edges fill **only** via the project/quest award interface — except regression edges, which act as an upkeep-driven gauge (fail ticks fill, success ticks drain; mechanics Phase 5.5); on transition, sibling outgoing-edge progress **resets**; transitions take effect after a content-defined **transitory phase** during which the old identity holds and the pending change is public, finalized lazily on read (§7.4).
-16. **Estate ownership:** nullable `owner_character_id`; `characters.home_estate_id` defines residence with `realm_id` as synced cache; one-active-estate rule enforced by application logic + partial index so multi-holding/transfer are rules migrations; full `estate_ownership_history` from day one (§7.5).
-17. **Treasury column** lands in `realm_state` in Phase 4, is funded by market tax from Phase 5, and is spent by upkeep procurement from Phase 5.5 (§6.2, §7.4).
+## 13. Work-item ledger (vision-implied engine changes, accepted in principle, not yet scheduled)
+
+The gate between "vision" and "build": items leave this ledger only by entering a phase in §11 with a ratified shape.
+
+| # | Item | Source | Bites | Status |
+|---|---|---|---|---|
+| 13.1 | **Tag emission from all availability sources** (development nodes, estate forms, upgrades) through the same resolution/inert pass as modifiers and caps | skills-and-goods §3.4/§7 | **Phase 5.A** (market-access tag) and any facility-gated content | Scheduled (5.A) |
+| 13.2 | **Item `tier` content property** + input-class tag convention (`class.log.t1`); convergent refining is a content convention to document in the pipeline | skills-and-goods §3.1–3.3 | Content-design time; near-zero engine work | Accepted |
+| 13.3 | **Proficiency**: optional per-skill threshold table feeding `cycle_time_pct` from level-vs-tier (one generic source hook; existing modifier type). Yield bonus explicitly *not* included absent a new decision | skills-and-goods §2.3/§7 | With tiered content | Accepted |
+| 13.4 | **Upkeep/decay/solvency processing model**: realm ticks + store decay in the job slot; estate upkeep/production resolved lazily on character resolve, reconciled at tick; solvency status feeding a decay state machine; regression-edge coupling | realm-vision §7, market-vision §8 | Phase 5.5; needs a dedicated design pass first | Blocked on design pass |
+| 13.5 | **NPC estates as cold-start content** (null/system owner, production profiles) | market-vision §3.4/§8 | Content time; **verify schema tolerance now** (fixture test) | Verify in 5.B |
+| 13.6 | **Consumables as combat cycle inputs** — expressible today; shape (per cycle vs. per damage) owned by the Combat vision | skills-and-goods §4.2/§7 | Phase 6 | Blocked on Combat vision |
+| 13.7 | **Carried vs. stored inventory split** — build nothing that prevents it; collection (§5.4) is the designated seam | market-vision §8 | Visiting/estate-storage designs | Watch item |
+| 13.8 | **Expiring realm-scoped availability** (exploration keys) — build nothing that assumes permanent unlocks | exploration TODO | Exploration vision | Watch item |
+| 13.9 | **Visiting / current-location concept** — `current_realm()` helper is the interim seam (§7.6) | realm-vision §2.8 | Own design doc, after Combat vision | Blocked on vision |
+| 13.10 | **Estate transfer / escheat / succession endpoints** — schema ready; mechanics owned by realm-vision §6.9 residuals | realm-vision §3.6 | Post-5.5 | Blocked on vision residuals |
+| 13.11 | **Tutorial island** — restricted starting realm, upkeep/market-exempt, scripted one-way graduation | realm-vision §2.4 | Content + small engine flags | Accepted, unscheduled |
+
+**Vision-document dependency map** (what must exist before which build step): Combat vision → Phase 6 content · Upkeep-mechanics design pass (within realm-vision residuals) → Phase 5.5 · Visiting design → full presence rules + hauler activation + 13.9 · Exploration & Keys vision → 13.8 · XP Curve vision → tier thresholds (13.2/13.3 numbers).
