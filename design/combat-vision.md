@@ -1,10 +1,12 @@
 # Yet Another Idle Skilling Game — Combat Vision Document
 
-**Version:** 0.1 (first structured draft; refined from the rough draft through design-chat review)
+**Version:** 0.2 (key-system patch: §7.2 rewritten to the ratified Exploration & Keys model)
 **Scope:** The combat system — the encounter loop, combat skills and the tier multiplier, player equipment (a new modifier source spanning combat *and* skilling), hit points and sustain, combat locations and access keys, and the player-attached automation behaviors combat requires. This document deepens the economic frame that **Skills and Goods** §4.2 established and is constrained by it: whatever combat becomes, it remains a goods producer with per-combatant drop tables and a goods consumer through supply-based sustain.
-**Relationship to other documents:** Vision documents describe *what the game should feel like and why*. `design.md` is authoritative on mechanics; where this vision implies a mechanic the engine doesn't yet support, that is a design-doc work item (§9), not a license to improvise. Siblings: **Skills and Goods** (supply side; owns the constraint this document inherits), **Market Vision** (demand/trade side), **Realm & World Vision** (the map combat locations live on). The planned **Exploration & Keys** vision shares ownership of access keys (§7.2) and the planned **XP Curve** vision owns final tier thresholds and multiplier numbers. A future **Player QoL / Automation** vision (not yet scheduled) owns the automation-behavior surface this document only reserves (§6).
+**Relationship to other documents:** Vision documents describe *what the game should feel like and why*. `design.md` is authoritative on mechanics; where this vision implies a mechanic the engine doesn't yet support, that is a design-doc work item (§9), not a license to improvise. Siblings: **Skills and Goods** (supply side; owns the constraint this document inherits), **Market Vision** (demand/trade side), **Realm & World Vision** (the map combat locations live on). The **Exploration & Keys** vision (v0.1, now extant) owns the key system outright — §7.2 here is the combat-side application of its ratified model — and the planned **XP Curve** vision owns final tier thresholds and multiplier numbers. A future **Player QoL / Automation** vision (not yet scheduled) owns the automation-behavior surface this document only reserves (§6).
 
-**Changes from the rough draft:** Forever-gear ratified with the market consequence named and the enchanting chase recorded as the long-term sink (§4.5); the §13.6 consumable-shape question answered as a hybrid (§5.1); ammunition exhaustion redefined as a fallback to unarmed melee rather than near-zero ranged damage (§5.2); tier multiplier defined (+5% per tier to associated total skill) and tier-gated equipment ratified (§3.3); HP regeneration set at ~20%/hour with manual re-engagement (§5.3); respawn timers settled as content-defined (§7.1); estate-attached auto-consume behaviors relocated to player-attached QoL upgrades, deferred to their own vision (§6); tools split — player tools are durable equipment, estate-worker tools remain consumed upkeep goods (§4.4, patching Skills and Goods §8.9); offline combat resolution defined as a stateful summary with a terminal state and idle-time display (§2.3); combat xp sources ratified — defensive skills level from incoming damage/mitigation, and an **outclass cutoff** stops xp (never loot) against trivially weak combatants (§3.4).
+**Changes from the rough draft:** Forever-gear ratified with the market consequence named and the enchanting chase recorded as the long-term sink (§4.5); the §13.6 consumable-shape question answered as a hybrid (§5.1); ammunition exhaustion redefined as a fallback to unarmed melee rather than near-zero ranged damage (§5.2); tier multiplier defined (+5% per tier to associated total skill) and tier-gated equipment ratified (§3.3); HP regeneration set at ~20%/hour with manual re-engagement (§5.3); respawn timers settled as content-defined (§7.1); estate-attached auto-consume behaviors relocated to player-attached QoL upgrades, deferred to their own vision (§6); tools split — player tools are durable equipment, estate-worker tools remain consumed upkeep goods (§4.4, patching Skills and Goods §8.9); offline combat resolution defined as a stateful summary with a terminal state and idle-time display (§2.3).
+
+**Changes from 0.1:** The anticipated Exploration & Keys patch (the "if the two conflict, Exploration & Keys wins" clause of §7.2) has landed. §7.2 is rewritten to that vision's ratified model: **permanent combat keys are walked back — no key is permanent**; combat keys are instanced items in the shared key family (provenance/discoverer tag, tradeable-until-bound, one-way binding on first use); expiry is **session-scoped** with drop rates as the severity-tuning knob; the interim safe subset changes from "permanent keys only" to **no keys until the instanced-item system lands**. §9.8 and §10.9 updated accordingly. No other section is touched.
 
 ---
 
@@ -74,22 +76,6 @@ The exact percentage, and whether it is uniform across all six skills, belongs t
 Reaching a tier threshold also unlocks the **use of higher-tier goods**: tier-3 armor requires the appropriate tier-3 skill to wear, tier-4 weapons require tier-4 in their attack style. This is the combat expression of the tier ladder's demand side — every tier climb creates a re-equipping moment, which is a primary demand driver for manufactured gear under the forever-gear rule (§4.5).
 
 Which skill gates which slot (Defense for armor, the attack skill for weapons, Vigor for anything?) is a content-design question; the principle — **tier thresholds gate gear eligibility** — is settled here.
-
-### 3.4 XP sources and the outclass cutoff
-
-Combat xp diverges from other skills in two ratified ways — the shapes are fixed here; the exact numbers and formulas belong to the **XP Curve vision**:
-
-1. **Defensive skills level from incoming pressure.** Attack skills earn xp from damage dealt (§2.2); **Vigor earns xp from damage taken**, and **Defense earns xp from hits mitigated by Defense**. The defensive skills are trained by being fought, not by fighting — a player never gets tougher by beating on things that can't hurt them.
-
-2. **The outclass cutoff: xp stops when the fight stops being one.** Once the player outclasses a combatant by enough — the illustrative threshold: the player's damage output is on the order of **3× the combatant's hit points** — the encounter grants **no xp at all**. Loot continues; xp does not.
-
-   The cutoff is combat's counterpart to proficiency (Skills and Goods §2.3), and the loot/xp split is deliberate:
-   - **Loot continuing** keeps veterans as viable suppliers of low-tier monster parts — the max-level fighter farming the hunting grounds for leather the industries want is playing correctly, exactly like the max-level smith cranking out cheap tools. Cutting loot too would leave low-tier monster parts supplied only by low-level players — a supply hole the economy doesn't want.
-   - **XP stopping** pushes *leveling* toward appropriate content and forecloses degenerate afk-leveling against trivially safe enemies.
-
-   The two rules reinforce each other: an outclassed enemy also barely lands hits, so it trains Vigor and Defense poorly even before the cutoff formally applies. Conversely, punching *above* your class is superb Vigor/Defense training at terrible sustain economics — heavy incoming damage means heavy consumable burn. That trade-off (train defenses fast and expensively, or attack skills safely and steadily) is intended, and it makes consumable demand scale with ambition.
-
-One gap this exposes, deferred to the XP Curve vision: **Accuracy's xp source is undefined** — attack skills train on damage dealt, Vigor on damage taken, Defense on mitigation, but Accuracy has no stated trigger (per successful hit? per attempt?) (§10.2).
 
 ---
 
@@ -186,15 +172,16 @@ Combat locations are **content on realm types** — part of a development node's
 
 **Respawn timers are content-defined per combatant:** fodder respawns in a second or two (flavor-scale, negligible throughput impact); area bosses may carry meaningfully long timers (a deliberate throughput and scarcity knob). The content designer owns the number; the engine owns making the wait exact in offline math.
 
-### 7.2 Keyed locations — shared ownership with Exploration & Keys
+### 7.2 Keyed locations — the Exploration & Keys model applied (patched in 0.2)
 
-Some combat locations are **locked behind key items**, obtained from loot tables or (in the future) from exploration. Ratified here:
+Some combat locations are **locked behind keys**. The key system is owned end to end by the **Exploration & Keys vision** (v0.1); this section states its combat-side application, which supersedes the 0.1 text in full:
 
-- A key is **specific to the realm** it opens content in.
-- Keys may be **permanent or limited-use** (content-defined).
-- **If a realm's type changes, its keys deactivate.** Access is realm-state-scoped, never a permanent per-character unlock — in deliberate compliance with design.md §10's prohibition on assuming unlock permanence.
+- **Combat keys are the shared key item family** — instanced items with denormalized provenance (the discoverer's name travels on the key forever), tradeable on the unique-item market until first use, **bound and untradeable from the moment a key-gated action starts**, and persisting as inventory trophies after depletion. A key dropped by a monster and a key found by an explorer are the same object; the character whose kill dropped a loot-table key is its "discoverer."
+- **No key is permanent.** The 0.1 "permanent or limited-use" rule is walked back: every key expires. Combat keys use **session-scoped expiry** — a key persists while its holder's combat session at the keyed location runs and depletes when that session ends, for any reason. (Gathering keys use exhaustion-based expiry — a cycle budget; wall-clock expiry is used by neither, by design: key life is a function of *use*, which lazy resolution handles natively.)
+- **Session expiry is severe by design; drop rates are the tuning knob.** A rarer key granting one full overnight session is a legible, tunable prize — the expiry rule stays fixed and content tunes value through scarcity.
+- A key is **specific to the realm** it opens content in. **If the realm's development node changes, its keys are marked depleted** — with one grace: a key whose holder has an active action running against it survives until that action stops. Access remains realm-state-scoped, never a permanent per-character unlock, in continued compliance with design.md §10.
 
-**Boundary with the Exploration & Keys vision:** that document owns the key concept's full shape — discovery mechanics, tradeability, realm-wide vs. holder-scoped access, and the expiry model (time vs. exhaustion, its open question #3). Combat's limited-use keys are one instance of exhaustion-based expiry and must align with whatever that vision ratifies; if the two conflict, Exploration & Keys wins and this section gets patched. Until then, combat content may ship *permanent* keys (the safe subset) while limited-use keys wait for the shared model.
+**Interim rule (changed from 0.1):** the previous safe subset — shipping permanent keys ahead of the shared model — no longer exists, because permanent keys no longer exist. **Combat content ships no keys until the instanced-item system lands** (Exploration & Keys work items #1–#3). Combat locations are unaffected: they ship unkeyed under the ordinary tag machinery of §7.1, and keyed variants arrive with the key system.
 
 ---
 
@@ -209,8 +196,6 @@ Both halves are load-bearing, and both are now concrete:
 - **The consumable sink scales with activity**: how much combat the world's players do directly drives agrarian and alchemy demand. Ammunition makes ranged the most industry-coupled style — an archer is a standing customer of the fletcher.
 - **The drop tables are gathering-equivalent supply**: every combatant is a walking resource node whose loot the industries want.
 - **The gear demand is event-driven, not perpetual** — named honestly per §4.5, with the enchanting chase as the recorded long-term answer.
-- **The outclass cutoff protects the supply side** (§3.4): loot flows even after xp stops, so veterans remain suppliers of low-tier monster parts forever — the combat mirror of proficiency keeping veterans producing tier-1 goods.
-- **Training defenses is a demand amplifier** (§3.4): Vigor/Defense xp comes from taking hits, so ambitious fights burn consumables fastest — the players leveling hardest are the industries' best customers.
 
 ---
 
@@ -222,11 +207,10 @@ Roughly in order of when they bite — all targeting the Phase 6 window unless n
 2. **Player combat state**: six new skills (content, mostly free), plus **persistent current-HP** with timestamp-based regeneration (~20%/hour) — a new piece of character state resolved like everything else.
 3. **Equipment as a modifier source** — the new source *category*: equipped-item tables, slot rules (two-handed exclusion, style-appropriate utility items), tier-gating on equip (§3.3), and equipment joining the modifier/caps resolution pass. Global scope (tools, jewelry affecting non-combat skills), so the resolution work serves skilling too.
 4. **Tier multiplier hook** in the combat formulas (+~5%/tier on associated skill contribution) — numbers owned by the XP Curve vision.
-4b. **Combat xp routing** (§3.4): per-cycle xp awards split across skills by event type (damage dealt → attack skill; damage taken → Vigor; mitigation → Defense; Accuracy TBD), plus the **outclass-cutoff check** (player output vs. combatant HP, illustrative 3× threshold) evaluated per encounter inside the resolver. Numbers owned by the XP Curve vision; the routing and cutoff hooks are resolver structure.
 5. **Reactive consumable machinery** — conditional per-cycle consumption driven by player state; the genuinely new half of the hybrid model (§5.1).
 6. **Behavior/automation source concept** — source-agnostic engine shape, v1 player-attached, minimum viable behavior = threshold auto-heal (§6). Full surface owned by the future QoL vision.
 7. **Ranged→unarmed fallback** — a style-switch rule inside the resolver (§5.2); small but novel (an action changing its own effective skill mid-resolve).
-8. **Keyed-location availability** — realm-scoped, deactivating on node change; permanent keys only until the Exploration & Keys vision ratifies the expiry model (§7.2). Interlocks with ledger item 13.8.
+8. **Keyed-location availability** — key-gated actions per the ratified Exploration & Keys model (§7.2): held-instance availability checks, binding on action start, session-scoped depletion for combat keys, realm-transition sweep with the active-action grace rule. **Sequencing changed:** depends on the instanced-item system (Exploration & Keys work items #1–#3), so keyed combat content ships after that lands — Phase 6 ships locations unkeyed. Ledger item 13.8 is superseded by the concrete shapes in that document's §9.
 9. **Watch item — per-item-instance stats.** Nothing in v1 may assume items are fully fungible per item-id forever; the future enchanting/rolled-stats system (§4.5) will need item instances. (Inventory today is `(character_id, item_id, quantity)` — the future split is flagged, not built.)
 10. **Cross-doc patch — Skills and Goods §8.9**: tools split into durable player equipment (this doc) and consumed estate-upkeep goods (realm vision); the economic-role table's "gathering eats trivial tools" becomes a one-time equipment purchase plus the estate-side recurring sink.
 
@@ -236,13 +220,11 @@ Roughly in order of when they bite — all targeting the Phase 6 window unless n
 
 1. **Concrete combat formulas.** Hit chance, damage, mitigation — the exact functions of (Accuracy, attack skill, Defense, equipment, tier multiplier). Design-doc/content work; this vision fixes only the roles (§3.1) and the tier-multiplier shape (§3.2).
 2. **Tier multiplier scope.** Uniform +5% across all six skills, or differentiated? Do Accuracy/Defense/Vigor tier at all, or only attack styles? Owned by the XP Curve vision with content balance.
-2b. **Accuracy's xp source** (§3.4) — per successful hit, per attempt, or something else. Owned by the XP Curve vision.
-2c. **Outclass cutoff calibration** (§3.4) — the exact threshold (illustrative: 3× combatant HP in player output), whether it's a hard cutoff or a taper, and whether it applies uniformly to defensive xp (largely self-limiting already). Owned by the XP Curve vision.
 3. **Slot-gating map.** Which skill's tier gates which equipment slot (§3.3). Content design.
 4. **Damage flavors.** Do piercing/bludgeoning/slashing interact with combatant resistances, or are they cosmetic in v1? Content design.
 5. **Encounter and combatant design.** Stat blocks, drop-table composition, xp values, location curation per realm archetype. Content design, constrained by the economic-role test.
 6. **Buff consumables.** What the combat-modifying consumable family does (damage buffs? accuracy? regen-in-combat?) and its reactive triggers. Content design over the §5.1 machinery.
 7. **Multi-combatant encounters.** v1 assumes one combatant at a time. Packs/waves would be a resolver extension — deliberately out of v1 scope, noted so the resolver isn't built in a way that makes it impossible.
 8. **Auto-resume after regen.** Deferred to the QoL/automation vision as a candidate behavior (§5.3).
-9. **Key expiry alignment.** Limited-use key mechanics await the Exploration & Keys vision (§7.2).
+9. **Key expiry alignment.** **Settled in 0.2:** the Exploration & Keys vision (v0.1) ratified the model and §7.2 is patched to it — session-scoped expiry for combat keys, no permanent keys, shared instanced-item family. Residuals (combat-key drop rates as the severity knob) are content/balance, tracked in that document's open question #5.
 10. **PvP.** Entirely out of scope for this vision and for v1; nothing here is designed for or against it.
