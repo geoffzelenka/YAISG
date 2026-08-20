@@ -1,6 +1,8 @@
 # Yet Another Idle Skilling Game — XP Curve and Tiers Vision Document
 
-**Version:** 0.1 (first structured draft; refined from the rough draft through design-chat review)
+**Version:** 0.2 (combat-gate closure patch: §8's ratification landed in Combat vision 0.3; combat rows and work items updated to match)
+
+**Changes from 0.1:** The §8 gate is **closed** — Combat vision 0.3 ratified all three items in its own text: **(a)** uniform +5%/tier multiplier on Melee, Ranged, Magic, Accuracy, and Defense, with **Vigor excluded** (Combat §3.2); **(b)** a **two-stream, two-pool xp model** — offensive stream (damage dealt → attack style + Accuracy by stance) and defensive stream (damage taken/mitigated → Vigor + Defense), each capped by a content-authored per-encounter pool on the combatant; the offensive stream tapers against under-tier combatants, the defensive stream attenuates naturally, drops never diminish, and below-tier mastery pays **combat-effectiveness bonuses rather than cycle-time proficiency** (Combat §3.4–§3.5); **(c)** budget mapping ratified as **per-skill line, parallel budgets** — each pool calibrated per participating skill against this document's §3.3 line, concurrency as breadth not speed, family baseline 1.0× working (Combat §3.6). §4.2's combat row, §5.2's combat row, §8, work items #1 and #7, and open question #8 updated accordingly. No other section is touched.
 **Scope:** The shared leveling system — the XP curve formula and its time budget, tier thresholds, the proficiency speed tables (cycle-time bonuses below tier), xp diminishing returns, the content-side xp/hour test, unlock cadence, and per-family leveling baselines. This document owns the *numbers* the other visions deferred: tier thresholds (Skills and Goods §8.3, design.md 13.2/13.3), the combat tier-multiplier gate (Combat §10.2 — gated back, see §8), exploration's leveling pace (Exploration & Keys §10.1), and Travel's leveling numbers (Visiting & Travel §9.1/§9.3, partially — see §10).
 **Relationship to other documents:** Vision documents describe *what the game should feel like and why*. `design.md` is authoritative on mechanics; where this vision implies a mechanic the engine doesn't yet support, that is a design-doc work item (§11), not a license to improvise. Siblings: **Skills and Goods** (tier ladder, proficiency shape, and the back-loaded principle this document quantifies), **Combat** (receives an explicit ratification gate, §8), **Exploration & Keys** and **Visiting & Travel** (whose skills sit on scaled baselines here), **Market** and **Realm & World** (the economy that reads tier). The content design documents turn this vision's formulas and ceilings into concrete action numbers.
 
@@ -106,7 +108,7 @@ Proficiency steps at tier distances, per family (`cycle_time_pct` reduction):
 | Gathering | +5% | +10% | +15% | +20% |
 | Refining | — | +5% | +10% | +20% |
 | Manufacturing | — | +10% | +20% | +30% |
-| Combat | gated to Combat vision (§8) | | | |
+| Combat | combat-effectiveness bonuses vs. under-tier combatants (excluding Vigor), not cycle-time — Combat 0.3 §3.5; cycle time stays pure weapon speed | | | |
 | Travel / Exploration | reaching-tier grants, not below-tier proficiency (§10) | | | |
 
 The asymmetry is deliberate, and its logic is the **taper counterweight** (§5): gathering has no xp taper, so its proficiency is a smooth, early-starting, modest ramp — pure production efficiency. Refining and manufacturing *do* taper, and their proficiency steps ramp up precisely where the taper bites: the speed bonus partially offsets the xp/hour loss in the taper band (faster cycles mean more cycles per hour, so the same reduced per-cycle xp arrives more often), and once xp hits zero the bonus converts cleanly into production throughput. Manufacturing gets the steepest table because it has the harshest taper (zero xp at just 2 below) and because its finished goods are the upkeep sink the whole economy leans on — the deep-mastery manufacturer is the world's tool factory and is paid in speed for it.
@@ -131,7 +133,7 @@ Proficiency is the taper's designed counterweight (§4.2): inside the taper band
 - **Refining:** xp tapers from **2 tiers below** the character's tier; **3 tiers below and beyond, xp is zero**.
 - **Manufacturing:** xp tapers at **1 tier below**; **2 tiers below and beyond, xp is zero**.
 - **Exploration and Travel:** no diminishing returns.
-- **Combat:** gated to the Combat vision (§8).
+- **Combat:** ratified in Combat 0.3 §3.5 — the **offensive xp stream tapers** by tier distance against under-tier combatants (distances/steps content/balance); the **defensive stream attenuates naturally** (weak combatants deal little damage) and needs no taper; **drop tables never diminish**. Note combat's taper applies to stream earnings inside the resolver, not as generic `xp_pct` — see work item #1.
 
 The engine mechanism is negative `xp_pct` emitted from the same generic level-vs-tier source hook proficiency uses (§11) — existing modifier type, −100% at the zero step; xp already truncates to integer after summed percentages, so zero is exactly representable. Exact taper step values between "starts tapering" and "zero" are content/balance.
 
@@ -160,15 +162,15 @@ The §3.2 anchors (2,880h / 720h / 500h) are the **shared baseline for all skill
 
 ---
 
-## 8. Combat leveling — deferred to Combat vision 0.3 (gate)
+## 8. Combat leveling — gate closed (ratified in Combat vision 0.3)
 
-This document sets the shared curve, the tier thresholds (1/50/75/90/95), and the time baselines; it does **not** set combat's per-skill numbers. **Before Phase 6 content ships, the Combat vision must ratify, in its own text:**
+This document sets the shared curve, the tier thresholds (1/50/75/90/95), and the time baselines; combat's per-skill numbers were gated back to the Combat vision, and **Combat 0.3 has ratified all three items in its own text**. The record, for this ledger:
 
-- **(a) The tier-multiplier number and scope.** The percentage (currently "on the order of +5%/tier" on the associated skill's contribution, Combat §3.2) and whether it is uniform across all six skills — Melee, Ranged, Magic, Accuracy, Defense, Vigor — or applies to attack styles only.
-- **(b) Diminishing returns.** Whether combat xp tapers against under-tier combatants, and if so the taper shape. The engine mechanism on offer is the same negative-`xp_pct` level-vs-tier hook refining and manufacturing use (§5.2); combat only chooses its steps.
-- **(c) The budget mapping.** How combat's xp/hour baseline maps onto the 720h optimal budget — in particular whether the six skills level together off the shared damage-is-the-xp-meter stream or carry separate budgets. Six skills fed by one activity stream is effectively a 6× budget unless the per-skill line is scaled; the Combat vision must pick the interpretation.
+- **(a) Tier multiplier — ratified (Combat §3.2):** uniform **+5% per tier** on Melee, Ranged, Magic, Accuracy, and Defense; **Vigor excluded** (max HP stays a pure function of Vigor level plus equipment). Static — derived from the player's own tier, invariant to the opponent.
+- **(b) Diminishing returns — ratified (Combat §3.4–§3.5):** combat xp is a **two-stream, two-pool model**. The offensive stream (damage dealt → attack style + Accuracy, split by stance) **tapers by tier distance** against under-tier combatants; the defensive stream (damage taken/mitigated → Vigor + Defense) **attenuates naturally** and needs no taper; **drops never diminish** (§5.1's principle holds). Both streams draw against **content-authored per-encounter pools** on the combatant — reset on respawn, unclaimed remainder forfeit. Below-tier mastery pays **combat-effectiveness bonuses (excluding Vigor), not cycle-time** — combat consumes the level-vs-tier hook through a new resolver-side emission rather than `cycle_time_pct`/`xp_pct` (work item #1).
+- **(c) Budget mapping — ratified (Combat §3.6): per-skill line, parallel budgets.** Each pool is calibrated per participating skill against the §3.3 line (family-scaled; baseline 1.0× working). Four skills earn concurrently per fight at the standard per-skill rate — concurrency is breadth, not speed; no combat skill climbs faster than a production skill. The model-player test (Combat §3.6) is combat's form of the §3.3 content test, landing in work item #7's pipeline check as a model-player evaluator.
 
-Until (a)–(c) land, combat content may use the shared curve and thresholds but **must not assume any tier multiplier or xp taper**. This gate returns Combat open question #2 to that document — the *shape* was ratified there, and the numbers belong beside the formulas they modify.
+Combat content may now assume the multiplier, the taper shape, and the pool model. Residual numbers — taper distances/steps, below-tier bonus values, stance shares, defensive-stream weights, pool ratios, baseline confirmation — are content/balance, tracked as Combat 0.3 open questions #11–#15.
 
 ---
 
@@ -195,13 +197,13 @@ For Travel and Exploration, tiers grant absolute benefits at the character's own
 
 ## 11. What this changes in the design doc (work items, not yet decisions)
 
-1. **Generic level-vs-tier source hook** — the single hook feeding proficiency speed (§4), the xp taper as negative `xp_pct` (§5), and Travel-level speed (visiting-vision §8.6, design.md 13.3). Both emissions use existing modifier types (`cycle_time_pct`, `xp_pct`) — this document adds only the negative-xp emission to the hook's contract, and **removes** the per-cycle yield modifier type S&G §7 had flagged as conditional (§4.1 resolves its question toward no; the flag can be struck).
+1. **Generic level-vs-tier source hook** — the single hook feeding proficiency speed (§4), the xp taper as negative `xp_pct` (§5), and Travel-level speed (visiting-vision §8.6, design.md 13.3). The production emissions use existing modifier types (`cycle_time_pct`, `xp_pct`); this document adds the negative-xp emission to the hook's contract, and **removes** the per-cycle yield modifier type S&G §7 had flagged as conditional (§4.1 resolves its question toward no; the flag can be struck). **Combat 0.3 adds a third emission type: a combat skill-contribution bonus consumed by the combat resolver** rather than the generic modifier pass (Combat §3.5, work item #4c there); combat's offensive-stream taper likewise applies inside the resolver against stream earnings, riding the hook's tier-distance logic but not the `xp_pct` pathway.
 2. **Curve script update** — regenerate the checked-in table to the §3.1 formula (r = 2^(1/7), 10M total, level 100); `level_for_xp` and the monotonicity test unchanged; content version hash rolls.
 3. **Max level 100** — table extends to 100; xp accumulation past the table's end is stored and displayed but derives level 100 (surplus-xp display is a small client item).
 4. **Edge Travel-level gates** — content property on map edges checked in journey `can_start` (§10); small extension to the visiting-vision work item #2 shape.
 5. **Key-count modifier for exploration tiers** (§10) — a discovery-roll input, lands with Exploration & Keys work item #2.
 6. **Travel supply-cost reduction by tier** (§10) — a per-cycle input-quantity modifier: genuinely new input semantics (reducing consumption, not gating or adding chance); flag beside Exploration & Keys work item #7.
-7. **The xp/hour line as pipeline validation** (§3.3) — a content-pipeline check (warning, not fatal) comparing each action's xp/cycle-time at `level_required` against the family-scaled line, with a declared-deviation annotation to silence it. Near-zero engine work, high balance value.
+7. **The xp/hour line as pipeline validation** (§3.3) — a content-pipeline check (warning, not fatal) comparing each action's xp/cycle-time at `level_required` against the family-scaled line, with a declared-deviation annotation to silence it. Near-zero engine work, high balance value. **Combat variant (Combat §3.6, work item #4d there): a model-player evaluator** — simulate a model player at the combatant's intended level against its stat block, check each xp pool's payout rate (pool ÷ expected kill time + respawn) against the per-skill line; more machinery than the production lookup, same test, same annotation rule. Respawn timers are thereby an xp-rate knob as well as a scarcity knob.
 8. **Watch item — tier achievement-gates** (§9): build nothing that hard-codes tier-from-level outside the single derivation path, so ratification remains cheap.
 
 ---
@@ -215,5 +217,5 @@ For Travel and Exploration, tiers grant absolute benefits at the character's own
 5. **Family baseline multipliers.** Exploration's scale-down factor (and any others) against the shared 720h anchor. Content/balance.
 6. **Travel xp formula.** Per edge by time, by supplies, or both; repeat-edge decay. Owned with Visiting & Travel residuals (§10).
 7. **Taper step values.** The exact negative-xp steps between "starts tapering" and "zero" for refining and manufacturing (§5.2). Content/balance.
-8. **Combat gate.** §8 (a)–(c), owned by Combat vision 0.3 — listed here so this document's ledger closes only when that ratification lands.
+8. **Combat gate.** **Closed:** Combat vision 0.3 ratified §8 (a)–(c); the record is in §8 here. Residual combat numbers are content/balance, tracked as Combat 0.3 open questions #11–#15 (with the family-baseline confirmation folding into question #5 here).
 9. **Total-XP round number.** 10,000,000 is the working total; any change rescales A and X₁ only (the midpoints and ratios are total-invariant). Confirm before the curve script regenerates.
