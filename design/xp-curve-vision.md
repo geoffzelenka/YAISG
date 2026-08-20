@@ -1,6 +1,8 @@
-# Yet Another Idle Skilling Game — XP Curve and Tiers Vision Document
+:1# Yet Another Idle Skilling Game — XP Curve and Tiers Vision Document
 
-**Version:** 0.2 (combat-gate closure patch: §8's ratification landed in Combat vision 0.3; combat rows and work items updated to match)
+**Version:** 0.3 (ratification patch: tier achievement-gates rejected; 10M total confirmed; proficiency per-family only)
+
+**Changes from 0.2:** Three ratifications from design-chat review. (1) **Tier achievement-gates are rejected** — §9 becomes a record of the rejection; **tier = f(level) stands permanently** as the single derivation; the watch items here (§11 #8) and in Skills and Goods are discharged; open question #2 is closed. (2) **The 10,000,000 total is confirmed** (question #9 closed): A ≈ 52 and X₁ ≈ 3,470 xp/h are final inputs; the curve script may regenerate. (3) **Proficiency is per-family only** (questions #3-granularity and #4 closed, superseding the family-defaults-plus-per-skill-override answer Skills and Goods v0.3 §2.3 had recorded): the §4.2 family tables apply uniformly to every skill in the family — no per-skill step declarations, no per-skill opt-out. The no-yield rule is **re-confirmed**: proficiency is cycle-time only, never yield. Exact step *values* remain content/balance, tuned at the family level.
 
 **Changes from 0.1:** The §8 gate is **closed** — Combat vision 0.3 ratified all three items in its own text: **(a)** uniform +5%/tier multiplier on Melee, Ranged, Magic, Accuracy, and Defense, with **Vigor excluded** (Combat §3.2); **(b)** a **two-stream, two-pool xp model** — offensive stream (damage dealt → attack style + Accuracy by stance) and defensive stream (damage taken/mitigated → Vigor + Defense), each capped by a content-authored per-encounter pool on the combatant; the offensive stream tapers against under-tier combatants, the defensive stream attenuates naturally, drops never diminish, and below-tier mastery pays **combat-effectiveness bonuses rather than cycle-time proficiency** (Combat §3.4–§3.5); **(c)** budget mapping ratified as **per-skill line, parallel budgets** — each pool calibrated per participating skill against this document's §3.3 line, concurrency as breadth not speed, family baseline 1.0× working (Combat §3.6). §4.2's combat row, §5.2's combat row, §8, work items #1 and #7, and open question #8 updated accordingly. No other section is touched.
 **Scope:** The shared leveling system — the XP curve formula and its time budget, tier thresholds, the proficiency speed tables (cycle-time bonuses below tier), xp diminishing returns, the content-side xp/hour test, unlock cadence, and per-family leveling baselines. This document owns the *numbers* the other visions deferred: tier thresholds (Skills and Goods §8.3, design.md 13.2/13.3), the combat tier-multiplier gate (Combat §10.2 — gated back, see §8), exploration's leveling pace (Exploration & Keys §10.1), and Travel's leveling numbers (Visiting & Travel §9.1/§9.3, partially — see §10).
@@ -113,7 +115,7 @@ Proficiency steps at tier distances, per family (`cycle_time_pct` reduction):
 
 The asymmetry is deliberate, and its logic is the **taper counterweight** (§5): gathering has no xp taper, so its proficiency is a smooth, early-starting, modest ramp — pure production efficiency. Refining and manufacturing *do* taper, and their proficiency steps ramp up precisely where the taper bites: the speed bonus partially offsets the xp/hour loss in the taper band (faster cycles mean more cycles per hour, so the same reduced per-cycle xp arrives more often), and once xp hits zero the bonus converts cleanly into production throughput. Manufacturing gets the steepest table because it has the harshest taper (zero xp at just 2 below) and because its finished goods are the upkeep sink the whole economy leans on — the deep-mastery manufacturer is the world's tool factory and is paid in speed for it.
 
-Whether the tables are declared per skill (a miner and a berry-gatherer differing in step values) or the family defaults apply uniformly is a content-pipeline question; the block remains optional per skill pending the S&G review (question #4). Exact values will need tuning — a +20–30% throughput edge at depth deflates low-tier prices, which is partly the point (veterans *should* flood low-tier supply into perpetual demand) but must be balanced against new-player income.
+**Ratified (0.3): the tables are per-family only.** Every skill in a family uses its family's table uniformly — no per-skill step declarations, no per-skill opt-out. This supersedes the family-defaults-plus-override shape Skills and Goods v0.3 §2.3 recorded, and closes questions #3 (granularity half) and #4: the content pipeline carries one table per family, and a skill's proficiency behavior is fully determined by its family membership. Exact values will need tuning — a +20–30% throughput edge at depth deflates low-tier prices, which is partly the point (veterans *should* flood low-tier supply into perpetual demand) but must be balanced against new-player income.
 
 **Four tiers below is the ceiling** — with five tiers it is the maximum possible distance, so the tables are implicitly capped; no step beyond 4-below exists. (Resolves Skills and Goods open question #2's cap half; step values remain content/balance.)
 
@@ -174,13 +176,11 @@ Combat content may now assume the multiplier, the taper shape, and the pool mode
 
 ---
 
-## 9. Tier achievement-gates — recorded direction, pending ratification
+## 9. Tier achievement-gates — REJECTED (0.3)
 
-The rough draft proposed that refining and manufacturing tiers require more than level: refining a current-tier good, or completing a content-defined set of manufactured items, before the next tier unlocks. The intent — forcing players through the production chain rather than pure-xp farming into a tier they've never practiced — is recorded as **direction**.
+The rough draft proposed that refining and manufacturing tiers require more than level: completing a content-defined recipe set before the next tier unlocks. **The proposal is rejected. Tier = f(level) is permanent** — the single derivation function is the whole story, and every sibling document's assumption (equipment tier-gating, proficiency distance, upkeep composition, the tier multiplier) stands without qualification.
 
-It is *not* ratified here, because it breaks an assumption every sibling document makes: **tier = f(level)**. Equipment tier-gating (Combat §3.3), proficiency distance (§4), upkeep composition, and the tier multiplier all currently derive tier from level alone. Achievement-gates make tier = f(level, per-skill completion state) — a new piece of character state (completed-recipe tracking), a new check in `can_start`, and a UI surface explaining *why* a level-90 character is still tier 3. The cheapest shape, if ratified: *tier unlocks when level ≥ threshold AND a content-defined recipe set has been completed at least once*, with gathering exempt ("no real gates," per the rough draft).
-
-Nothing may be built that *prevents* this (don't hard-code tier-from-level in more places than the one derivation function); nothing is built *for* it until ratified (question #2).
+The record, for why: achievement-gates would have made tier a function of per-skill completion state — new character state, a new `can_start` check, and a UI surface explaining why a level-90 character is still tier 3 — in exchange for chain-practice enforcement the xp/hour line and taper already provide economically. The watch items this direction created (here at §11 #8, Skills and Goods §3.2) are discharged: tier-from-level may be relied upon anywhere, though routing through the single derivation function remains good hygiene.
 
 ---
 
@@ -204,18 +204,18 @@ For Travel and Exploration, tiers grant absolute benefits at the character's own
 5. **Key-count modifier for exploration tiers** (§10) — a discovery-roll input, lands with Exploration & Keys work item #2.
 6. **Travel supply-cost reduction by tier** (§10) — a per-cycle input-quantity modifier: genuinely new input semantics (reducing consumption, not gating or adding chance); flag beside Exploration & Keys work item #7.
 7. **The xp/hour line as pipeline validation** (§3.3) — a content-pipeline check (warning, not fatal) comparing each action's xp/cycle-time at `level_required` against the family-scaled line, with a declared-deviation annotation to silence it. Near-zero engine work, high balance value. **Combat variant (Combat §3.6, work item #4d there): a model-player evaluator** — simulate a model player at the combatant's intended level against its stat block, check each xp pool's payout rate (pool ÷ expected kill time + respawn) against the per-skill line; more machinery than the production lookup, same test, same annotation rule. Respawn timers are thereby an xp-rate knob as well as a scarcity knob.
-8. **Watch item — tier achievement-gates** (§9): build nothing that hard-codes tier-from-level outside the single derivation path, so ratification remains cheap.
+8. ~~**Watch item — tier achievement-gates**~~ — **discharged (0.3): the gates are rejected** (§9). Tier = f(level) is permanent; no constraint remains beyond routing through the single derivation function as ordinary hygiene.
 
 ---
 
 ## 12. Open questions
 
 1. **Early-game pacing.** Keep the raw curve's minutes-long first levels, or add the linear term (§3.5)? Decide with tutorial-island content.
-2. **Tier achievement-gates.** Ratify or reject §9's direction; if ratified, define the recipe sets and the gathering exemption. Needs a design pass on the state shape.
-3. **Proficiency step values and declaration granularity.** The §4.2 tables set the family shape; whether per-skill declarations may vary the values, and the exact numbers, are content/balance — with low-tier price deflation from a +20–30% veteran throughput edge as the named tuning risk, and the taper-counterweight pairing (§5.1) as the tuning constraint.
-4. **Proficiency optionality.** Skills and Goods made the proficiency block optional per skill; confirm that survives the per-skill-table shape (pending the S&G review the design chat has queued).
+2. ~~**Tier achievement-gates.**~~ **Closed (0.3): REJECTED.** Tier = f(level) is permanent (§9); the watch items are discharged.
+3. **Proficiency step values.** ~~Declaration granularity~~ **closed (0.3): per-family only, no per-skill declarations** (§4.2). The exact numbers remain content/balance — with low-tier price deflation from a +20–30% veteran throughput edge as the named tuning risk, and the taper-counterweight pairing (§5.1) as the tuning constraint.
+4. ~~**Proficiency optionality.**~~ **Closed (0.3): proficiency is per-family only** — no per-skill opt-out or override; a skill's family membership fully determines its proficiency behavior. Supersedes the override shape S&G v0.3 §2.3 recorded. The no-yield rule is re-confirmed alongside.
 5. **Family baseline multipliers.** Exploration's scale-down factor (and any others) against the shared 720h anchor. Content/balance.
 6. **Travel xp formula.** Per edge by time, by supplies, or both; repeat-edge decay. Owned with Visiting & Travel residuals (§10).
 7. **Taper step values.** The exact negative-xp steps between "starts tapering" and "zero" for refining and manufacturing (§5.2). Content/balance.
 8. **Combat gate.** **Closed:** Combat vision 0.3 ratified §8 (a)–(c); the record is in §8 here. Residual combat numbers are content/balance, tracked as Combat 0.3 open questions #11–#15 (with the family-baseline confirmation folding into question #5 here).
-9. **Total-XP round number.** 10,000,000 is the working total; any change rescales A and X₁ only (the midpoints and ratios are total-invariant). Confirm before the curve script regenerates.
+9. ~~**Total-XP round number.**~~ **Closed (0.3): 10,000,000 confirmed** as the level-100 total. A ≈ 52 and X₁ ≈ 3,470 xp/h are final; the curve script may regenerate (work item #2 is unblocked).

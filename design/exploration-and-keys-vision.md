@@ -1,6 +1,8 @@
 # Yet Another Idle Skilling Game — Exploration and Keys Vision Document
 
-**Version:** 0.1 (first structured draft; refined from the rough draft through design-chat review)
+**Version:** 0.2 (ratification patch)
+
+**Changes from 0.1:** One settlement from design-chat review: **listing expiry confirmed** (question #6) — unique-item listings expire like book orders, on the same expiry job, with the same collectable pattern (the escrowed instance returns to the slot's collectable state on expiry, exactly as a cancellation would deliver it). Default durations remain content/balance, decided with the market's order durations (market-vision §7.3, confirmed in its v1.2).
 **Scope:** The exploration skill and the key system — discovery mechanics, the key as an instanced item, the instanced-item architecture itself (a commodity/unique split this document introduces on behalf of the whole game), key trading via unique-item listings, combat-key reconciliation, and hidden-realm unlocks as recorded direction. This document supersedes `exploration-and-keys-vision-TODO.md`, which is retired.
 **Relationship to other documents:** Vision documents describe *what the game should feel like and why*. `design.md` is authoritative on mechanics; where this vision implies a mechanic the engine doesn't yet support, that is a design-doc work item (§8), not a license to improvise. Siblings: **Skills and Goods** (owns exploration's economic frame: the producer of access, §4.1 there), **Market Vision** (owns the order book this document's keys explicitly *cannot* use, and the escrow/collection patterns its listings reuse), **Combat Vision** (whose §7.2 deferred key ownership here — this document now pays that bill and patches it), **Realm & World Vision** (the realms keys are scoped to). The planned **XP Curve** vision owns exploration's leveling numbers.
 
@@ -171,7 +173,7 @@ Roughly in order of when they bite:
 3. **Key-count and yield ranges per template.** The total-access-value knob (§2.3). Content/balance.
 4. **Boost consumable design.** What the optional inputs are and how much they help (§2.1). Content design over work item #7.
 5. **Combat-key drop rates.** The severity-tuning knob for session-scoped keys (§5). Content/balance.
-6. **Listing durations and defaults.** Do unique-item listings expire like book orders (presumably yes, same job, same collectable pattern)? Default durations? Small design-doc surface within work item #5.
+6. ~~**Listing durations and defaults.**~~ **Confirmed (0.2):** unique-item listings expire like book orders — same expiry job, same collectable pattern; the escrowed instance returns to collectable state on expiry. Default durations remain content/balance, chosen alongside the book's order durations.
 7. **Trophy presentation.** Depleted keys sit in inventory (§3.3) — is there ever a dedicated trophy display (estate shelf?), and does that interact with estate storage designs? Deferred to estate-storage/QoL territory; nothing blocks on it.
 8. **Hidden-realm reveal mechanics.** The full shape of §7.2 when scheduled: how a dormant realm is hinted at, what the discovery action looks like, one-time-ness, credit and announcement. Owned by a future content-update design.
 9. **Discovery announcements.** Realm-wide announcement presentation ("Alice discovered...") — client/UX design; no engine surface beyond reading provenance.
