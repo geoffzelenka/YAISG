@@ -1,6 +1,12 @@
 # Yet Another Idle Skilling Game — Visiting & Travel Vision Document
 
-**Version:** 0.2 (ratification patch)
+**Version:** 0.3 (absorbs the inter-realm economy pass: `map_edge_state` ownership, the estate larder, player cargo safety)
+
+**Changes from 0.2:** Three items handed over by `inter-realm-economy-vision.md` v0.6, none of which change a decision this document already made.
+
+1. **This document now owns `map_edge_state`** (§4.1) — runtime per-edge modifiers with expiry, introduced by the economy pass for caravan attrition and handed here because this vision owns the map and has the most anticipated readers. Two constraints travel with it: persistence is a first-class column, and realm price levels read only the persistent subset.
+2. **The estate larder is not estate storage** (§5.3) — a prepaid upkeep buffer with no withdrawal path. §5.3's "one pack, no located goods" rule stands unamended; the pointer exists so nobody reads the larder as reopening it.
+3. **Players travel safe, for now** (new §7.4) — caravan attrition degrades NPC shipments and never touches a player's pack. Deferred rather than closed, with guards recorded so nothing assumes cargo is permanently safe *or* at risk.
 
 **Changes from 0.1:** Three ratifications from design-chat review. (1) **Relocation unification ratified** (was §8.7's proposal, question #2): mobile-estate relocation runs as a Travel journey — time from edges + Travel level, supplies from the form's travel profile — and the gold-cost instant/delayed variants are retired for mobile forms; the Phase 4 gold × `relocation_cost` path remains for fixed-form moves. A client work item is added (§8.9): a mobile-estate character who starts a *visit* journey is warned that relocating may be what they want, since for them visiting means leaving their estate — bonuses and all — behind by choice rather than by form. (2) **No obligation to return home** (question #5): staying away from a fixed estate indefinitely is explicitly legal — the standing cost is the absence of the estate's bonuses while upkeep and solvency continue at home; no timer, no penalty escalation. (3) **Project contributions are presence-gated** (ratified alongside this document's review, superseding the Phase 4 permissive rule / design log #23): contributing to a realm project requires being physically in the realm — §5.1 updated. Question #6 (remote estate interaction) remains open pending multiple estates.
 **Scope:** Travel between realms and the distinction between a character's *current* realm and their *home* realm — the Travel skill, how journeys are priced and resolved, what a visitor can and cannot do, how estate bonuses and caps behave away from home, and the mobile/fixed estate split that routes mobile-estate movement through relocation and fixed-estate movement through visiting. This is the document design.md §13.9 has been waiting on: it replaces the interim presence rule (`current realm = home realm`) with the real one.
@@ -64,6 +70,8 @@ Travel passes the test by being the skill that makes the hauler and adventurer *
 
 Each map edge carries (already, from Phase 4) a base time cost, and gains a **supply-cost modifier** — a multiplier on the traveller's per-edge supply profile. A mountain pass is slow and hungry; a river road is neither.
 
+**Edges gain runtime state, and this document owns it** *(0.3)*. The inter-realm economy pass introduced `map_edge_state` — mutable per-edge modifiers with expiry — as the table its caravan-attrition system writes to, and handed **ownership here**, since this vision owns the map and has the most readers: travel time, per-edge supply cost, the impassable-at-low-tier edges of §9.1, and caravan attrition. Two constraints travel with it. **Persistence is a first-class column**, separating standing terrain and roads from transient events. And **realm price levels read the persistent subset only** — a road project lowers a realm's prices; bandits on a pass do not, or every price board in the world would twitch whenever a spawn table fired. The clean line: **events change what a journey costs; development changes what a place costs.**
+
 ### 4.2 The traveller owns the profile
 
 The per-edge supply profile comes from the character's movement mode:
@@ -97,6 +105,8 @@ Inert status (upgrade realm-tag mismatch) is unchanged and orthogonal: it is eva
 
 There is **one player inventory**, carried everywhere, plus the market escrow slots (order slots and unique-item listings). No estate storage, no located goods. The hauler's cargo is whatever is in their pack; market fills are collected from the slot wherever they stand (market-vision §2.3 already made collection the location-free delivery point). The carried/stored watch item (design.md §13.7) stays a watch item — nothing here builds it and nothing here forecloses it.
 
+*(0.3: one addition that looks like an exception and is not.)* The **estate larder** (realm-vision §3.4, inter-realm-economy §7.5) lets a player deposit upkeep goods into their estate before a long absence. It has **no withdrawal path, ever** — goods entering a larder have been *spent*, not *stored*. So the rule above stands unamended: there is still no estate storage, still no located goods, still nothing to retrieve from a building, and still no carried/stored split. The larder exists because §5.5's "no obligation to return" would otherwise leave a departing player with no lever at all over their estate's survival.
+
 ### 5.4 Markets while away
 
 - **Realm market:** tradeable only at the realm you are physically in — the permanent invariant (market-vision §3.5). Visiting is what makes trading at a foreign realm possible at all.
@@ -124,6 +134,21 @@ There is **one player inventory**, carried everywhere, plus the market escrow sl
 
 ---
 
+### 7.4 Cargo risk on the road — deferred, not closed
+
+*(New in 0.3, handed over by inter-realm-economy §9.3 and §16 #6.)*
+
+The economy pass introduced world events that make roads dangerous — bandits on a pass raise **caravan attrition**, so NPC shipments through it arrive lighter until players clear them. That system deliberately **does not touch player cargo**, and the asymmetry is the point: a dangerous road makes NPC logistics worse and makes *players more valuable*, which is the direction every loop in that document wants. A hauler's premium rises precisely because the caravan alternative degraded.
+
+**Settled for now: players travel safe.** Deferred rather than closed, with two guards:
+
+- **Nothing may assume player cargo is permanently inviolable.** If Combat or Exploration later wants road risk, it should find a seam rather than a wall. The journey already resolves per edge with per-edge inputs (§3.1), which is the natural attachment point.
+- **Nothing may assume it is at risk either.** No mechanic may price itself on the assumption that hauling is dangerous — the hauler's wage comes from store scarcity and remoteness gradients, not a risk premium.
+
+Revisit owned by the **Combat** and **Exploration & Keys** visions, which own the event content that would drive it.
+
+---
+
 ## 8. What this changes in the design doc (work items, not yet decisions)
 
 1. **`current_realm` becomes real state** — a character's location column, initialized to home, advanced by travel cycles; the `current_realm()` helper (design.md §7.6) stops returning home. Every presence-gated check already routed through the helper switches over with no sweep; audit that nothing bypassed it.
@@ -139,9 +164,13 @@ There is **one player inventory**, carried everywhere, plus the market escrow sl
 
 ---
 
+- **`map_edge_state`** *(0.3, inherited)* — runtime per-edge modifier state: `(edge_id, modifier_type, value, persistent, expires_at, source)`. The map is currently pure content with no mutable state, so this is a new table. First writer is the economy pass's caravan attrition; anticipated readers are travel time, per-edge supply cost, route blocking (§9.1), and realm remoteness (persistent rows only). **Design it general from the start** — an attrition-shaped table would need reworking for the second consumer.
+
+---
+
 ## 9. Open questions
 
-1. **Travel tiers.** Beyond speed: impassable-at-low-tier edges, supply discounts, cargo cap? Owned by content + XP Curve vision.
+1. **Travel tiers.** Beyond speed: impassable-at-low-tier edges, supply discounts, cargo cap? Owned by content + XP Curve vision. *(0.3: if impassability is ever built, `map_edge_state` (§4.1) is the table it should read — it exists now and is designed general for exactly this.)*
 2. ~~**Relocation unification**~~ **Ratified (0.2):** mobile-estate relocation routes through the Travel journey; gold-cost variants retired for mobile forms; fixed forms keep the Phase 4 path. See §8.7, §8.9.
 3. **Travel xp formula.** Per edge scaled by base time, or by supplies consumed, or both? Does repeating the same edge pay less? XP Curve vision.
 4. **Base travel profile contents and edge modifiers.** Content/balance.
