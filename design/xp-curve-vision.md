@@ -1,4 +1,4 @@
-:1# Yet Another Idle Skilling Game — XP Curve and Tiers Vision Document
+# Yet Another Idle Skilling Game — XP Curve and Tiers Vision Document
 
 **Version:** 0.3 (ratification patch: tier achievement-gates rejected; 10M total confirmed; proficiency per-family only)
 
