@@ -1,6 +1,16 @@
 # Yet Another Idle Skilling Game — Inter-Realm Economy Vision Document
 
-**Version:** 0.6 (R29/R30 deferred to a realm-upgrades pass; the decay effect layer becomes an explicit seam. **No open ratifications remain in this document's scope** — ready for design.md v0.7 absorption)
+**Version:** 0.7 (the gold supply pass. **The no-mint pillar is amended, not abandoned** — one authorized faucet, community-gated, self-throttling. Opens R31–R36)
+
+**Changes from 0.6:** The pass overturns this document's own most-repeated sentence. *Nothing here mints gold* was load-bearing, and it was **wrong in one direction**: a conserved supply is not a stable supply, and the design as written had one unaccounted faucet, no sink at all, and a fixed realm price scale that cannot deflate alongside the player one.
+
+- **New §8.6** states the actual problem. The threat is not scarcity — a pure deflation self-corrects in nominal terms — it is that `reference_price` is a content constant anchoring every realm quote. The player book can deflate; the realm market cannot. As gold-per-unit-of-activity falls, realm bids stay nominally fixed while book prices slide beneath them, opening a **structural arbitrage that widens forever** and drains treasuries into player wallets. The correction to the framing: goods are not infinite in *stock* (the world eats them constantly), but goods **flow** is unbounded, and flow is what gold must service. The design target is therefore **gold scaling with economic activity**, not with time or with account count.
+- **New §8.7 — the mint**, ratified as a realm upgrade. It adds precious metals to the realm's draw vector and coins consumed bullion into the treasury. It reuses the bid curve, the presence gate, the funded-bid rule, the vote, and the maintenance draw, and introduces **no player-facing endpoint and no fixed-price vendor**. Its most important property is emergent rather than authored: because seigniorage is `K × reference − bid_paid` and the bid climbs as bullion drains, **the faucet throttles itself to the world's actual precious-metal production** and shuts off entirely when bullion is scarce. That is the activity-scaling §8.6 asks for, obtained for free.
+- **New §8.8** records the rejection of **player-facing coin drops**, with the accepted substitute: combatants drop **bullion goods**, which feed the mint. Combat gains a second economic surface without becoming a faucet, and combat's stated identity as a gathering skill with risk survives intact.
+- **New §8.9 — the drain side.** A faucet with no sink relocates the problem rather than solving it. `K < 1` makes the same mechanism a **net sink**, so one knob sets direction; a dormant `tax_burn_pct` ships at zero as the emergency dial.
+- **New §8.10** weakens the conservation invariant **correctly**: total gold changes only through authorized mint writes; every other path conserves. Still fully testable, and it promotes **world gold supply to a first-class metric** from day one.
+- ⚠ **Character-creation starting gold is reclassified** as what it always was — a per-account mint of the wrong shape, invisible to every economy document. **R36 stays open, and splits:** that it may not be *minted* follows from the invariant; *how much a new character should have* is a separate onboarding question, and the lean is **zero** — nothing a starting character does costs gold, so the first sale can be the opening move.
+- §1, §8.1, and §14's non-goals are amended; §10, §11, §12, §14, §16, and §17 gain entries.
 
 **Changes from 0.5:** One deferral, handled as a seam rather than a gap. **R29 and R30 are parked pending a design pass on realm upgrades** — the question of what decay sheds depends on a system whose shape (tiers, slots, costs, prerequisites) is still open, and answering it from inside an economy document would bake assumptions the upgrades pass then has to work around.
 - **New §6.7** records the deferral, the leading direction, and **five constraints that travel forward** so the upgrades pass inherits boundaries rather than a blank page: shedding must reduce upkeep, the terminal state must have zero upkeep, recovery is the ordinary forward path, nothing below Faltering may be irreversible, and the gauge does not reset on a shed step.
@@ -53,7 +63,7 @@ A realm is a stomach with a wallet. Every tick it eats a fixed diet, and everyth
 
 The whole system is built out of a single derived quantity — the realm's **daily draw** per good. Reserve, storage cap, bid curve, ask, solvency gauge, decay stage, estate feeding priority, project contribution rate, and NPC import ceiling are all expressed as multiples of it. There is one price-level multiplier for distance, one spread constant between what a realm pays and what it charges, and one deficit accumulator that drives everything downstream. A player looking at a realm sees a pantry with a line drawn across it — *below this line is not for sale, and not for feeding private estates* — and a price that climbs as the pantry empties. A player looking at the map sees that line drawn higher, and those prices set richer, the further out they go — and sees the map's distances **shrink as the frontier gets settled**.
 
-Nothing here mints gold. Nothing here rescues a realm that nobody helps. And nothing here can pay a player to stand still.
+*(Amended in 0.7.)* **Gold is minted in exactly one place, and a community has to build it.** A realm that has voted itself a mint eats precious metals like it eats bread, and coins what it eats into its own treasury — so the world's money supply grows out of the world's mining, at a rate the world's miners set. Everywhere else, gold only changes hands. Nothing here rescues a realm that nobody helps. And nothing here can pay a player to stand still.
 
 ---
 
@@ -543,13 +553,17 @@ Everything else in this section is settled and buildable: the shared gauge, the 
 
 ---
 
-## 8. Treasury seeding and the frontier bootstrap
+## 8. Treasury seeding, the gold supply, and the frontier bootstrap
+
+*(Retitled in 0.7. §8.1–8.5 answer "where does **this realm's** gold come from." §8.6–8.10 answer the question that turns out to sit underneath it: "where does **the world's** gold come from." The first four sources were correct and remain correct; they were just all redistribution, and a closed circuit with a leak is not a monetary system.)*
 
 ### 8.1 The actual problem
 
 The chicken-and-egg is sharper than realm §6.5 states it. A frontier realm has no market access, so it collects no tax, so its treasury is empty, so its bids are unfunded, so no hauler is paid to supply it, so it never develops the node that grants access. Content seeding (market §3.4) solves the world's *opening* position and says nothing about realms that develop later, or regress and need to recover.
 
 No mechanism here may mint gold. So the frontier's first gold must be *earned* or *transferred*, and there are exactly four honest sources.
+
+*(Amended in 0.7: a fifth exists, and it is the only mint in the game — a realm that has built one coins its own bullion (§8.7). It is deliberately **not** a bootstrap tool. A mint is a mid-chain upgrade with a maintenance draw and a bullion appetite; a frontier realm can afford none of it, and if it could, the bootstrap problem this section solves would have been solved by printing money. The four sources below remain the frontier's entire answer.)*
 
 ### 8.2 Selling its own production — the headline answer
 
@@ -572,6 +586,123 @@ It is not self-dealing: gifting gold and then selling your own goods back return
 ### 8.5 The floor is real, and that is correct
 
 There is deliberately **no rescue mechanism**. A realm with nothing to sell, no visitors, and no patron genuinely cannot bid, and stays that way. That is realm §2.7's thesis — communal neglect has a price everyone can name — and the escape is not a bailout but regression: as the realm slides, its quotas shrink, until its natural production covers what remains and it stabilizes as frontier (§6.6). Nothing is ever permanently broken; it composts.
+
+### 8.6 Conservation is not stability
+
+*(New in 0.7. This section overturns the pillar every prior version of this document asserted.)*
+
+**The premise was that a conserved gold supply is a safe gold supply. It is not, and the design as written did not even conserve.** Three findings, in ascending order of severity.
+
+**The supply is not actually fixed — it grows in the wrong shape.** Character creation writes a `currency` row seeded from a config constant. That is newly created gold, per account, forever, and it is the only genuine faucet the game currently has. No economy document accounts for it. It scales with *accounts registered* — including accounts that register, trade, and leave — which correlates with nothing the economy needs money for.
+
+**There is no gold sink whatsoever.** Every candidate turns out to be a transfer. The upgrade-vote fee goes *to* a treasury (realm §2.12). Project kickoff costs go to a treasury. Realm-market purchases move treasury gold *into* player hands. Fixed-form relocation cost is a transfer. And §9.3 chose goods-attrition over a gold burn on the explicit grounds that a burn is "a deflationary leak with no counterparty, in an economy that cannot mint." Goods have six sinks; gold has none.
+
+**The decisive failure is the fixed price scale, not scarcity.** A pure deflation is survivable on its own terms: nominal prices fall, hoards gain real value, trade continues at smaller numbers. What kills that self-correction is `reference_price`. It is content-authored and static by ratified decision (§16 #3), and it anchors `bid_max`, `bid_min`, the spread, the gauge weights, and the procurement allocation. **The player book can deflate; the realm market cannot.** So as gold per unit of activity falls, realm bids stay nominally fixed while book prices slide beneath them, and selling to a realm becomes unconditionally better than selling to a player — an arbitrage that is structural, one-directional, and widens forever. It drains treasuries into player wallets, which is precisely the inverse of the loop in realm §4.2. The divergence telemetry of §16 #3 would report it faithfully and a designer would be repricing the entire catalogue every few months to chase it.
+
+**The correction to the framing, which matters for choosing a faucet.** Goods are not infinite in *stock* — the world eats them constantly through upkeep draw, project contribution, caravan attrition, combat consumables, spoilage, and store overflow. What is unbounded is goods **flow**, and flow is what a money supply has to service. The design target is therefore not "gold grows over time" and certainly not "gold grows per account," but:
+
+> **The gold supply should scale with economic activity, and nothing else.**
+
+That criterion rejects wall-clock faucets, per-account faucets, and per-kill faucets, and it is the reason §8.7 takes the shape it does.
+
+### 8.7 The mint: a realm upgrade that coins its own bullion
+
+*(New in 0.7. R31.)*
+
+**A mint is a realm upgrade.** It is proposed by a resident, paid for by a vote fee, decided by the estates standing in the realm, built through the ordinary project machinery, and it carries a permanent maintenance draw like every other upgrade (realm §2.11, §2.12). Everything a community pays for a lumber yard, it pays for a mint.
+
+What the upgrade does is add **precious metals to the realm's draw vector** — bullion becomes something the realm eats. Every mechanism that follows is one this document already specifies:
+
+- The realm bids for bullion **on the ordinary bid curve** (§5.1), priced by its own store level, its remoteness multiplier, and its treasury allocation.
+- The bid is **funded or absent** (§5.5). A broke realm's mint publishes a need and coins nothing.
+- Selling bullion to it is **presence-gated** like every other realm-market trade (market §3.5).
+- Bullion sits under the ordinary **reserve and cap** rules, so a mint realm holds a runway of unstruck metal exactly as it holds a runway of grain.
+
+At each tick the mint consumes its drawn bullion out of stores and credits the treasury:
+
+```
+coined[r]   = Σ_g  consumed[r,g] × reference_price[g] × K[g]
+```
+
+where `K[g]` is the **coinage multiple** — the one new content knob, and the only place in the game where gold comes into existence.
+
+**The rule that makes this safe: the mint pays the treasury, never the player.** A player selling bullion is paid the ordinary floating bid, the same as selling grain. There is no fixed-price vendor anywhere in the loop. This is not a stylistic preference — a content-constant price quoted directly to players sitting next to a free market is an infinite-money loop the instant the book price falls below it, and it is the single most common way an MMO economy dies. Three further reasons the treasury is the right destination:
+
+1. **It scales the faucet to production, not to population.** Gold enters as procurement budget, which is spent back out on upkeep goods, which is exactly the flow that needed servicing.
+2. **It is community-gated.** No mint exists that a realm did not vote for and does not pay maintenance on. "Which realms have mints" becomes a genuinely consequential political question, and a good one to fight over.
+3. **It cannot pay a player to stand still**, preserving §1's third promise. Every coin still reaches a player through a trade.
+
+**The self-throttling property, which is the best thing about this design and was not authored.** Net gold created per unit of bullion is:
+
+```
+seigniorage = reference_price × K  −  bid_paid
+```
+
+and `bid_paid` climbs along the bid curve as bullion stores drain. So:
+
+- **Bullion abundant** → stores near cap → bid near `bid_min` → seigniorage wide → the mint coins freely.
+- **Bullion scarce** → stores near empty → bid near `bid_max` → seigniorage narrows to zero and then goes negative → **the mint stops being a faucet and becomes a sink.**
+
+With `bid_min = 0.3` and `bid_max = 2.2`, a `K` of around 1.2 makes the mint strongly net-positive on a full pantry and net-negative on an empty one. **The money supply therefore tracks the world's actual mining output automatically**, with no rate limiter to tune and no designer in the loop — which is the §8.6 criterion satisfied by the mechanism's own shape rather than by a cap bolted onto it.
+
+Two further guards, both cheap:
+
+- **`K[g]` is authored as a multiple of `reference_price[g]`, never as an absolute.** A standalone coinage price would be a second, silently disagreeing price scale for the same good, and the two would drift apart the first time a designer repriced one and not the other.
+- **Bullion is not exempt from anything.** It spoils at zero like a metal should, it counts toward the deficit gauge like every other unmet draw, and a mint realm that cannot feed its mint accrues gauge and decays — a realm can absolutely starve its own treasury by over-committing to coinage, which is the correct and thematically exact punishment.
+
+**A mint's tier scales its draw**, not its `K`. A bigger mint eats more bullion; it does not conjure more gold per ingot. This keeps `K` a global economic constant rather than a per-upgrade balance surface, and it means mint capacity is bounded by what the world can dig up.
+
+### 8.8 Why combat does not drop coins
+
+*(New in 0.7. R32 — a rejection with an accepted substitute.)*
+
+Coin drops on combat loot tables were considered and are **rejected**. Three reasons, the third specific to this game:
+
+1. **It contradicts combat's stated economic identity.** Combat's whole design premise is that it is a gathering skill with risk attached — it produces leather, bones, and monster parts for the industries and buys back bread, potions, and ammunition (combat §1, §8). Coin drops let combat self-fund, which *decouples* it from the economy rather than coupling it, and quietly deletes the reason a combat player ever visits a market.
+2. **It is a faucet nobody governs.** Every other gold path in the design runs through a realm that voted for it and pays maintenance on it. A drop-table faucet is set by content, fires everywhere at once, and has no community, no cost, and no off switch short of a content patch.
+3. **This is an idle game.** Combat resolves offline over segmented absences. A coin-drop faucet runs while players sleep, which scales the money supply with **subscription-hours**, not with economic contribution — the exact failure mode §8.6 rules out.
+
+**The accepted substitute, which gets the theme for free: combatants drop bullion.** A bandit's coin purse, a hoard-guardian's silver, ore from a cave-dwelling thing. These are ordinary goods on ordinary drop tables — no new mechanism, no new item behaviour — and they feed the mint through the same market every other good travels. Combat becomes a genuine second supply line into the world's money supply without being a faucet, monster parts gain a high-value tier, and the loop closes through a realm rather than around it.
+
+The consequence worth naming: **bullion becomes a contested good with two production paths** (mining and combat), which is the first item in the catalogue where a gatherer and an adventurer are direct competitors in the same book. That is a feature, and it is the kind of thing the goods ladder has been short of.
+
+### 8.9 The drain side
+
+*(New in 0.7. R33.)*
+
+A faucet with no sink relocates the problem from deflation to inflation, and this document has been burned once already by assuming a monetary property rather than mechanizing it. Three answers, in order of how much they cost:
+
+- **`K < 1` runs the mint backwards.** If the world's gold supply ever runs hot, lowering the coinage multiple below 1 turns every mint in the world into a net gold *sink* — realms pay more for bullion than they coin from it, burning treasury gold against a real good. **One knob sets the direction of the entire monetary system**, using a mechanism that already exists, is already community-gated, and is already self-throttling. This is the primary lever and it needs no new engine surface.
+- **Churn is the natural drain**, and it is the same drain that motivated this pass — players leave and their wallets stop circulating. It scales with population, which is roughly the right shape, but it is uncontrolled and unobservable. It should be *measured* (§8.10) and never *relied on*.
+- **`tax_burn_pct`, shipped dormant at zero.** A fraction of the global-book tax destroyed rather than credited to the hosting realm. It costs one line at the tax-credit site and it is the emergency dial that does not require a mint anywhere in the world to be effective. Ship the knob now; leaving it at zero forever is a fine outcome, and needing it in six months without having built it is not.
+
+**What is deliberately *not* a sink:** anything that burns a player's gold as a fee. Every existing gold cost in the design is a transfer to a treasury, and that is correct — the vote fee is doing three jobs (anti-spam, sink-shaped pressure, treasury revenue) and converting it to a burn would cost the third for no monetary benefit that `K` cannot deliver more precisely.
+
+### 8.10 The conservation invariant, weakened correctly
+
+*(New in 0.7. R34.)*
+
+Market §2.3's property test — every unit of gold is at all times in exactly one of wallet, slot escrow, slot fills, or realm treasury — is this economy's most valuable test, and it does not have to be given up. It weakens to:
+
+> **Total world gold changes only through an authorized mint write. Every other path conserves.**
+
+Still a single property, still exhaustively testable, and strictly more informative than the old one because a violation now names its cause. Concretely:
+
+- Mint writes are the **only** credits with no matching debit, and they occur at exactly one call site in `resolve_realm`.
+- Every mint write is journalled: `(realm_id, tick, item_id, units_consumed, bid_paid, coined, K)`. The journal is what makes the supply auditable after the fact rather than merely bounded in principle.
+- **World gold supply becomes a first-class metric from day one** — total, and split by pool (player wallets / escrow / treasuries). In a system with this many interacting rates, the single number most worth being able to graph is how much money exists and where it is sitting. It costs a sum query and it is the instrument that would have caught the character-creation faucet years earlier.
+
+⚠ **Character-creation starting gold is reclassified** (R36, **open**). It is a mint, it has always been a mint, and no economy document has ever counted it. **The item splits into two questions that were being answered as one:**
+
+**(a) May a new character's gold be minted? No — and this half is not open.** Whatever the amount turns out to be, it either comes from somewhere or it is the second uncounted faucet in a design that just spent a section removing the first. This falls out of §8.10's invariant rather than needing its own argument.
+
+**(b) How much gold should a new character have? Open, and the lean is zero.** *(0.7.)* A full wallet at creation is an inherited convention, not a requirement this game has. Nothing a starting character does costs gold: gathering is free, skilling is time, travel is paid in supplies (visiting §4.1), the estate arrives with them, and the tutorial realm is market-exempt anyway (realm §2.4), so there is nowhere to spend it before graduation. **The first thing a new player does is produce something and sell it** — which is the economy's entire thesis delivered as the opening move, rather than a lump sum that quietly teaches the opposite. It also makes the tutorial's market exemption legible: you are not poor, you are somewhere that has not started trading yet.
+
+**The one real constraint zero imposes, and it is cheap.** A player with no gold and no sale is stuck, so the graduation realm must **guarantee a funded bid for something a level-1 character can produce**. That is a content requirement — the mainland entry realm draws a low-tier good that its own starting gathering actions yield — plus a boot validation to keep it true as content changes. Note it is a guarantee about the *first* sale only; after that the ordinary market applies and the player can absolutely make bad choices.
+
+**If a stipend is wanted anyway**, it is a **transfer from the tutorial realm's treasury**, seeded at content time like every other opening balance (market §3.4). That satisfies (a) at any amount, and it gives the tutorial realm a role in the ledger rather than an exemption from it. The remaining fallback — keep the amount and route it through the authorized-mint journal — is acceptable only as a stopgap, because it makes the supply *visible* without making it *governed*.
+
+The one unacceptable option is the status quo, where the game's only faucet is a config constant that no economic reasoning in any document knows about.
 
 ---
 
@@ -685,6 +816,13 @@ Discharging realm §6.13's residual — thin frontier markets must degrade grace
 | Estate at base form (shell) | Zero upkeep by content validation → gauge cannot accrue → terminal and stable. Mirrors the base-node rule (R11). |
 | Estate degrades with zero upgrades installed | Already terminal; nothing to uninstall. Gauge holds at its partial value and the shell persists. |
 | Book too thin for a meaningful VWAP | Divergence telemetry suppresses the good rather than reporting noise (§14). |
+| Mint realm with empty bullion stores | Consumes nothing, coins nothing. Bullion is an ordinary unmet draw: it accrues gauge and its bid climbs. A mint nobody supplies is dead weight with a maintenance bill — the intended pressure (§8.7). |
+| Mint realm too broke to bid for bullion | No bullion bid exists (§5.5); a **need** is published. The faucet is off precisely where a treasury bailout would be most tempting, which is correct: a mint is not a bootstrap tool (§8.1). |
+| `bid_paid > reference × K` (bullion scarce) | Seigniorage is negative and the mint runs as a net gold **sink**. Permitted and not guarded — this is the self-throttle, not an error (§8.7). |
+| `K` set below 1 globally | Every mint in the world is a net sink. A deliberate monetary state, not a degenerate one (§8.9). |
+| Mint upgrade shed by decay | Bullion leaves the draw vector with the tag; coining stops; the realm's gold supply contribution ends. No special case — identical to any other shed upgrade (§6.7). |
+| Bullion in stores when the mint is shed | Becomes a zero-draw good: `idle_cap`, reserve 0, fully sellable (§3.3). The realm liquidates its unstruck metal, which is exactly what a town that lost its mint would do. |
+| Two mint realms bidding for the same bullion | Ordinary competition on one global book. No coordination, no clearing rule, no new mechanism. |
 
 ---
 
@@ -698,6 +836,9 @@ Discharging realm §6.13's residual — thin frontier markets must degrade grace
 - **Events move journeys, development moves places** → bandits thin the NPC network without shaking the world's price boards → R19's content hook is powerful *and* safe to fire often.
 - **The willingness-to-pay ceiling** → the floor can never bankrupt a realm it is rescuing, and high-attrition routes simply stop clearing → the gap the caravan won't cover is priced, visible, and exactly the hauler's opening.
 - **The treasury band splits one signal into two calls to action** → funded hunger recruits haulers, broke hunger recruits patrons and tycoons → and the bid keeps its credibility, which every other signal in the economy borrows against.
+- **The mint is a draw, not a faucet primitive** → it inherits the curve, the reserve, the cap, the funded-bid rule, the gauge, the vote, and the maintenance bill without a line of new economic machinery → the game's money supply is governed by the same seven mechanisms that govern its bread supply, and there is no second system to keep in sync.
+- **Seigniorage is priced against a curve that steepens as bullion drains** → the faucet widens when metal is abundant and closes when it is scarce → the money supply tracks the world's mining output on its own, and the thing that would otherwise be the most dangerous number in the design has no rate limiter because it does not need one.
+- **Bullion is minted by miners and by monsters, and coined only by realms** → a gatherer and an adventurer compete in the same book, and both are paid by a community that voted to want what they carry → combat pushes on the money supply the way §9.3's bandits push on freight: through the economy, never around it.
 - **Market access supplies a frictionless alternative channel** → the travel premium's bite concentrates on off-book realms → the hauler's wage is highest exactly where the hauler is the only option, and losing access becomes viscerally expensive.
 - **Estates transact in goods with the local pantry** → specialization generates cross-industry demand → population enters demand through estates rather than through a quota multiplier, and a glut of ownerless estates self-corrects through overflow without a price loop.
 - **The reserve line gates sales, estate feeding, and project commitment** → one number tells a resident when the town will stop feeding their workshop → which is exactly when the larder is worth stocking, on a deadline they can see coming.
@@ -742,6 +883,11 @@ Everything below is content/balance and needs no ratification — the ratifiable
 | `A`, `attrition_max` | Global | — | Baseline caravan loss and its ceiling. |
 | Willingness-to-pay ceiling | Fixed rule (no knob) | — | Importer never pays above its own bid (§9.2). Deliberately not tunable. |
 | `caravan_attrition_pct` sources | Node / upgrade / map edge | — | Roads, garrisons, bandits. |
+| `K[g]` — coinage multiple | **Global**, per bullion good | 1.2 | **The direction and strength of the entire monetary system.** `> 1` faucet, `< 1` sink (§8.7, §8.9). Authored as a multiple of `reference_price[g]`, never absolute. Deliberately not per-upgrade. |
+| Mint `draw[bullion]` by tier | Per upgrade tier | — | Mint capacity. A bigger mint eats more metal; it never coins more gold per ingot. |
+| Which goods are bullion | Per item (content flag) | — | Which metals a mint will eat. Feeds mining *and* combat drop tables (§8.8). |
+| `tax_burn_pct` | Global, **dormant at 0** | 0 | Emergency gold sink independent of any mint existing (§8.9). Ship the knob, leave it at zero. |
+| Starting gold at character creation | Config constant | **0** | ⚠ Currently an unaccounted mint. Pending R36(b) — **lean is zero**, with the first sale as the opening move; any non-zero value is a tutorial-treasury transfer, never a mint. |
 
 ---
 
@@ -801,10 +947,22 @@ Roughly in build order. Items marked ⚠ change something design.md currently st
 - ⚠ **`POST /estates/me/larder`** (§7.5) — new. Deposit only. Presence-gated at the estate's realm.
 - **Realm market read** grows: per-good coverage, surplus, cap state, treasury health band, gauge/stage. Location-free per market §2.7.
 
+**The gold supply (§8.6–8.10), scheduled with the realm-upgrades pass:**
+- ⚠ **The no-mint pillar is amended in design.md.** The rule becomes *gold is minted only by an authorized mint write*, not *gold is never minted*. This sentence appears in several places and every one of them needs the same edit (§17).
+- ⚠ **Mint coining in `resolve_realm`** — one call site, after the store draw, consuming bullion already debited by the ordinary draw and crediting `treasury`. `coined = Σ consumed × reference_price × K`. **The only credit in the codebase with no matching debit**, and it must stay that way; a second such site is a bug by definition.
+- **Mint journal** — `(realm_id, tick, item_id, units_consumed, bid_paid, coined, K)`, append-only. Makes the supply auditable rather than merely bounded.
+- ⚠ **Conservation property test rewritten** (§8.10) — total gold changes only by the journalled sum; every other path conserves. Extends market §2.3's test rather than replacing it, and the concurrency tests inherit it unchanged.
+- **World gold supply metric** — total and per-pool (wallets / escrow / treasuries), on design.md §8.5's counter surface. **Ship with the first mint, not after.**
+- **Content: bullion flag on items**, `K[g]` per bullion good, mint upgrade definitions with per-tier bullion draw and maintenance draw. Boot validation: `K` authored as a multiple, not an absolute; every bullion good has a reference price (already required); no upgrade may declare `K` locally.
+- **`tax_burn_pct`** — one line at the tax-credit site in the match handler, config-driven, **default 0**. Cheap now, a redesign later.
+- ⚠ **Combat drop tables gain bullion goods** (§8.8) — content only, no engine work, but it is a cross-document hand-off to the Combat vision and the goods ladder.
+- ⚠ **Character-creation starting gold** (R36) — (a) it may not be minted, whatever the amount; (b) amount open, **lean zero**. If zero: a **boot validation that the graduation realm draws a good a level-1 character can produce**, so the first sale is always available. If non-zero: a debit from the tutorial realm treasury. Either way, touches Phase 2's `POST /characters` path and its tests.
+- **Watch item — mint realms and the divergence telemetry.** Bullion is the one good whose reference price now has a second consumer (`K`), so a reference-price patch on a bullion good silently moves the money supply. The telemetry should flag bullion goods distinctly.
+
 **Content-time:**
 - **NPC estates promoted from cold-start tool to standing mechanism** — nodes may declare natural production (design.md §13.5, expanded). Verify the null/system-owner fixture test, still outstanding.
 
-**Non-goals reaffirmed:** no realm buying on the global book; no remote realm-market trading, ever; no realm debt; no gold minted anywhere in this document; no withdrawal from a larder.
+**Non-goals reaffirmed:** no realm buying on the global book; no remote realm-market trading, ever; no realm debt; **no gold minted anywhere except a built, voted, maintained mint consuming real bullion (§8.7)** — in particular no player-facing gold faucet, no fixed-price vendor for any good, and no coin drops; no withdrawal from a larder.
 
 ---
 
@@ -866,6 +1024,19 @@ Roughly in build order. Items marked ⚠ change something design.md currently st
 
 **Open questions closed in the same review:** #3 (reference prices stay fixed; divergence telemetry instead), #6 (players travel safe, deferred not closed), #7 (estate decay mirrors the realm machine, §7.6), #9 (`map_edge_state` designed general, ownership to the Travel vision).
 
+### Raised in v0.7 — the gold supply pass
+
+| # | Decision | Status |
+|---|---|---|
+| R31 | **The mint.** A realm upgrade that adds bullion to the draw vector and coins consumed bullion into the **treasury** at `reference_price × K`. Reuses the bid curve, funded-bid rule, presence gate, vote, reserve/cap, gauge, and maintenance draw. No player-facing endpoint, no fixed-price vendor (§8.7) | 🔲 **Open** |
+| R32 | **No combat coin drops.** Rejected on three grounds; combatants drop **bullion goods** instead, feeding the mint through the ordinary market (§8.8) | 🔲 **Open** — rejection plus substitute |
+| R33 | **`K < 1` is the primary gold sink**, plus a dormant `tax_burn_pct` at zero as an independent emergency dial (§8.9) | 🔲 **Open** |
+| R34 | **Conservation invariant weakened, not dropped** — total gold changes only through a journalled mint write; world gold supply becomes a first-class metric (§8.10) | 🔲 **Open** |
+| R35 | **`K` is global per bullion good, and mint tier scales draw rather than `K`** — coinage is an economic constant, not a per-upgrade balance surface (§8.7) | 🔲 **Open** |
+| R36 | ⚠ **Character-creation starting gold is an unaccounted mint.** Splits in two: **(a) it may not be minted** — settled by R34's invariant, not separately arguable; **(b) how much a new character should have** — **open, lean zero**, with the first sale as the opening move and a guaranteed funded bid at the graduation realm as the only cost (§8.10) | 🔲 **Open** — (b) only; the one item that is a live bug rather than a design choice |
+
+**Sequencing:** R31, R32, and R35 are **blocked on the realm-upgrades design pass**, the same pass that owns R29/R30 — a mint is an upgrade, and its tiers, slots, prerequisites, and vote weighting are that pass's vocabulary. R33's `tax_burn_pct`, R34, and R36 are **independent and shippable now**, and R34's metric in particular should land before the first mint does, since its whole value is being able to see the supply move. **R36(b) is an onboarding question wearing monetary clothes** — it should be decided by whoever owns the tutorial flow, not by this pass; what this document owns is only the constraint that the answer cannot be minted.
+
 ### Deferred — blocked on the realm-upgrades design pass
 
 | # | Decision | Status |
@@ -896,6 +1067,10 @@ Roughly in build order. Items marked ⚠ change something design.md currently st
 
 10. **What decay actually sheds, at both scales.** *(Opened 0.6, deferring R29 and R30.)* The decay machine is settled except for the Failing-stage effect: what gets given up, in what order, and whether it is ever permanently lost. **Blocked on a design pass on realm upgrades**, since the answer depends on a system whose shape — tiers, slots, costs, prerequisites — is still open, and guessing at it here would bake assumptions into an economy document that the upgrades pass would then have to work around. The leading direction from the deferral discussion is **roll back tiers within upgrades first, then the realm's own tier last, with estates following the identical strategy** — which lengthens the warning slide considerably and may dissolve R30 outright (§6.7). Five constraints travel forward with the question so the pass inherits boundaries rather than a blank page; the seam is a pluggable `shed()` handler so nothing waits on the answer.
 
+11. **Does the mint change what §16 #3 concluded about reference prices?** *(Opened 0.7.)* Reference prices stay fixed — that decision is not reopened, and the mint is an argument *for* it, since a manipulable reference price on a bullion good would be a manipulable money supply. But bullion now has **two consumers of the same constant** (the bid curve and `K`), so a routine repricing patch moves the world's gold supply as a side effect. The likely answer is a content-authoring rule rather than a mechanism: bullion reference prices are repriced only deliberately, and `K` is re-derived in the same change. Worth a boot-time warning.
+12. **How many mints should a world have?** *(Opened 0.7.)* Nothing in the design caps it, and nothing should — a community that wants one and can feed it should get one. But the aggregate supply growth rate is `Σ over mints`, so the number of mints is a balance surface that emerges from player politics rather than content authoring. The instrument, not the cap, is the answer: watch the supply metric (§8.10) and move `K`. Recorded as a watch item because the failure mode is slow and the correction is global.
+13. **Should bullion be spendable as gold?** *(Opened 0.7.)* Rejected in passing but worth recording so it is not re-proposed as a convenience: bullion is a good, not a second currency. Letting players pay in metal would create a parallel money supply with its own price, a conversion surface between the two, and an immediate arbitrage against every fixed constant in the design. The whole point is that metal becomes money only by passing through a community that built the means to do it.
+
 ---
 
 ## 17. What this changes in sibling documents
@@ -912,6 +1087,18 @@ Roughly in build order. Items marked ⚠ change something design.md currently st
 
 **`realm-vision.md` §4.3 (realm market prices are signals).** The clause *"a broke realm posts real but unfunded demand, and its stores visibly starve at attractive nominal prices"* is superseded identically, and for the same reasons. The section's thesis — *prices carry information, and haulers profit by reading them* — is strengthened, since every published price is now one a hauler can act on.
 
+**The no-mint pillar, across four documents.** *(Added 0.7.)* The claim *no gold is ever minted* is asserted in **market-vision §3.1 and §3.3**, **realm-vision §4.2** (*"Gold is recycled, not minted — the treasury spends what players' commerce put in — keeping the faucet/sink balance honest"*), this document's own §1 and §8.1, and design.md's summary of all three. Every instance is superseded by the same replacement:
+
+> **Gold is minted in exactly one place: a realm that has built a mint, coining bullion it bought and consumed (§8.7).**
+
+- **What survives, and it is nearly everything.** No *player* is ever paid gold from nothing. No mechanism creates gold as a reward. The treasury remains a hard budget constraint, the funded-bid rule is untouched, and realm markets still buy with money that came from somewhere real. Realm §4.2's actual thesis — that realm health is emergent from economic activity rather than a designer dial — is **strengthened**, because the money supply now emerges from activity too.
+- **What changes.** Realm §4.2's parenthetical about "keeping the faucet/sink balance honest" was doing the work of an argument it never made: conservation was treated as sufficient, and §8.6 shows it is neither sufficient nor, given character-creation gold, actually true. That clause should be replaced rather than softened.
+- **Patch shape:** replace the absolute claim in each location with the one-line rule above and a pointer to §8.6–8.10. Market §3.1's *"never minted"* on the **goods** side is a different claim and stands unchanged — realms sell only from stores, and that has nothing to do with gold.
+
+**`combat-vision.md` §8 (the economic-role test)** — an addition, not a supersession. The Feeds column gains **bullion** alongside monster parts, leather, and bones (§8.8), and the section should record explicitly that **combat drops no gold, by decision** (R32), with the reasoning, so it is not proposed again as a quality-of-life improvement. Combat's identity as a gathering skill with risk attached is the thing being protected, and it is that document's own framing.
+
+**`skills-and-goods-vision.md`** — bullion enters the goods ladder as a gathering output with **two production paths** (mining and combat drop tables), which is a first for the catalogue and worth naming there. Its consumer is a realm upgrade rather than a refining chain, so it does not disturb the gather → refine → manufacture structure; it hangs off it.
+
 **Neither supersession touches:** market §2.7 (full visibility — reads stay location-free and ungated), the Phase 4 treasury-balance rule (still not exposed as a raw figure, though R23 accepts it as inferable from the procurement allocation), §9.2's no-debt rule (never violated by either design), or the presence gate on realm-market trade.
 
 ### 17.2 Pointers and hand-offs (added in 0.5)
@@ -927,5 +1114,7 @@ Not supersessions — additions those documents should absorb so the citation gr
 **`realm-vision.md` §6.4, §6.5, §6.6 and `market-vision.md` §7.2, §7.6, §7.8** — the residuals consolidated into this pass are discharged. Those entries should be struck to pointers here.
 
 ### 17.3 Sequencing note
+
+*(0.7: the no-mint supersession has a wider blast radius than the funded-bid one — it touches market-vision, realm-vision, combat-vision, skills-and-goods, and design.md, and this document is downstream of the first two. The same rule applies with more force: land the patches in one revision, because a half-patched citation graph on the question "can gold be created" is worse than either answer.)*
 
 The two superseded documents are currently *upstream* of this one in the citation graph — this document cites them as authoritative on the three-layer price model. Until they are patched, a reader following the references finds two documents disagreeing about what a broke realm shows. Land the patches in the same revision that absorbs this pass into `design.md` v0.7, rather than after.
