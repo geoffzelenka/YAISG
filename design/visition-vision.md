@@ -1,6 +1,14 @@
 # Yet Another Idle Skilling Game — Visiting & Travel Vision Document
 
-**Version:** 0.3 (absorbs the inter-realm economy pass: `map_edge_state` ownership, the estate larder, player cargo safety)
+**Version:** 0.4 (absorbs the realm-vision estate pass: fixed estates do not relocate)
+
+**Changes from 0.3:** One ratified rule retired, and it is one this document made.
+
+**Fixed-form relocation is deleted** (§2, §8.7). 0.2 ratified mobile-estate relocation as a Travel journey while keeping *"the Phase 4 gold × `relocation_cost` path for fixed-form moves."* That branch is superseded by realm-vision §3.7: **a fixed estate never relocates.** A player leaving surrenders the estate in place (realm-vision §3.6), receives a floor mobile form, and travels as a mobile character. `relocation_cost` as a per-form gold class and the delayed-relocation columns are retired outright rather than kept for a second caller — a deletion, whose only risk is dead code left behind.
+
+**The two-mode split is unaffected.** Mobile forms relocate; fixed forms visit. What changed is that a fixed-form character who wants to *move* first stops being one. The axis reads better for it: the cost of moving is now sunk investment rather than a fee, so a wagon-dweller crosses the map for supplies and a forge-hall owner crosses it by giving up the forge-hall.
+
+**One new client work item (§8.11)** — the surrender-to-move confirmation, which must show valuation, payout (possibly zero), the upgrades and the **stocked larder** that go with the building, and the floor form received. The surrender and the journey must not be one atomic call, or the player has no decision point between valuation and loss.
 
 **Changes from 0.2:** Three items handed over by `inter-realm-economy-vision.md` v0.6, none of which change a decision this document already made.
 
@@ -29,7 +37,9 @@ Travel is itself a skill. Journeys cost time and supplies; active travellers get
 A character's movement mode is determined by the **form of their home estate**:
 
 - **Mobile forms (tent, wagon, boat) relocate.** The estate moves with the character; the home realm changes. **Ratified (0.2):** mobile relocation runs **as a Travel journey** — time from the route's edges scaled by Travel level, supplies from the form's travel profile per edge — replacing the Phase 4 gold-and-timer path *for mobile forms*. The journey's arrival is the relocation's completion; `ESTATE_BUSY` and origin-identity-during-relocation semantics carry over unchanged, and the active-action-replacement rule (§8.8) means departure stops any other action by construction. A mobile-estate character never "visits": when they arrive, they live there. If one nonetheless starts a plain visit journey, the client warns them (§8.9) — for a mobile form, visiting means voluntarily leaving the estate behind, which is almost never what the wagon-dweller wants.
-- **Fixed forms keep the Phase 4 relocation path.** Gold × `relocation_cost` over `path_cost`, instant and delayed variants — moving a farmstead is a purchase and a project, not a journey.
+- ~~**Fixed forms keep the Phase 4 relocation path.**~~ **Retired (0.4), superseded by realm-vision §3.7.** **A fixed estate never relocates.** There is no gold path, no instant variant, no delayed variant — moving a farmstead means *not* moving it. A player leaving the realm **surrenders the estate in place** (realm-vision §3.6), receives a floor mobile form, and travels as a mobile character from that point. The branch this document ratified in 0.2 now has no users, and `relocation_cost` as a per-form gold class is retired with it.
+
+  Three consequences for this document. **Presence gating orders the sequence for free** — the surrender happens where the estate is, before departure, so there is no remote step and no new rule. **The mode split still holds**: mobile forms relocate, fixed forms visit; what changed is that a fixed-form character who wants to *move* first stops being a fixed-form character. And **the cost of moving is now sunk investment rather than gold**, which is a better statement of the axis than a fee was — a wagon-dweller crosses the map for supplies, a forge-hall owner crosses it by giving up the forge-hall.
 - **Fixed forms (farmstead, forge-hall, mill) visit.** The estate stays; the home realm does not change; the character's **current realm** diverges from their home realm for the duration. This is the new surface.
 
 The split is the mobility ↔ rootedness axis (realm-vision §3.1) expressed in movement terms: the wagon-dweller brings their bonuses and production everywhere and pays for it in feed and planks; the forge-hall owner travels light and cheap but leaves everything that makes them strong behind. Both are genuine dilemmas, which is the point.
@@ -157,10 +167,12 @@ Revisit owned by the **Combat** and **Exploration & Keys** visions, which own th
 4. **Location-aware source resolution** — estate modifiers and tags apply iff `estate.realm_id == current_realm`; cap bonuses always apply. Small change to the resolve pass; the arithmetic is untouched.
 5. **Availability keyed to current realm** (not home) — development-node tags and combat/exploration locations resolve from where the character stands; market-access gate reads current realm.
 6. **Travel level as a modifier source** — the generic level-derived hook shared with proficiency (design.md §13.3); whichever lands first builds it.
-7. **Relocation unification — ratified (0.2):** route **mobile-estate relocation through the Travel journey** (time from edges + Travel level, supplies from the form's profile) and retire the gold-cost instant/delayed variants for mobile forms; keep the Phase 4 gold × `relocation_cost` path for fixed-form moves. The journey's `arrived` stop completes the relocation; `ESTATE_BUSY`, origin identity, and residence-cache sync semantics carry over from the Phase 4 machinery.
+7. **Relocation unification — ratified (0.2), completed (0.4):** route **mobile-estate relocation through the Travel journey** (time from edges + Travel level, supplies from the form's profile) and retire the gold-cost instant/delayed variants for mobile forms. The journey's `arrived` stop completes the relocation; `ESTATE_BUSY`, origin identity, and residence-cache sync semantics carry over from the Phase 4 machinery. **0.4 finishes the job:** the fixed-form exception is deleted (realm-vision §3.7), so **`relocation_cost` and the delayed-relocation columns are removed outright** rather than kept for a second caller. Fixed-form movement routes through the surrender endpoint (realm-vision §7) and then through the ordinary mobile path. `design.md`'s log needs the supersession entry; this is a deletion, so the risk is dead code left behind rather than anything to build.
 8. **Watch:** nothing here may assume a character's active action is independent of location — travel *is* the active action, and starting one replaces any other, so departure stops the current action by construction.
 9. **Client warning for mobile-form visits (0.2):** when a mobile-estate character initiates a visit journey (not a relocation), warn that their estate stays behind — relocating may be what they intend. Client work; no engine rule prevents the visit.
 10. **Presence-gated contributions (0.2):** realm-project contribution requires `current_realm(character) == realm_id`, enforced in the contribution endpoint alongside the existing clamping logic. Behaviorally identical to the shipped rule under the interim presence rule; becomes real presence when work item #1 lands.
+
+11. **Client: the surrender-to-move flow (0.4).** A fixed-estate player who asks to relocate must be shown what it actually costs *before* committing: the estate's `V`, the realm's current payout (which may be zero), the upgrades and **the stocked larder** that go with the building, and the floor mobile form they will receive. This is the one place in the game where an irreversible loss is initiated by a request phrased as movement, so the confirmation carries real weight. Engine side needs nothing new — it is the surrender endpoint plus the existing mobile relocation journey — but the two must not be a single atomic "move my farmstead" call, or the player has no decision point between valuation and loss.
 
 ---
 
@@ -170,7 +182,9 @@ Revisit owned by the **Combat** and **Exploration & Keys** visions, which own th
 
 ## 9. Open questions
 
-1. **Travel tiers.** Beyond speed: impassable-at-low-tier edges, supply discounts, cargo cap? Owned by content + XP Curve vision. *(0.3: if impassability is ever built, `map_edge_state` (§4.1) is the table it should read — it exists now and is designed general for exactly this.)*
+1. ~~**Relocation for fixed forms.**~~ **Closed (0.4): it does not exist.** See §2 and realm-vision §3.7. Recorded here because this document ratified the opposite in 0.2 and a reader following the citation graph should land on the retirement rather than on the retired rule.
+
+2. **Travel tiers.** Beyond speed: impassable-at-low-tier edges, supply discounts, cargo cap? Owned by content + XP Curve vision. *(0.3: if impassability is ever built, `map_edge_state` (§4.1) is the table it should read — it exists now and is designed general for exactly this.)*
 2. ~~**Relocation unification**~~ **Ratified (0.2):** mobile-estate relocation routes through the Travel journey; gold-cost variants retired for mobile forms; fixed forms keep the Phase 4 path. See §8.7, §8.9.
 3. **Travel xp formula.** Per edge scaled by base time, or by supplies consumed, or both? Does repeating the same edge pay less? XP Curve vision.
 4. **Base travel profile contents and edge modifiers.** Content/balance.
