@@ -33,6 +33,16 @@ propose the minimal fix.
   causal chain from trigger to observed failure.
 - Keep the fix minimal and covered by a test that fails before it and passes after.
 
+### Orchestrator
+Manages coding agent and debugging agent and orchestrates communication between the two.
+
+- Invoke a Codex coding agent via `codex exec --sandbox workspace-write --json < $prompt`
+- Run verification and tests
+- Invoke a Claude in reviewer role to review coding agent output
+- Resume a Codex coding agent session via `codex exec resume <SESSION_ID> "Address review findings"`
+- The Claude reviewer should be invoked no more than 3 times.  If a agreement between the reviewer and coding agents has not been met, then stop and wait for human intervention.
+
+
 ## Architecture
 
 Three deployable pieces, coordinated by `docker-compose.yml`:
