@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 
+import { useCharacterProfile } from '../../api/characters'
 import { useContent } from '../../api/content'
 import {
   canAfford,
@@ -8,6 +9,7 @@ import {
   usePurchaseUpgrade,
   useTransformEstate,
 } from '../../api/estates'
+import { EstateLifecycle } from './EstateLifecycle'
 import { useInventory } from '../../api/inventory'
 
 function Cost({ cost }: { cost: { item_id: string; qty: number }[] }) {
@@ -35,6 +37,7 @@ function errorMessage(error: Error | null): string | null {
 }
 
 export function EstatePanel() {
+  const profile = useCharacterProfile()
   const estate = useEstate()
   const inventory = useInventory()
   const content = useContent()
@@ -78,6 +81,7 @@ export function EstatePanel() {
           ? estate.data.form.tags.join(', ')
           : 'No tags'}
       </p>
+      <EstateLifecycle estate={estate.data} content={content.content} />
       <h3 className="mt-8 text-xl font-semibold">Upgrade slots</h3>
       <div className="mt-3 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
         {Array.from({ length: estate.data.upgrade_slots }, (_, slot) => {
@@ -128,8 +132,20 @@ export function EstatePanel() {
                 </p>
                 <button
                   className="primary-button mt-3"
-                  disabled={!affordable || purchase.isPending}
-                  onClick={() => purchase.mutate(upgrade.id)}
+                  disabled={
+                    !affordable ||
+                    purchase.isPending ||
+                    profile.data?.character.current_realm_id !==
+                      estate.data.realm_id
+                  }
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Purchase ${upgrade.name}? Consume ${upgrade.cost.map((c) => `${c.qty} ${c.item_id}`).join(', ')} permanently.`,
+                      )
+                    )
+                      purchase.mutate(upgrade.id)
+                  }}
                 >
                   {affordable
                     ? 'Purchase'
@@ -147,6 +163,9 @@ export function EstatePanel() {
           <button
             className="secondary-button"
             key={form.id}
+            disabled={
+              profile.data?.character.current_realm_id !== estate.data.realm_id
+            }
             onClick={() => setConfirmForm(form.id)}
           >
             Transform to {form.name}

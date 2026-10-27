@@ -5,6 +5,9 @@ import type { CapBonus, ItemQuantity, Modifier } from './content'
 import { gameRequest, readApiError } from './http'
 
 export type Estate = {
+  gauge: number
+  larder: Record<string, number>
+  surrender_payout: number | null
   id: string
   form: {
     id: string

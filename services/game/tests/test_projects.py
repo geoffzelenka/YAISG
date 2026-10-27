@@ -971,3 +971,54 @@ def test_first_touch_never_instantiates_isolated_template(
         assert state is None and realm_session.get(RealmState, template.id) is None
     else:
         assert state is not None and state.template_id == template.id
+
+
+@pytest.mark.anyio
+async def test_kickoff_availability_reports_gates_without_payment(
+    action_client: ApiFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Availability shares mutation gates and never consumes kickoff holdings."""
+    from app.main import app
+
+    client, factory, clock, headers = action_client
+    project = app.state.content.project(PROJECT)
+    monkeypatch.setattr(
+        app.state,
+        "content",
+        _content(
+            project.model_copy(
+                update={"kickoff": project.kickoff.model_copy(update={"gold": 1})}
+            )
+        ),
+    )
+    url = f"/realms/{REALM}/projects/availability"
+    with factory() as session:
+        hero = session.scalar(select(Character))
+        assert hero is not None
+        hero_id = hero.id
+        wallet = session.get(Currency, hero_id)
+        assert wallet is not None
+        wallet.gold = 10
+        gold = wallet.gold
+        session.commit()
+    response = await client.get(url, headers=headers)
+    assert response.status_code == 200
+    assert response.json()[PROJECT] is None
+    with factory() as session:
+        wallet = session.get(Currency, hero_id)
+        assert wallet is not None and wallet.gold == gold
+        assert session.scalar(select(RealmProjectRun)) is None
+        wallet.gold = 0
+        session.commit()
+    unavailable = await client.get(url, headers=headers)
+    assert unavailable.json()[PROJECT]["code"] == "MISSING_INPUTS"
+    with factory() as session:
+        hero = session.get(Character, hero_id)
+        assert hero is not None
+        hero.last_kickoff_at = clock.now
+        session.commit()
+    limited = await client.get(url, headers=headers)
+    assert limited.json()[PROJECT]["code"] == "KICKOFF_LIMIT"
+    missing = await client.get("/realms/unknown/projects/availability", headers=headers)
+    assert missing.json()["error"]["code"] == "UNKNOWN_REALM"

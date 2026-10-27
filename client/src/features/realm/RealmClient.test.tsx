@@ -218,6 +218,7 @@ describe('realm client interactions', () => {
                 realm_id: 'realm.one',
                 name: 'One',
                 position: { x: 100, y: 100 },
+                gauge: 2.5,
               },
               { realm_id: 'realm.two', name: 'Two', position: null },
             ],
@@ -250,6 +251,7 @@ describe('realm client interactions', () => {
       'fill',
       '#34d399',
     )
+    expect(screen.getByText(/Gauge: 2.5 days/)).toBeInTheDocument()
     const graph = screen.getByLabelText('Realm graph')
     expect(within(graph).queryByText('Two')).not.toBeInTheDocument()
     expect(within(graph).queryByTitle('land, 60s')).not.toBeInTheDocument()

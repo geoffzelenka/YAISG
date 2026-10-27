@@ -19,6 +19,7 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
         {map.data.nodes.map((node) => (
           <li key={node.realm_id}>
             {node.name} · Tier {node.tier} · {node.decay_stage}
+            {node.gauge !== undefined && ` · Gauge: ${node.gauge} days`}
             {node.treasury_band && ` · Treasury: ${node.treasury_band}`}
             {node.transition_pending && ' · Transition pending'}
           </li>

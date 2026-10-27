@@ -80,6 +80,8 @@ class EstateResponse(BaseModel):
     tags: tuple[str, ...]
     decay_stage: str
     gauge: float
+    larder: dict[str, int]
+    surrender_payout: int | None
     status: str
     upgrade_slots: int
     installed_upgrades: list[InstalledUpgradeSummary]
@@ -188,6 +190,18 @@ def _estate_response(
         tags=form.tags,
         decay_stage=estate.decay_stage,
         gauge=estate.gauge,
+        larder={
+            row.item_id: row.quantity_milli
+            for row in session.scalars(
+                select(EstateLarder).where(EstateLarder.estate_id == estate.id)
+            )
+        },
+        surrender_payout=min(
+            persisted_estate_value(session, estate, content).value,
+            realm.treasury if realm else 0,
+        )
+        if form.mobility == "fixed"
+        else None,
         status=estate.status,
         upgrade_slots=slots,
         installed_upgrades=summaries,

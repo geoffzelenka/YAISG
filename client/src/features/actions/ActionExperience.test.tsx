@@ -88,6 +88,32 @@ describe('welcome-back summary', () => {
     expect(screen.queryByText('Action ended.')).not.toBeInTheDocument()
   })
 
+  it('shows completed-edge arrival in a reward toast end to end', async () => {
+    mockFeed({
+      ...emptyActionResponse,
+      active: null,
+      since_last: {
+        ...emptyActionResponse.since_last,
+        cycles_completed: 1,
+        details: {
+          resolutions: [
+            {
+              edges_completed: ['road'],
+              supplies_used: {},
+              xp: 0,
+              current_realm_id: 'realm.verdant_vale',
+            },
+          ],
+        },
+      },
+    })
+    render(<ActionExperience />, { wrapper: actionWrapper })
+    await screen.findByRole('button', { name: 'Rewards (1)' })
+    const toast = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(toast).toHaveTextContent('1 edge')
+    expect(toast).toHaveTextContent('Current realm: realm.verdant_vale')
+  })
+
   it('omits shared envelope fields from a uniform-cycle toast', async () => {
     mockFeed({
       ...emptyActionResponse,

@@ -16,6 +16,7 @@ export type RealmDemandLine = {
 }
 
 export type RealmDetail = {
+  active_run: import('./development').ProjectRun | null
   lines: RealmDemandLine[]
   id: string
   name: string
@@ -46,6 +47,7 @@ export type RealmMap = {
     node: string
     tier: number
     decay_stage: string
+    gauge: number
     treasury_band: string | null
     transition_pending: boolean
     name: string
@@ -78,6 +80,7 @@ export function useRealm(realmId: string) {
     queryFn: () =>
       request<RealmDetail>(`/realms/${encodeURIComponent(realmId)}`),
     enabled: realmId.length > 0,
+    refetchInterval: 30_000,
   })
 }
 

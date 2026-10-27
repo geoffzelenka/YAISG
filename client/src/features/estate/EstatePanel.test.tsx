@@ -132,45 +132,49 @@ describe('estate panel', () => {
             ? { version: 'estate-test', packs: {} }
             : path.startsWith('/content/')
               ? packs[path.slice('/content/'.length)]
-              : path === '/characters/me/inventory'
-                ? { items: [{ item_id: 'item.wood', quantity: 5 }] }
-                : {
-                    id: 'estate',
-                    form: {
-                      id: 'form.camp',
-                      name: 'Camp',
-                      tags: ['mobile'],
-                      mobility: 'mobile',
-                      travel_profile: {
-                        time_mult: 1,
-                        supply_mult: 1,
-                        terrains: ['land'],
-                      },
-                      upgrade_slots: 3,
-                      cap_bonuses: [],
-                      modifiers: [],
-                    },
-                    realm_id: 'realm.one',
-                    tier: 2,
-                    status: 'active',
-                    upgrade_slots: 3,
-                    installed_upgrades: [
-                      {
-                        slot_index: 0,
-                        upgrade_id: 'installed.active',
-                        name: 'Active Tent',
+              : path.endsWith('/estates')
+                ? []
+                : path === '/characters/me'
+                  ? { character: { current_realm_id: 'realm.one' } }
+                  : path === '/characters/me/inventory'
+                    ? { items: [{ item_id: 'item.wood', quantity: 5 }] }
+                    : {
+                        id: 'estate',
+                        form: {
+                          id: 'form.camp',
+                          name: 'Camp',
+                          tags: ['mobile'],
+                          mobility: 'mobile',
+                          travel_profile: {
+                            time_mult: 1,
+                            supply_mult: 1,
+                            terrains: ['land'],
+                          },
+                          upgrade_slots: 3,
+                          cap_bonuses: [],
+                          modifiers: [],
+                        },
+                        realm_id: 'realm.one',
+                        tier: 2,
                         status: 'active',
-                        inert_reason: null,
-                      },
-                      {
-                        slot_index: 1,
-                        upgrade_id: 'installed.inert',
-                        name: 'Dormant Bell',
-                        status: 'inert',
-                        inert_reason: 'realm requirements not met',
-                      },
-                    ],
-                  }
+                        upgrade_slots: 3,
+                        installed_upgrades: [
+                          {
+                            slot_index: 0,
+                            upgrade_id: 'installed.active',
+                            name: 'Active Tent',
+                            status: 'active',
+                            inert_reason: null,
+                          },
+                          {
+                            slot_index: 1,
+                            upgrade_id: 'installed.inert',
+                            name: 'Dormant Bell',
+                            status: 'inert',
+                            inert_reason: 'realm requirements not met',
+                          },
+                        ],
+                      }
         return Promise.resolve(
           new Response(JSON.stringify(body), {
             status: 200,
