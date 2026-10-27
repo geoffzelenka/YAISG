@@ -22,7 +22,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 12 | `12-estate-ownership` | Build, buy, surrender, valuation, larder | done | v08/12-estate-ownership | 719ec0b | Valuation (cheapest tier-1 path, provider-priced goods), build/buy/surrender with treasury flows, deposit-only larder |
 | 13 | `13-stores-lines` | Stores, demand lines, world seed | done | v08/13-stores-lines | 8099216 | Store due math, demand lines with most-specific membership, reserve/cap, private versioned world seed created once at boot |
 | 14 | `14-realm-tick` | The realm tick and the scheduled job | done | v08/14-realm-tick | 24ab9fc | Tick steps 0-10 (reserve priority, pro-rata, production, spoilage, caps, realm-funded overlay), APScheduler liveness job under PG advisory lock |
-| 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | ready for review | `v08/15-decay` | — | Live gauges, cosmetic Strained, shedding/regression, estate replacement and seed-check. |
+| 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | done | v08/15-decay | fddd09a | Realm/estate gauges and stages, bounded shedding, regression with restamp, estate decay chain with tombstoned history, make seed-check |
 | 16 | `16-realm-pricing` | Realm market pricing and visibility | pending | — | — | — |
 | 17 | `17-realm-trade` | Realm trade and treasury gift | pending | — | — | — |
 | 18 | `18-mint-gold` | Mint and the gold ledger | pending | — | — | — |
