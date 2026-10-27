@@ -1,8 +1,17 @@
 """Validated, immutable schemas for static game content."""
 
 from enum import StrEnum
+from itertools import accumulate
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    RootModel,
+    StrictInt,
+    model_validator,
+)
 
 
 class ContentModel(BaseModel):
@@ -58,7 +67,7 @@ class Action(ContentModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     skill_id: str = Field(min_length=1)
-    level_required: int = Field(ge=1, le=99)
+    level_required: int = Field(ge=1, le=100)
     cycle_ms: int = Field(gt=0)
     inputs: tuple[ItemQuantity, ...] = ()
     xp: int = Field(gt=0)
@@ -312,12 +321,53 @@ class CapsConfig(ContentModel):
 class XpLevel(ContentModel):
     """Cumulative XP required to reach a level."""
 
-    level: int = Field(ge=1, le=99)
+    level: int = Field(ge=1, le=100)
     xp: int = Field(ge=0)
 
 
-class XpCurve(ContentModel):
-    """Checked-in XP table and its documented generation formula."""
+class XpCurve(RootModel[tuple[StrictInt, ...]]):
+    """Checked-in per-level XP costs."""
 
-    formula: str = Field(min_length=1)
-    levels: tuple[XpLevel, ...]
+    model_config = ConfigDict(frozen=True)
+    _levels: tuple[XpLevel, ...] = PrivateAttr(default=())
+
+    @model_validator(mode="after")
+    def validate_costs(self) -> "XpCurve":
+        """Validate the complete static table."""
+        if len(self.root) != 99:
+            raise ValueError("XP curve must contain 99 entries")
+        if self.root[0] <= 0 or any(
+            b <= a for a, b in zip(self.root, self.root[1:], strict=False)
+        ):
+            raise ValueError("XP costs must increase after level 1")
+        if sum(self.root) != 10_000_000:
+            raise ValueError("XP costs must sum to 10000000")
+        self._levels = tuple(
+            XpLevel(level=i, xp=xp)
+            for i, xp in enumerate(accumulate(self.root, initial=0), start=1)
+        )
+        return self
+
+    @property
+    def levels(self) -> tuple[XpLevel, ...]:
+        """Return immutable cumulative thresholds computed during validation."""
+        return self._levels
+
+
+class ProgressionPack(ContentModel):
+    """Content-defined tier thresholds and titles."""
+
+    tier_thresholds: tuple[StrictInt, ...]
+    tier_titles: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def validate_tiers(self) -> "ProgressionPack":
+        """Require increasing thresholds and matching titles."""
+        t = self.tier_thresholds
+        if not t or t[0] != 1 or t[-1] > 100:
+            raise ValueError("thresholds must start at 1 and end at or below 100")
+        if any(b <= a for a, b in zip(t, t[1:], strict=False)):
+            raise ValueError("thresholds must strictly increase")
+        if len(t) != len(self.tier_titles) or not all(self.tier_titles):
+            raise ValueError("each tier requires a title")
+        return self

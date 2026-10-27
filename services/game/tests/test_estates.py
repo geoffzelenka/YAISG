@@ -140,6 +140,12 @@ async def estate_client(
                 json={"name": "Estate Hero", "realm_id": "realm.verdant_vale"},
             )
             assert created.status_code == 201
+            # Relocation tests need spendable funds independently of new-player grants.
+            with factory() as session:
+                currency = session.scalar(select(Currency))
+                assert currency is not None
+                currency.gold = 100
+                session.commit()
             yield client, factory, headers, clock
     finally:
         app.state.content = original_content

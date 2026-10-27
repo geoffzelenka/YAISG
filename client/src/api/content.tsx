@@ -121,6 +121,7 @@ type ContentPacks = {
     transformations: FormTransformation[]
   }
   development: { nodes: DevelopmentNode[]; edges: DevelopmentEdge[] }
+  progression: { tier_thresholds: number[]; tier_titles: string[] }
   projects: { projects: Project[] }
 }
 type PackName = keyof ContentPacks
@@ -141,6 +142,7 @@ const PACKS: PackName[] = [
   'estate_forms',
   'development',
   'projects',
+  'progression',
 ]
 const MANIFEST_KEY = 'yaisg:content:manifest'
 const PACK_KEY_PREFIX = 'yaisg:content:'

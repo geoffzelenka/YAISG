@@ -316,9 +316,9 @@ class LevelSensitiveRewards:
         content: ContentIndex,
         rng: RandomSource,
     ) -> CycleRewards:
-        """Give 100 XP at level one and 20 XP after leveling."""
+        """Give 57 XP at level one and 20 XP after leveling."""
         del action, content, rng
-        reward = 100 if state.skill_levels["gathering"] == 1 else 20
+        reward = 57 if state.skill_levels["gathering"] == 1 else 20
         return CycleRewards(reward, ())
 
 
@@ -337,7 +337,7 @@ def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> 
         reward_strategy=LevelSensitiveRewards(),
     )
     assert result.cycles_completed == 3
-    assert result.xp_gained == {"gathering": 140}
+    assert result.xp_gained == {"gathering": 97}
     assert result.level_ups == {"gathering": (2,)}
     assert state.skill_levels["gathering"] == 2
 

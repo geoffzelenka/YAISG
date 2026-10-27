@@ -1,6 +1,6 @@
 .PHONY: ci auth-ci game-ci client-ci
 
-ci: auth-ci game-ci client-ci
+ci: auth-ci game-ci client-ci scripts-ci
 
 auth-ci:
 	cd services/auth && python -m ruff check .
@@ -21,3 +21,13 @@ client-ci:
 	cd client && npm test
 	cd client && npm run build
 
+
+.PHONY: db-reset
+db-reset:
+	python scripts/db_reset.py
+
+.PHONY: scripts-ci
+scripts-ci:
+	python -m ruff check --config services/game/pyproject.toml scripts
+	python -m ruff format --check --config services/game/pyproject.toml scripts
+	python -m mypy --config-file services/game/pyproject.toml scripts

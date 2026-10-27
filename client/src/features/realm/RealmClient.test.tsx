@@ -53,6 +53,7 @@ const contentBodies: Record<string, unknown> = {
     edges: [],
   },
   projects: { projects: [] },
+  progression: { tier_thresholds: [1], tier_titles: ['Placeholder'] },
 }
 
 let client: QueryClient

@@ -15,7 +15,6 @@ AUTH_JWKS_URL = os.getenv(
 )
 AUTH_JWKS_TTL_SECONDS = int(os.getenv("AUTH_JWKS_TTL_SECONDS", "300"))
 JWT_ISSUER = os.getenv("JWT_ISSUER", "yaisg-auth")
-STARTING_GOLD = int(os.getenv("STARTING_GOLD", "100"))
 _CONTENT_DIR = os.getenv("CONTENT_DIR")
 CONTENT_DIR = (
     Path(_CONTENT_DIR)

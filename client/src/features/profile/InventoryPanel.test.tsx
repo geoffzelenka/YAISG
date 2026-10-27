@@ -34,6 +34,7 @@ it('displays the effective profile inventory cap instead of the content base', a
         estate_forms: { forms: [], transformations: [] },
         development: { nodes: [], edges: [] },
         projects: { projects: [] },
+        progression: { tier_thresholds: [1], tier_titles: ['Placeholder'] },
       }
       const body =
         path === '/content/manifest'

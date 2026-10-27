@@ -96,6 +96,10 @@ describe('skill panel', () => {
           },
           '/content/development': { nodes: [], edges: [] },
           '/content/projects': { projects: [] },
+          '/content/progression': {
+            tier_thresholds: [1],
+            tier_titles: ['Placeholder'],
+          },
           '/characters/me/actions/available': {
             skills: [
               {

@@ -147,7 +147,7 @@ function CharacterCreation() {
   )
 }
 
-function ProfilePanel({ profile }: { profile: CharacterProfile }) {
+export function ProfilePanel({ profile }: { profile: CharacterProfile }) {
   const realm = useRealm(profile.character.realm_id)
   const content = useContent()
   const currentNode =
@@ -187,7 +187,7 @@ function ProfilePanel({ profile }: { profile: CharacterProfile }) {
       )}
       <div className="mt-8 grid gap-4 lg:grid-cols-2">
         {profile.skills.map((skill) => {
-          const total = skill.xp_into_level + skill.xp_to_next
+          const total = skill.xp_into_level + (skill.xp_to_next ?? 0)
           const percent =
             total === 0 ? 100 : (skill.xp_into_level / total) * 100
           return (
@@ -206,7 +206,7 @@ function ProfilePanel({ profile }: { profile: CharacterProfile }) {
                 />
               </div>
               <p className="mt-2 text-sm text-slate-400">
-                {skill.xp_to_next === 0
+                {skill.xp_to_next === null
                   ? 'Maximum level'
                   : `${skill.xp_into_level} XP · ${skill.xp_to_next} to next`}
               </p>
