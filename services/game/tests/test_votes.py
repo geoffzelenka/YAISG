@@ -497,14 +497,20 @@ def test_vanished_upgrade_fails_without_blocking_resolution(
     assert as_utc(realm.vote_cooldown_until) == close + timedelta(hours=72)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("reserve_days", [0.25, 8.0])
+@pytest.mark.parametrize("min_stock_days", [3.0, 5.0])
 @pytest.mark.parametrize("operation", ["call", "kickoff"])
 @pytest.mark.parametrize(
     "stock", ["short", "equal", "above", "no_lines", "bullion_short", "bullion_equal"]
 )
 def test_reserve_gate_before_development(
-    realm_session: Session, operation: str, stock: str
+    realm_session: Session,
+    operation: str,
+    stock: str,
+    min_stock_days: float,
+    reserve_days: float,
 ) -> None:
-    """Use shared demand accounting for reserve gates without charging failures."""
+    """Projects need positive stock; votes need authored days, regardless of reserve."""
     from app.content.schemas import Selector, TagUpkeep
     from app.models import RealmProjectRun, RealmStore, RealmVote
     from app.services.stores import derive_realm_lines
@@ -525,6 +531,8 @@ def test_reserve_gate_before_development(
     updated = node.model_copy(
         update={
             "upkeep": upkeep,
+            "reserve_days": reserve_days,
+            "cap_days": 20.0,
             "upgrades": tuple(
                 u.model_copy(update={"required_tags": (), "fee_gold": 7})
                 for u in node.upgrades
@@ -533,6 +541,13 @@ def test_reserve_gate_before_development(
     )
     content = replace(
         CONTENT,
+        economy=CONTENT.economy.model_copy(
+            update={
+                "vote": CONTENT.economy.vote.model_copy(
+                    update={"min_stock_days": min_stock_days}
+                )
+            }
+        ),
         _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: updated}),
     )
     if stock.startswith("bullion"):
@@ -546,17 +561,28 @@ def test_reserve_gate_before_development(
     for index, line in enumerate(lines):
         item = next(i for i in content.items if line.selector.matches(i))
         weight = item.reference_price if line.value_measured else 1
-        quantity = line.reserve // weight
+        threshold = (
+            line.draw_per_day * content.economy.vote.min_stock_days
+            if operation == "call"
+            else weight
+        )
+        quantity = int(threshold) // weight
         if (stock == "short" and index == 0) or (
             stock == "bullion_short" and line.value_measured
         ):
             quantity -= 1
         elif stock == "above":
             quantity += 1
-        realm_session.add(
-            RealmStore(realm_id=REALM, item_id=item.id, quantity_milli=quantity)
-        )
+        if quantity > 0:
+            realm_session.add(
+                RealmStore(realm_id=REALM, item_id=item.id, quantity_milli=quantity)
+            )
     realm_session.flush()
+    measured = derive_realm_lines(realm_session, realm, content)
+    if operation == "call" and "short" in stock and reserve_days < min_stock_days:
+        assert all(line.stock >= line.reserve for line in measured)
+    if operation == "kickoff" and stock in ("equal", "bullion_equal"):
+        assert all(0 < line.stock < line.reserve for line in measured)
     wallet = realm_session.get(Currency, hero.id)
     assert wallet is not None
     before = (wallet.gold, realm.treasury, hero.last_kickoff_at)
@@ -622,7 +648,13 @@ async def test_reserve_gate_uses_resolved_stock(
         line = derive_realm_lines(session, realm, content)[0]
         session.add(
             RealmStore(
-                realm_id=REALM, item_id="item.fake_sprig", quantity_milli=line.reserve
+                realm_id=REALM,
+                item_id="item.fake_sprig",
+                quantity_milli=(
+                    int(line.draw_per_day * content.economy.vote.min_stock_days)
+                    if operation == "call"
+                    else 1
+                ),
             )
         )
         before = (wallet.gold, realm.treasury)
@@ -644,3 +676,11 @@ async def test_reserve_gate_uses_resolved_stock(
         assert (wallet.gold, realm.treasury) == before
         assert list(session.scalars(select(RealmVote))) == []
         assert list(session.scalars(select(RealmProjectRun))) == []
+
+
+def test_vote_stock_days_default_and_authored_value() -> None:
+    """The vote's minimum stock horizon is content-owned and defaults to three days."""
+    from app.content.schemas import VoteConfig
+
+    assert VoteConfig().min_stock_days == 3
+    assert CONTENT.economy.vote.min_stock_days == 3

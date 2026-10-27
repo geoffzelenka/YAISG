@@ -84,15 +84,26 @@ def derive_realm_lines(
     return lines
 
 
-def require_reserves(
+def require_project_stock(
     session: Session, realm: RealmState, content: ContentIndex
 ) -> None:
-    """Reject new development when any current demand line is below reserve."""
+    """Require some stock in every demand line before project kickoff."""
+    if any(line.stock <= 0 for line in derive_realm_lines(session, realm, content)):
+        raise api_error(409, "RESERVE_SHORT", "Every demand line needs positive stock")
+
+
+def require_vote_stock(
+    session: Session, realm: RealmState, content: ContentIndex
+) -> None:
+    """Require the authored number of demand days independently of reserves."""
+    days = Fraction(str(content.economy.vote.min_stock_days))
     if any(
-        line.stock < line.reserve
+        line.stock < line.draw_per_day * days
         for line in derive_realm_lines(session, realm, content)
     ):
-        raise api_error(409, "RESERVE_SHORT", "The realm's stores are below reserve")
+        raise api_error(
+            409, "RESERVE_SHORT", "The realm lacks the stock needed to call a vote"
+        )
 
 
 def recompute_lines(

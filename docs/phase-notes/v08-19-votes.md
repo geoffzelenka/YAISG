@@ -45,27 +45,36 @@
 - Verification fix 1: resident test fixtures now use 20-character UUID hex
   prefixes for name and name_normalized, respecting PostgreSQL VARCHAR(20)
   without changing the schema.
-- Review round 1 verification: SQLite PATH=$PWD/.venv/bin:$PATH make ci passes:
-  auth 15, game 502 with 17 database-specific skips, client 41. Lint, formatting,
+- Refined-ruling verification: SQLite PATH=$PWD/.venv/bin:$PATH make ci passes:
+  auth 15, game 545 with 17 database-specific skips, client 41. Lint, formatting,
   strict typing, migration/reset/schema checks, client build and content lint
   pass. No dependencies added.
 
-- Review round 1: added the shared RESERVE_SHORT gate after existing development
-  gates and before payment/row creation for both vote calls and project kickoff.
-  Extracted nonmutating derive_realm_lines from recompute_lines, so the public
-  below_reserve display and development gates share stock/reserve accounting,
-  including bullion value measurement. Equality and no demand lines pass.
+- Review round 1 amendment: added distinct RESERVE_SHORT gates after existing
+  development gates and before payment/row creation. Project kickoff requires
+  positive stock on every demand line; a vote call requires stock >= draw_per_day
+  times economy.vote.min_stock_days, independently of computed reserves. Both
+  use the same nonmutating derive_realm_lines extraction as recompute_lines and
+  the public market, preserving bullion value measurement. Realms without
+  demand lines pass both gates.
+- Added strict vote.min_stock_days (default and authored value 3), with client
+  content type and fixture. Boot validates the global cap_days and every node
+  override against this minimum, retaining existing transition-reserve checks.
 - Conflicting ballot closes now fail with the ordinary fee retention and exact
   close-time cooldown if a transition is pending or the edge has vanished.
   Realm resolution and unrelated character resolution remain live, and the
   existing regression is preserved and completes normally.
 - Added test_vanished_upgrade_fails_without_blocking_resolution,
   test_reserve_gate_before_development (call/kickoff, ordinary and bullion
-  shortage/equality, above reserve, and no lines), and
+  zero/positive project stock below reserve, exact and insufficient vote stock
+  independent of low/high reserve overrides, authored three/five-day settings,
+  and no lines), and
   test_reserve_gate_uses_resolved_stock (both HTTP entry points). Replaced the
   old exception/rollback conflict test with the liveness sequence. Stocked
   fixed-estate fixtures in test_weights_snapshot_excludes_arrivals_keeps_leavers
   and test_passed_vote_raises_reserves without weakening their assertions.
+- Added test_cap_days_covers_vote_stock_minimum (global/node, below/equal/above)
+  and test_vote_stock_days_default_and_authored_value.
 - Secrecy regression now checks the exact realm_votes column set as well as
   eligibility columns. Timed-event iterations load an open ballot only once.
 
@@ -91,19 +100,21 @@
 
 ## Deviations
 
-- §12.3 / §12.5: the human ruling adds the reserve gate to both entry points.
+- §12.3 / §12.5: the refined human ruling adds distinct stock gates to both entry points.
   The authorized interim conflict rule fails an otherwise yes-majority ballot
   when its upgrade cannot start, instead of raising or replacing a regression.
   See the resolved ruling and interim rule under Ratification needed.
 
 ## Ratification needed
 
-- Resolved by the human (review round 1), §12.3 / §12.5: "A realm's stock of goods
-  must be in good standing before a vote can be called. Create a gate that a
-  realm must have a positive Reserve before a project or upgrade can be started."
-  Binding interpretation: after resolving to now, every demand line must have
-  stock >= reserve; a realm without demand lines passes. Both kickoff and calls
-  return RESERVE_SHORT (409) after other gates and before mutation on a shortfall.
+- Resolved by the human (refined round-1 ruling), §12.3 / §12.5:
+  "A project requires any positive balance, but a vote requires a 3 day reserve. This also means that realms' goods cap must be at least 3 days worth."
+  This replaces the earlier stock >= computed reserve ruling. After resolving
+  to now, kickoff requires stock > 0 on every demand line; a call requires stock
+  >= draw_per_day times vote.min_stock_days (default 3). Empty demand sets pass.
+  The vote threshold ignores reserve_days overrides and tag reserve deltas.
+  Boot requires global and node cap_days >= min_stock_days. Failed gates return
+  RESERVE_SHORT (409) before payment or row creation.
 - §12.5 / §12.6 / §14.7: implemented the orchestrator's interim precedence rule,
   subject to human override: a yes-majority ballot closes as failed when a
   transition is already pending or the upgrade edge no longer exists on the
@@ -127,8 +138,8 @@
 
 ## New error codes
 
-- RESERVE_SHORT (409): at least one demand line has stock below its reserve;
-  applies to both project kickoff and upgrade calls.
+- RESERVE_SHORT (409): a project demand line has nonpositive stock, or a vote
+  demand line has stock below draw_per_day times vote.min_stock_days.
 - UPGRADE_NOT_OFFERED: upgrade is absent from the current node.
 - UPGRADE_TAGS_REQUIRED: realm lacks one or more required held tags.
 - VOTE_COOLDOWN: failed-vote cooldown has not elapsed.

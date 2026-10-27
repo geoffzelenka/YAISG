@@ -660,8 +660,9 @@ class MarketConfig(ContentModel):
 
 
 class VoteConfig(ContentModel):
-    """Authored ballot duration and failed-ballot cooldown, in hours."""
+    """Authored vote stock requirement, duration and failed-ballot cooldown."""
 
+    min_stock_days: float = Field(default=3, gt=0, allow_inf_nan=False)
     duration_hours: float = Field(default=72, gt=0, allow_inf_nan=False)
     fail_cooldown_hours: float = Field(default=72, ge=0, allow_inf_nan=False)
 

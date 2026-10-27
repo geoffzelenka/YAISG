@@ -395,6 +395,8 @@ def load_content(content_dir: Path) -> ContentIndex:
     xp_curve = _load_model(content_dir, "xp_curve", XpCurve)
     tags_pack = _load_model(content_dir, "tags", TagsPack)
     economy = _load_model(content_dir, "economy", EconomyPack)
+    if economy.cap_days < economy.vote.min_stock_days:
+        raise ContentError("cap_days must cover vote.min_stock_days in economy")
     progression = _load_model(content_dir, "progression", ProgressionPack)
     world_seed = _load_model(content_dir, "world_seed", WorldSeedPack)
     packs: dict[str, BaseModel] = {
@@ -489,6 +491,10 @@ def load_content(content_dir: Path) -> ContentIndex:
             economy.reserve_days if node.reserve_days is None else node.reserve_days
         )
         cap = economy.cap_days if node.cap_days is None else node.cap_days
+        if cap < economy.vote.min_stock_days:
+            raise ContentError(
+                f"cap_days must cover vote.min_stock_days in node {node.id}"
+            )
         if cap <= reserve + largest_delta + economy.transition.duration_days:
             raise ContentError(
                 f"cap_days must exceed largest reserve in node {node.id}"

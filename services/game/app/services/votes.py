@@ -85,9 +85,9 @@ def call_vote(
     currency = session.get(Currency, character.id)
     if currency is None or currency.gold < upgrade.fee_gold:
         raise api_error(409, "MISSING_INPUTS", "The vote fee is unavailable")
-    from app.services.stores import require_reserves
+    from app.services.stores import require_vote_stock
 
-    require_reserves(session, realm, content)
+    require_vote_stock(session, realm, content)
     residents = list(
         session.execute(
             select(Character.id, Estate.form_id)
