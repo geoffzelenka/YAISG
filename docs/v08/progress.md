@@ -29,7 +29,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 19 | `19-votes` | Realm upgrade votes and transitions | done | v08/19-votes | 75380e6 | Weighted secret ballots; RESERVE_SHORT stock gates (human ruling); conflict-safe close |
 | 20 | `20-caravans` | Trade between realms | done | v08/20-caravans | d0d64e5 | Caravan passes: remoteness, §16.3 selection, fees/burn, loss, shipments |
 | 21 | `21-client-realm-estate` | Client: realm, projects, votes, estate | done | v08/21-client-realm-estate | 3b9eead | Client realm/estate panels, votes, D8 confirmations, kickoff availability |
-| 22 | `22-client-realm-market` | Client: realm market and world health | pending | — | — | — |
+| 22 | `22-client-realm-market` | Client: realm market and world health | ready for review | `v08/22-client-realm-market` | — | Remote realm markets, confirmed trades/gifts, hungry-realm map. |
 | 23 | `23-global-market` | Global order book, slots, tax, access | pending | — | — | — |
 | 24 | `24-market-lifecycle` | Order expiry, purge, world conservation suite | pending | — | — | — |
 | 25 | `25-client-global-market` | Client: global market | pending | — | — | — |

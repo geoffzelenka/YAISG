@@ -89,5 +89,6 @@ export function useRealmMap() {
   return useQuery({
     queryKey: ['map'],
     queryFn: () => request<RealmMap>('/map'),
+    refetchInterval: 30_000,
   })
 }

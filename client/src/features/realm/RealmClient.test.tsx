@@ -213,6 +213,8 @@ describe('realm client interactions', () => {
         return Promise.resolve(
           response(contentBodies[path.slice('/content/'.length)]),
         )
+      if (path.endsWith('/market'))
+        return Promise.resolve(response({ lines: [] }))
       if (path === '/map')
         return Promise.resolve(
           response({
@@ -249,13 +251,17 @@ describe('realm client interactions', () => {
 
     render(<MapPanel profile={profile} />, { wrapper })
 
-    const currentNode = await screen.findByText('One')
+    const graph = await screen.findByLabelText('Realm graph')
+    const currentNode = within(graph).getByText('One')
     expect(currentNode.closest('g')?.querySelector('circle')).toHaveAttribute(
       'fill',
       '#34d399',
     )
-    expect(screen.getByText(/Gauge: 2.5 days/)).toBeInTheDocument()
-    const graph = screen.getByLabelText('Realm graph')
+    expect(
+      within(screen.getByRole('list', { name: 'Realm health' })).getByText(
+        /Gauge: 2.50 days/,
+      ),
+    ).toBeInTheDocument()
     expect(within(graph).queryByText('Two')).not.toBeInTheDocument()
     expect(within(graph).queryByTitle('land, 60s')).not.toBeInTheDocument()
   })

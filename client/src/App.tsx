@@ -23,6 +23,7 @@ import { SkillPanel } from './features/skills/SkillPanel'
 import { EstatePanel } from './features/estate/EstatePanel'
 import { MapPanel } from './features/realm/MapPanel'
 import { RealmPanel, TransitionBanner } from './features/realm/RealmPanel'
+import { RealmMarketPanel } from './features/market/RealmMarketPanel'
 import { useRealm } from './api/realms'
 
 function RequireAuth() {
@@ -227,7 +228,7 @@ function Shell({ profile }: { profile: CharacterProfile }) {
     [
       { name: 'Profile', path: '/' },
       { name: 'Player Market' },
-      { name: 'Realm Market' },
+      { name: 'Realm Market', path: '/realm/market' },
       { name: 'Estate', path: '/estate' },
       { name: 'Realm', path: '/realm' },
       { name: 'Map', path: '/realm/map' },
@@ -295,6 +296,10 @@ function Shell({ profile }: { profile: CharacterProfile }) {
             <Route index element={<ProfilePanel profile={profile} />} />
             <Route path="estate" element={<EstatePanel />} />
             <Route path="realm" element={<RealmPanel profile={profile} />} />
+            <Route
+              path="realm/market"
+              element={<RealmMarketPanel profile={profile} />}
+            />
             <Route path="realm/map" element={<MapPanel profile={profile} />} />
             <Route
               path="skills/gathering"
