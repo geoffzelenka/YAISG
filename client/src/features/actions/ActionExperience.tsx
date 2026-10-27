@@ -10,16 +10,21 @@ import {
 import { useContent } from '../../api/content'
 import {
   cycleProgress,
+  journeyProgress,
   nextCycleDelay,
   startActionClock,
   useActionClock,
 } from './actionStore'
+import { JourneyProgress, ResolverDetails } from './ResolverDetails'
+import { journeyStep } from './journey'
+import { hasResolverContent } from './resolverPresentation'
 import { shouldShowWelcomeBack } from './rewardPresentation'
 
 type FeedEntry = {
   id: number
   rewards: Rewards
   reason: string | null
+  ended: boolean
   showToast: boolean
   toastUntil: number
 }
@@ -29,7 +34,10 @@ function hasAuthoritativeChanges(response: ActionFeedResponse): boolean {
   return (
     rewards.cycles_completed > 0 ||
     Object.keys(rewards.items_gained).length > 0 ||
-    Object.keys(rewards.items_consumed).length > 0
+    Object.keys(rewards.items_consumed).length > 0 ||
+    Object.keys(rewards.xp_gained).length > 0 ||
+    Object.keys(rewards.overflowed_items).length > 0 ||
+    Object.keys(rewards.level_ups).length > 0
   )
 }
 
@@ -55,14 +63,23 @@ export function ActionExperience() {
       client.setQueryData(['characters', 'me', 'action'], next)
       const isWelcomeBack = shouldShowWelcomeBack(next.since_last)
       if (isWelcomeBack) setWelcome(next.since_last)
-      if (next.since_last.cycles_completed > 0 || next.stop_reason !== null) {
+      if (
+        hasAuthoritativeChanges(next) ||
+        hasResolverContent(next.since_last.details) ||
+        next.stop_reason !== null ||
+        next.since_last.stop_reason !== null
+      ) {
         setFeed((current) =>
           [
             ...current,
             {
               id: (nextFeedId.current += 1),
               rewards: next.since_last,
-              reason: next.stop_reason,
+              reason: next.stop_reason ?? next.since_last.stop_reason,
+              ended:
+                next.active === null ||
+                next.stop_reason !== null ||
+                next.since_last.stop_reason !== null,
               showToast: !isWelcomeBack,
               toastUntil: Date.now() + 5_000,
             },
@@ -70,6 +87,7 @@ export function ActionExperience() {
         )
       }
       if (hasAuthoritativeChanges(next)) {
+        void client.invalidateQueries({ queryKey: ['estates', 'me'] })
         void client.invalidateQueries({
           queryKey: ['characters', 'me'],
           exact: true,
@@ -92,12 +110,19 @@ export function ActionExperience() {
     let lastActive: ActionFeedResponse['active'] | undefined
     const schedule = () => {
       if (cancelled) return
+      const step = lastActive ? journeyStep(lastActive) : null
       timeout = setTimeout(
         () => void poll(),
         lastActive
           ? nextCycleDelay(
               Date.now(),
-              lastActive.started_at,
+              step
+                ? new Date(
+                    Date.parse(lastActive.last_resolved_at) -
+                      lastActive.cycle_ms +
+                      step.remaining,
+                  ).toISOString()
+                : lastActive.started_at,
               lastActive.cycle_ms,
             )
           : 30_000,
@@ -134,12 +159,19 @@ export function ActionExperience() {
       })
       void poll()
     }
+    const travelStarted = (event: Event) => {
+      mergeResponse((event as CustomEvent<ActionFeedResponse>).detail)
+      refresh()
+      void client.invalidateQueries({ queryKey: ['estates', 'me'] })
+    }
+    window.addEventListener('yaisg:travel-started', travelStarted)
     window.addEventListener('focus', refresh)
     window.addEventListener('online', refresh)
     window.addEventListener('yaisg:action-changed', refresh)
     return () => {
       cancelled = true
       if (timeout !== undefined) clearTimeout(timeout)
+      window.removeEventListener('yaisg:travel-started', travelStarted)
       window.removeEventListener('focus', refresh)
       window.removeEventListener('online', refresh)
       window.removeEventListener('yaisg:action-changed', refresh)
@@ -153,8 +185,16 @@ export function ActionExperience() {
           .flatMap((skill) => skill.actions)
           .find((candidate) => candidate.id === active.action_id)
       : undefined
+  const step = active ? journeyStep(active) : null
   const progress = active
-    ? cycleProgress(now, active.started_at, active.cycle_ms)
+    ? step
+      ? journeyProgress(
+          now,
+          active.last_resolved_at,
+          active.cycle_ms,
+          step.remaining,
+        )
+      : cycleProgress(now, active.started_at, active.cycle_ms)
     : 0
   const itemNames =
     content.status === 'ready'
@@ -166,7 +206,13 @@ export function ActionExperience() {
           content.content.skills.skills.map((skill) => [skill.id, skill.name]),
         )
       : new Map<string, string>()
-  const displayNames = { itemNames, skillNames }
+  const realmNames =
+    content.status === 'ready'
+      ? new Map(
+          content.content.realms.realms.map((realm) => [realm.id, realm.name]),
+        )
+      : new Map<string, string>()
+  const displayNames = { itemNames, skillNames, realmNames }
 
   return (
     <>
@@ -190,6 +236,7 @@ export function ActionExperience() {
               </strong>
               <span className="text-xs text-slate-400">Cosmetic timer</span>
             </div>
+            {active && <JourneyProgress active={active} />}
             <div className="mt-2 h-2 overflow-hidden rounded bg-slate-700">
               <div
                 className="h-full bg-emerald-400 transition-[width] duration-200"
@@ -249,11 +296,21 @@ export function ActionExperience() {
 type DisplayNames = {
   itemNames: Map<string, string>
   skillNames: Map<string, string>
+  realmNames?: Map<string, string>
 }
 
 function RewardList({ entries }: { entries: FeedEntry[] }) {
   const content = useContent()
   const names: DisplayNames = {
+    realmNames:
+      content.status === 'ready'
+        ? new Map(
+            content.content.realms.realms.map((realm) => [
+              realm.id,
+              realm.name,
+            ]),
+          )
+        : new Map<string, string>(),
     itemNames:
       content.status === 'ready'
         ? new Map(
@@ -295,7 +352,11 @@ function RewardSummary({
   const text = summarize(entry.rewards, names)
   return (
     <div className="rounded border border-slate-700 bg-slate-950 p-3 text-sm">
-      {text || 'Action ended.'}
+      {text || (entry.ended ? 'Action ended.' : '')}
+      <ResolverDetails
+        details={entry.rewards.details}
+        realmNames={names.realmNames}
+      />
       {entry.reason && (
         <p className="text-amber-300">
           Stopped: {entry.reason.replaceAll('_', ' ')}
@@ -310,6 +371,9 @@ function summarize(rewards: Rewards, names: DisplayNames): string {
     ([id, qty]) => `+${qty} ${names.itemNames.get(id) ?? id}`,
   )
   parts.push(
+    ...Object.entries(rewards.items_consumed).map(
+      ([id, qty]) => `−${qty} ${names.itemNames.get(id) ?? id} consumed`,
+    ),
     ...Object.entries(rewards.xp_gained).map(
       ([id, xp]) => `+${xp} ${names.skillNames.get(id) ?? id} XP`,
     ),
@@ -352,7 +416,16 @@ export function WelcomeBack({
           Welcome back
         </h2>
         <p className="mt-2">{rewards.cycles_completed} cycles completed.</p>
+        <ResolverDetails
+          details={rewards.details}
+          realmNames={names.realmNames}
+        />
         <dl className="mt-4 space-y-2">
+          {Object.entries(rewards.items_consumed).map(([id, qty]) => (
+            <div key={id}>
+              {qty} {names.itemNames.get(id) ?? id} consumed
+            </div>
+          ))}
           {Object.entries(rewards.xp_gained).map(([skill, xp]) => (
             <div key={skill}>
               <dt className="inline">

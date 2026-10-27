@@ -52,3 +52,18 @@ export function nextCycleDelay(
   const jitter = cycleMs * 0.1 * (random() * 2 - 1)
   return Math.max(100, untilBoundary + jitter)
 }
+
+/** Animate only the paid current edge; arrival always waits for server truth. */
+export function journeyProgress(
+  now: number,
+  resolvedAt: string,
+  durationMs: number,
+  remainingMs: number,
+): number {
+  if (durationMs <= 0) return 0
+  const elapsed = Math.max(0, now - Date.parse(resolvedAt))
+  return Math.min(
+    1,
+    Math.max(0, (durationMs - remainingMs + elapsed) / durationMs),
+  )
+}

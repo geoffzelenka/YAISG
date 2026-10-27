@@ -3,6 +3,7 @@
 import uuid
 from dataclasses import replace
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -60,6 +61,7 @@ class ActionSummary(BaseModel):
     cycle_ms: int
     started_at: datetime
     last_resolved_at: datetime
+    meta: dict[str, Any]
 
 
 class ActionFeedResponse(BaseModel):
@@ -131,6 +133,7 @@ def _active_summary(
         cycle_ms=state_cycle_ms,
         started_at=as_utc(record.started_at),
         last_resolved_at=as_utc(record.last_resolved_at),
+        meta=dict(record.meta),
     )
 
 

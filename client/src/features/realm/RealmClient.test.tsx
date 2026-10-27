@@ -125,6 +125,10 @@ describe('realm client interactions', () => {
       'fetch',
       vi.fn((input: string | URL | Request) => {
         const path = new URL(String(input), 'http://test').pathname
+        if (path === '/estates/me')
+          return Promise.resolve(
+            response({ form: { mobility: 'fixed' }, realm_id: 'realm.one' }),
+          )
         return Promise.resolve(
           response(
             path === '/content/manifest'
@@ -187,6 +191,10 @@ describe('realm client interactions', () => {
   it('skips positionless map nodes and their edges without crashing', async () => {
     const fetchMock = vi.fn((input: string | URL | Request) => {
       const path = new URL(String(input), 'http://test').pathname
+      if (path === '/estates/me')
+        return Promise.resolve(
+          response({ form: { mobility: 'fixed' }, realm_id: 'realm.one' }),
+        )
       if (path === '/content/manifest')
         return Promise.resolve(response({ version: 'map-test', packs: {} }))
       if (path.startsWith('/content/'))
@@ -242,6 +250,10 @@ describe('realm client interactions', () => {
     const fetchMock = vi.fn(
       (input: string | URL | Request, init?: RequestInit) => {
         const path = new URL(String(input), 'http://test').pathname
+        if (path === '/estates/me')
+          return Promise.resolve(
+            response({ form: { mobility: 'fixed' }, realm_id: 'realm.one' }),
+          )
         if (path === '/content/manifest')
           return Promise.resolve(
             response({ version: 'contribution-test', packs: {} }),
