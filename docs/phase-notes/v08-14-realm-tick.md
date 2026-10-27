@@ -125,3 +125,7 @@
 ## New error codes
 
 None.
+
+### Orchestrator hand-off (review round 2, non-blocking)
+
+- 36-hardening: in scheduler.py's `finally`, a failing `pg_advisory_unlock` would hide the original exception, and the session-level lock could stay leaked on the pooled connection, because pool reset only rolls back. Wrap the unlock in its own try, or invalidate the guard connection when the unlock fails.
