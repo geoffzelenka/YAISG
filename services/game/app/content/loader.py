@@ -4,9 +4,10 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -35,6 +36,9 @@ from app.content.schemas import (
     WorldSeedPack,
     XpCurve,
 )
+
+if TYPE_CHECKING:
+    from app.engine.caravans import Route
 
 PUBLIC_PACKS = (
     "skills",
@@ -99,6 +103,13 @@ class ContentIndex:
     _forms_by_id: MappingProxyType[str, EstateForm]
     _nodes_by_id: MappingProxyType[str, DevelopmentNode]
     _projects_by_id: MappingProxyType[str, Project]
+
+    @cached_property
+    def caravan_routes(self) -> dict[tuple[str, str], "Route"]:
+        """Cache content-only remoteness once per loaded index."""
+        from app.engine.caravans import remoteness
+
+        return remoteness(self.map)
 
     def skill(self, skill_id: str) -> Skill:
         """Look up a skill."""

@@ -46,6 +46,11 @@ def run_realm_ticks(
                     logging.getLogger(__name__).exception(
                         "Realm tick failed: realm_id=%s", realm_id
                     )
+            from app.services.caravans import run_caravan_pass
+
+            with factory() as session:
+                run_caravan_pass(session, content, now)
+                session.commit()
         finally:
             if postgres:
                 connection.execute(

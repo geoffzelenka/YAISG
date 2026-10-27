@@ -11,10 +11,25 @@ from sqlalchemy.orm import Session
 from app.content.loader import ContentIndex
 from app.content.schemas import ActionInput, DecayStage, DevelopmentNode, Tag
 from app.engine.market import PRECISION, allocate_budgets, band_from_upkeep
-from app.engine.stores import Demand, Line, derive_lines, mint_demands, project_demands
+from app.engine.stores import (
+    Demand,
+    Line,
+    derive_lines,
+    line_weight,
+    membership,
+    mint_demands,
+    project_demands,
+)
 from app.engine.tags import TagHolder, economy_tags
 from app.errors import api_error
-from app.models import Estate, RealmLine, RealmState, RealmStore, RealmTag
+from app.models import (
+    Estate,
+    RealmLine,
+    RealmShipment,
+    RealmState,
+    RealmStore,
+    RealmTag,
+)
 from app.services.projects import active_run
 
 
@@ -81,7 +96,19 @@ def derive_realm_lines(
         transition_days(realm),
         mint_demands(tags),
     )
-    return lines
+    transit = dict.fromkeys((line.key for line in lines), 0)
+    for shipment in session.scalars(
+        select(RealmShipment).where(
+            RealmShipment.to_realm_id == realm.id, RealmShipment.status == "in_transit"
+        )
+    ):
+        item = content.item(shipment.item_id)
+        line = membership(item, lines)
+        if line is not None:
+            transit[line.key] += (
+                shipment.quantity_arriving * 1000 * line_weight(item, line)
+            )
+    return tuple(replace(line, in_transit=transit[line.key]) for line in lines)
 
 
 def require_project_stock(

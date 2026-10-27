@@ -506,10 +506,10 @@ def test_realm_catchup_statement_bound(
         resolve_realm(realm_session, realm, due, content)
     finally:
         event.remove(engine, "before_cursor_execute", record_statement)
-    # One open-ballot query is independent of tick count.
+    # Open-ballot and preloaded-shipment queries are independent of tick count.
     # A destroyed estate, batched upgrade losses and a lost larder add three
     # writes total, equally for two ticks and full catch-up.
-    assert len(statements) == (15 if paying else 13) + (3 if decaying else 0), (
+    assert len(statements) == (16 if paying else 14) + (3 if decaying else 0), (
         statements
     )
     if decaying:

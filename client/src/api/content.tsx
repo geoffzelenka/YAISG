@@ -207,6 +207,13 @@ export type Tag = {
 type ContentPacks = {
   tags: { tags: Tag[] }
   economy: {
+    caravan?: {
+      pass_every_ticks: number
+      fee_pct_per_hour: number
+      fee_burn_pct: number
+      time_mult: number
+      capacity_value_per_pass: number
+    }
     reserve_days: number
     cap_days: number
     market?: {

@@ -1,7 +1,7 @@
 """Ordered realm tick extension points (design §14.5). Caller holds realm lock."""
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from fractions import Fraction
@@ -37,6 +37,7 @@ from app.models import (
     GoldLedger,
     RealmContribution,
     RealmProjectRun,
+    RealmShipment,
     RealmState,
     RealmStore,
     RealmTag,
@@ -60,6 +61,7 @@ class RealmTickContext:
     """
 
     active_run: RealmProjectRun | None
+    shipments: list[RealmShipment] = field(default_factory=list)
     ledger: list[GoldLedger] = field(default_factory=list)
     estates: list[Estate] = field(default_factory=list)
     stores: dict[str, int] = field(default_factory=dict)
@@ -106,6 +108,16 @@ def load_context(
         or content.estate_form(estate.form_id).production
     ]
     context = RealmTickContext(active_run=run, estates=estates)
+    context.shipments = list(
+        session.scalars(
+            select(RealmShipment)
+            .where(
+                RealmShipment.to_realm_id == realm.id,
+                RealmShipment.status == "in_transit",
+            )
+            .order_by(RealmShipment.arrives_at, RealmShipment.id)
+        )
+    )
     context.upgrades = list(
         session.scalars(
             select(EstateUpgrade)
@@ -218,9 +230,16 @@ def production_factor(estate: Estate, content: ContentIndex) -> Fraction:
 def step_0_arrivals(
     context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 20: receive due caravan shipments; isolated realms have no caravans."""
+    """Credit due preloaded shipments before production and upkeep."""
     if realm.isolated:
         return
+    for shipment in context.shipments:
+        if shipment.status == "in_transit" and as_utc(shipment.arrives_at) <= now:
+            context.stores[shipment.item_id] = (
+                context.stores.get(shipment.item_id, 0)
+                + shipment.quantity_arriving * 1000
+            )
+            shipment.status = "arrived"
 
 
 def step_1_production(
@@ -627,6 +646,19 @@ def step_10_lines(
         content,
         transition_days(realm),
         mint_demands(context.tags),
+    )
+    transit = dict.fromkeys((line.key for line in context.lines), 0)
+    for shipment in context.shipments:
+        if shipment.status != "in_transit":
+            continue
+        item = content.item(shipment.item_id)
+        line = membership(item, context.lines)
+        if line is not None:
+            transit[line.key] += (
+                shipment.quantity_arriving * 1000 * line_weight(item, line)
+            )
+    context.lines = tuple(
+        replace(line, in_transit=transit[line.key]) for line in context.lines
     )
     context.line_weights = {
         line.key: context.line_weights[line.key]

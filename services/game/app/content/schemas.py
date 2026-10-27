@@ -667,9 +667,20 @@ class VoteConfig(ContentModel):
     fail_cooldown_hours: float = Field(default=72, ge=0, allow_inf_nan=False)
 
 
+class CaravanConfig(ContentModel):
+    """Authored cadence, friction and shared dispatch capacity."""
+
+    pass_every_ticks: int = Field(default=6, ge=1)
+    fee_pct_per_hour: float = Field(default=1, gt=0, allow_inf_nan=False)
+    fee_burn_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    time_mult: float = Field(default=2, gt=0, allow_inf_nan=False)
+    capacity_value_per_pass: int = Field(default=1000, gt=0)
+
+
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
+    caravan: CaravanConfig = CaravanConfig()
     coinage_multiple: float = Field(default=1.2, ge=0, allow_inf_nan=False)
     reserve_days: float = Field(default=3, ge=0, allow_inf_nan=False)
     cap_days: float = Field(default=10, gt=0, allow_inf_nan=False)
