@@ -209,7 +209,7 @@ describe('realm client interactions', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const profile = {
-      character: { realm_id: 'realm.one' },
+      character: { current_realm_id: 'realm.one' },
     } as CharacterProfile
 
     render(<MapPanel profile={profile} />, { wrapper })

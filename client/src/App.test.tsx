@@ -12,7 +12,7 @@ vi.mock('./features/profile/InventoryPanel', () => ({
 
 it('shows Maximum level when XP to next is null', () => {
   const profile: CharacterProfile = {
-    character: { id: 'c', name: 'Hero', realm_id: 'r', created_at: '' },
+    character: { id: 'c', name: 'Hero', current_realm_id: 'r', created_at: '' },
     skills: [
       {
         id: 'gathering',

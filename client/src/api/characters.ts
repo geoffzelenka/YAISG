@@ -7,7 +7,7 @@ export type CharacterProfile = {
   character: {
     id: string
     name: string
-    realm_id: string
+    current_realm_id: string
     created_at: string
   }
   skills: {

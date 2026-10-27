@@ -60,7 +60,7 @@ def test_v08_baseline_upgrade_check_and_downgrade(tmp_path: Path) -> None:
                 player_id=player_id,
                 name="Migration Hero",
                 name_normalized="migration hero",
-                realm_id="placeholder",
+                current_realm_id="placeholder",
                 home_estate_id=uuid.uuid4(),
                 created_at=datetime.now(UTC),
             )

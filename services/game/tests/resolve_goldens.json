@@ -1,0 +1,532 @@
+[
+  {
+    "seed": 1,
+    "ms": 0,
+    "inventory": {},
+    "state": {
+      "skills_xp": {
+        "gathering": 0,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 1,
+        "refining": 1
+      },
+      "inventory": {},
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": {
+      "action_id": "gathering.fake_sprigs",
+      "started_at": "2025-01-01 00:00:00+00:00",
+      "last_resolved_at": "2025-01-01 00:00:00+00:00"
+    },
+    "result": {
+      "cycles_completed": 0,
+      "xp_gained": {},
+      "items_consumed": {},
+      "items_gained": {},
+      "overflowed_items": {},
+      "level_ups": {},
+      "stop_reason": null
+    }
+  },
+  {
+    "seed": 2,
+    "ms": 60000,
+    "inventory": {},
+    "state": {
+      "skills_xp": {
+        "gathering": 220,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 4,
+        "refining": 1
+      },
+      "inventory": {
+        "item.fake_sprig": 38
+      },
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": {
+      "action_id": "gathering.fake_sprigs",
+      "started_at": "2025-01-01 00:00:00+00:00",
+      "last_resolved_at": "2025-01-01 00:00:59.994000+00:00"
+    },
+    "result": {
+      "cycles_completed": 22,
+      "xp_gained": {
+        "gathering": 220
+      },
+      "items_consumed": {},
+      "items_gained": {
+        "item.fake_sprig": 38
+      },
+      "overflowed_items": {},
+      "level_ups": {
+        "gathering": [
+          2,
+          3,
+          4
+        ]
+      },
+      "stop_reason": null
+    }
+  },
+  {
+    "seed": 13,
+    "ms": 300000,
+    "inventory": {},
+    "state": {
+      "skills_xp": {
+        "gathering": 1100,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 12,
+        "refining": 1
+      },
+      "inventory": {
+        "item.fake_sprig": 162,
+        "item.worthless_button": 6
+      },
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": {
+      "action_id": "gathering.fake_sprigs",
+      "started_at": "2025-01-01 00:00:00+00:00",
+      "last_resolved_at": "2025-01-01 00:04:59.970000+00:00"
+    },
+    "result": {
+      "cycles_completed": 110,
+      "xp_gained": {
+        "gathering": 1100
+      },
+      "items_consumed": {},
+      "items_gained": {
+        "item.fake_sprig": 162,
+        "item.worthless_button": 6
+      },
+      "overflowed_items": {},
+      "level_ups": {
+        "gathering": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      "stop_reason": null
+    }
+  },
+  {
+    "seed": 9,
+    "ms": 36000000,
+    "inventory": {},
+    "state": {
+      "skills_xp": {
+        "gathering": 135100,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 56,
+        "refining": 1
+      },
+      "inventory": {
+        "item.fake_sprig": 20265,
+        "item.worthless_button": 688
+      },
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": {
+      "action_id": "gathering.fake_sprigs",
+      "started_at": "2025-01-01 00:00:00+00:00",
+      "last_resolved_at": "2025-01-01 09:59:57.940000+00:00"
+    },
+    "result": {
+      "cycles_completed": 13510,
+      "xp_gained": {
+        "gathering": 135100
+      },
+      "items_consumed": {},
+      "items_gained": {
+        "item.fake_sprig": 20265,
+        "item.worthless_button": 688
+      },
+      "overflowed_items": {},
+      "level_ups": {
+        "gathering": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56
+        ]
+      },
+      "stop_reason": null
+    }
+  },
+  {
+    "seed": 7,
+    "ms": 60000,
+    "inventory": {
+      "item.fake_sprig": 9999
+    },
+    "state": {
+      "skills_xp": {
+        "gathering": 220,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 4,
+        "refining": 1
+      },
+      "inventory": {
+        "item.fake_sprig": 10030,
+        "item.worthless_button": 2
+      },
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": {
+      "action_id": "gathering.fake_sprigs",
+      "started_at": "2025-01-01 00:00:00+00:00",
+      "last_resolved_at": "2025-01-01 00:00:59.994000+00:00"
+    },
+    "result": {
+      "cycles_completed": 22,
+      "xp_gained": {
+        "gathering": 220
+      },
+      "items_consumed": {},
+      "items_gained": {
+        "item.fake_sprig": 31,
+        "item.worthless_button": 2
+      },
+      "overflowed_items": {},
+      "level_ups": {
+        "gathering": [
+          2,
+          3,
+          4
+        ]
+      },
+      "stop_reason": null
+    }
+  },
+  {
+    "seed": 11,
+    "ms": 172800000,
+    "inventory": {},
+    "action_id": "gathering.fake_sprigs",
+    "state": {
+      "skills_xp": {
+        "gathering": 162830,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 58,
+        "refining": 1
+      },
+      "inventory": {
+        "item.fake_sprig": 24419,
+        "item.worthless_button": 800
+      },
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": null,
+    "result": {
+      "cycles_completed": 16283,
+      "xp_gained": {
+        "gathering": 162830
+      },
+      "items_consumed": {},
+      "items_gained": {
+        "item.fake_sprig": 24419,
+        "item.worthless_button": 800
+      },
+      "overflowed_items": {},
+      "level_ups": {
+        "gathering": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58
+        ]
+      },
+      "stop_reason": "offline_cap"
+    }
+  },
+  {
+    "seed": 11,
+    "ms": 60000,
+    "inventory": {
+      "item.fake_sprig": 9
+    },
+    "action_id": "refining.fake_plank",
+    "state": {
+      "skills_xp": {
+        "gathering": 0,
+        "refining": 72
+      },
+      "skill_levels": {
+        "gathering": 1,
+        "refining": 2
+      },
+      "inventory": {
+        "item.fake_sprig": 1,
+        "item.fake_plank": 4
+      },
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": null,
+    "result": {
+      "cycles_completed": 4,
+      "xp_gained": {
+        "refining": 72
+      },
+      "items_consumed": {
+        "item.fake_sprig": 8
+      },
+      "items_gained": {
+        "item.fake_plank": 4
+      },
+      "overflowed_items": {},
+      "level_ups": {
+        "refining": [
+          2
+        ]
+      },
+      "stop_reason": "inputs_exhausted"
+    }
+  },
+  {
+    "seed": 11,
+    "ms": -1000,
+    "inventory": {},
+    "action_id": "gathering.fake_sprigs",
+    "state": {
+      "skills_xp": {
+        "gathering": 0,
+        "refining": 0
+      },
+      "skill_levels": {
+        "gathering": 1,
+        "refining": 1
+      },
+      "inventory": {},
+      "gold": 0,
+      "estate_form_id": "form.camp",
+      "realm_node_id": "node.verdant_t1",
+      "realm_id": "",
+      "estate_realm_id": "",
+      "realm_stage": "fed",
+      "estate_stage": "fed",
+      "realm_stack_tags": [],
+      "gear_modifiers": [],
+      "consumable_modifiers": [],
+      "installed_upgrades": [],
+      "cap_bonuses": {}
+    },
+    "active": {
+      "action_id": "gathering.fake_sprigs",
+      "started_at": "2025-01-01 00:00:00+00:00",
+      "last_resolved_at": "2025-01-01 00:00:00+00:00"
+    },
+    "result": {
+      "cycles_completed": 0,
+      "xp_gained": {},
+      "items_consumed": {},
+      "items_gained": {},
+      "overflowed_items": {},
+      "level_ups": {},
+      "stop_reason": null
+    }
+  }
+]

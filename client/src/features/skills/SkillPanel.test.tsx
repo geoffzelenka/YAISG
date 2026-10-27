@@ -125,7 +125,7 @@ describe('skill panel', () => {
             tier_thresholds: [1],
             tier_titles: ['Placeholder'],
           },
-          '/characters/me/actions/available': {
+          '/actions/available': {
             skills: [
               {
                 skill_id: 'gathering',

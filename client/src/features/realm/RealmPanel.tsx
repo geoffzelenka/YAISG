@@ -153,7 +153,7 @@ export function TransitionBanner({
 }
 
 export function RealmPanel({ profile }: { profile: CharacterProfile }) {
-  const realm = useRealm(profile.character.realm_id)
+  const realm = useRealm(profile.character.current_realm_id)
   const content = useContent()
   if (realm.isPending || content.status === 'loading')
     return <p>Loading realm…</p>
@@ -237,7 +237,7 @@ export function RealmPanel({ profile }: { profile: CharacterProfile }) {
           </div>
         </div>
       ))}
-      <RelocationFlow currentRealmId={profile.character.realm_id} />
+      <RelocationFlow currentRealmId={profile.character.current_realm_id} />
     </section>
   )
 }

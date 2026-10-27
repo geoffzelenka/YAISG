@@ -573,3 +573,108 @@ async def test_profile_and_available_share_decay_stage_state(
         )
     finally:
         app.state.content = original
+
+
+async def test_resolver_meta_and_details_round_trip(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolver progress survives polls and its summary is logged and claimed once."""
+    from dataclasses import replace
+
+    from app.content.schemas import Action
+    from app.engine import (
+        CharacterState,
+        RandomSource,
+        ResolveContext,
+        ResolveResult,
+        UniformResolver,
+    )
+    from app.models import ActiveActionRecord
+
+    original = UniformResolver.resolve
+
+    def with_progress(
+        self: UniformResolver,
+        state: CharacterState,
+        action: Action,
+        ctx: ResolveContext,
+        budget_ms: int,
+        rng: RandomSource,
+    ) -> ResolveResult:
+        result = original(self, state, action, ctx, budget_ms, rng)
+        if result.cycles_completed == 0:
+            return result
+        assert result.active is not None
+        step = ctx.active.meta.get("step", 0) + 1
+        return replace(
+            result,
+            active=replace(result.active, meta={"step": step}),
+            details={"step": step, "nested": {"visited": ["synthetic"]}},
+        )
+
+    monkeypatch.setattr(UniformResolver, "resolve", with_progress)
+    client, factory, clock, headers = action_client
+    started = await client.post(
+        "/actions/start",
+        headers=headers,
+        json={"action_id": "gathering.fake_sprigs"},
+    )
+    assert started.status_code == 200
+    for step in (1, 2):
+        clock.advance(timedelta(seconds=3))
+        response = await client.get("/actions/poll", headers=headers)
+        assert response.status_code == 200
+        details = response.json()["since_last"]["details"]["resolutions"]
+        assert len(details) == 1
+        assert details[0]["step"] == step
+        assert details[0]["nested"] == {"visited": ["synthetic"]}
+        with factory() as session:
+            active = session.scalar(select(ActiveActionRecord))
+            assert active is not None and active.meta == {"step": step}
+            logs = list(
+                session.scalars(select(RewardLog).order_by(RewardLog.resolved_at))
+            )
+            assert logs[-1].details == details[0]
+            assert all(log.claimed_at is not None for log in logs)
+        repeated = await client.get("/actions/poll", headers=headers)
+        assert repeated.json()["since_last"]["details"] == {}
+    stopped = await client.post("/actions/stop", headers=headers)
+    assert stopped.status_code == 200 and stopped.json()["active"] is None
+
+
+@pytest.mark.parametrize("has_active", [False, True])
+async def test_postgres_resolve_locks_character_with_or_without_action(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+    has_active: bool,
+) -> None:
+    """The same parent lock serializes first starts and already active actions."""
+    from sqlalchemy.exc import DBAPIError
+
+    from app.models import Character
+
+    client, factory, clock, headers = action_client
+    with factory() as session:
+        if session.get_bind().dialect.name != "postgresql":
+            pytest.skip("PostgreSQL row lock assertion")
+        character_id = session.scalar(select(Character.id))
+    assert character_id is not None
+    if has_active:
+        response = await client.post(
+            "/actions/start",
+            headers=headers,
+            json={"action_id": "gathering.fake_sprigs"},
+        )
+        assert response.status_code == 200
+    with factory() as first:
+        resolve_character(first, character_id, clock.now)
+        with factory() as second:
+            with pytest.raises(DBAPIError) as error:
+                second.execute(
+                    select(Character.id)
+                    .where(Character.id == character_id)
+                    .with_for_update(nowait=True)
+                )
+            assert getattr(error.value.orig, "sqlstate", None) == "55P03"
+            second.rollback()
+        first.rollback()

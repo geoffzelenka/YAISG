@@ -153,7 +153,7 @@ def test_finalize_relocation_syncs_character_realm(realm_session: Session) -> No
         player_id=uuid.uuid4(),
         name="Mover",
         name_normalized="mover",
-        realm_id="realm.verdant_vale",
+        current_realm_id="realm.verdant_vale",
         home_estate_id=estate_id,
         created_at=NOW,
     )
@@ -177,4 +177,4 @@ def test_finalize_relocation_syncs_character_realm(realm_session: Session) -> No
     assert finalized.realm_id == "realm.ashen_reach"
     assert finalized.status == "active"
     assert finalized.relocating_to_realm_id is None
-    assert character.realm_id == "realm.ashen_reach"
+    assert character.current_realm_id == "realm.ashen_reach"

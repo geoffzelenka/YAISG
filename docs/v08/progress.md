@@ -12,7 +12,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 03 | `03-bonus-model` | Source groups, multiplication, XP cap, proficiency, taper | done | v08/03-bonus-model | e70c574 | Five source groups multiplied with per-group floor; XP bonus cap 45% then taper; proficiency by tier distance feeds cycle speed only; §8 tables in progression pack; cycle_time_pct and market_tax_pct removed. |
 | 04 | `04-content-lint` | XP-rate content lint | done | v08/04-content-lint | 46f38fb | Warning-only make content-lint (text + JSON): per-action rate vs target curve ±15%, exact-Fraction training ladders, §7.3 stack bound; lint settings in progression pack; non-fatal CI step. |
 | 05 | `05-tags` | Tags, action requirements, availability report | done | v08/05-tags | b75ded2 | Tags and economy packs; pure active_tags with D11 stage effects; all-of realm tags; one unmet_requirements for start/resolve/availability incl. REQUIREMENT_LOST; profile shares the state loader. |
-| 06 | `06-resolver-presence` | Resolver seam, current_realm_id, presence | pending | — | — | — |
+| 06 | `06-resolver-presence` | Resolver seam, current_realm_id, presence | ready for review | v08/06-resolver-presence | — | ActionResolver dispatch with uniform goldens, persisted action meta and reward details; current_realm_id and presence helpers; character locking and consolidated action routes. |
 | 07 | `07-travel` | Map edges, journeys, the Travel skill | pending | — | — | — |
 | 08 | `08-client-skills-travel` | Client: skills, tiers, travel | pending | — | — | — |
 | 09 | `09-development-graph` | Nodes, tag stack, transitions | pending | — | — | — |

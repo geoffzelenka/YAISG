@@ -147,7 +147,7 @@ function CharacterCreation() {
 }
 
 export function ProfilePanel({ profile }: { profile: CharacterProfile }) {
-  const realm = useRealm(profile.character.realm_id)
+  const realm = useRealm(profile.character.current_realm_id)
   const content = useContent()
   const currentNode =
     content.status === 'ready' && realm.data

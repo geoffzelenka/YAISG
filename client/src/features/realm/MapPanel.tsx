@@ -47,7 +47,7 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
         })}
         {map.data.nodes.map((node) => {
           if (node.position === null) return null
-          const current = node.realm_id === profile.character.realm_id
+          const current = node.realm_id === profile.character.current_realm_id
           return (
             <g
               className={current ? '' : 'cursor-pointer'}
@@ -78,7 +78,7 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
         })}
       </svg>
       <RelocationFlow
-        currentRealmId={profile.character.realm_id}
+        currentRealmId={profile.character.current_realm_id}
         initialDestination={destination}
         key={destination ?? 'none'}
       />

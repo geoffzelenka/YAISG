@@ -116,6 +116,8 @@ async def test_creation_builds_complete_profile(
     assert response.status_code == 201
     profile = response.json()
     assert profile["character"]["name"] == "Demo Hero"
+    assert profile["character"]["current_realm_id"] == "realm.verdant_vale"
+    assert "realm_id" not in profile["character"]
     assert profile["gold"] == 0
     fixed = {
         "melee",
@@ -372,7 +374,7 @@ async def test_visitor_profile_excludes_estate_modifiers(
     with client[1]() as session:
         character = session.scalar(select(Character))
         assert character is not None
-        character.realm_id = "realm.ashen_reach"
+        character.current_realm_id = "realm.ashen_reach"
         session.commit()
     away = await client[0].get("/characters/me", headers=headers)
     assert away.status_code == 200

@@ -23,6 +23,7 @@ export type Rewards = {
   overflowed_items: Record<string, number>
   level_ups: Record<string, number[]>
   stop_reason: string | null
+  details?: Record<string, unknown>
 }
 export type ActiveAction = {
   action_id: string
@@ -64,9 +65,7 @@ export function useAvailableActions() {
   return useQuery({
     queryKey: ['characters', 'me', 'actions', 'available'],
     queryFn: () =>
-      jsonRequest<{ skills: AvailableSkill[] }>(
-        '/characters/me/actions/available',
-      ),
+      jsonRequest<{ skills: AvailableSkill[] }>('/actions/available'),
   })
 }
 
@@ -75,7 +74,7 @@ export function useStartAction() {
   return useMutation({
     mutationFn: (actionId: string) =>
       jsonRequest<{ action_id: string; cycle_ms: number; started_at: string }>(
-        '/characters/me/action',
+        '/actions/start',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -99,14 +98,14 @@ export function useStartAction() {
 export function useStopAction() {
   return useMutation({
     mutationFn: () =>
-      jsonRequest<ActionFeedResponse>('/characters/me/action', {
-        method: 'DELETE',
+      jsonRequest<ActionFeedResponse>('/actions/stop', {
+        method: 'POST',
       }),
   })
 }
 
 export function fetchAction(): Promise<ActionFeedResponse> {
-  return jsonRequest('/characters/me/action')
+  return jsonRequest('/actions/poll')
 }
 
 export function emptyRewards(): Rewards {
