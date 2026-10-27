@@ -24,7 +24,7 @@
   identity, total consumed goods per character, and the realm's own share.
   Treasury balances remain private. Client economy types and content fixtures
   include the added settings; project controls remain with Prompt 21.
-- Untouched known realm templates receive conflict-safe state initialization
+- Untouched known non-isolated realm templates receive conflict-safe initialization
   under sorted locks. This supports projects after travel into a realm where
   nobody has created a character, before Prompt 13 introduces world seeding.
 - Picked up 00/02/09 hand-offs: reused selector payment, retained lock order and
@@ -54,6 +54,22 @@
   Fresh disposable SQLite `make db-reset`, subsequent `alembic upgrade head`
   and `alembic check` pass. No dependencies added.
 
+- Round 1: removed the isolated-realm tick-loop bypass; projects now erode and
+  fail in tutorial instances, while caravan/upkeep/decay exemptions live inside
+  their own steps and market/tax work remains a scoped hook. Made kickoff-code
+  cases cumulative, based `stalled` on the authored idle grace, added typed tag
+  credits with `UNKNOWN_REALM` handling, promoted `get_character` / `as_utc`, and
+  blocked first-touch creation from isolated templates. Added
+  `test_isolated_project_erodes_and_fails`,
+  `test_stalled_uses_content_grace_and_resets`,
+  `test_tag_credits_realm_errors_and_typed_response`, and
+  `test_first_touch_never_instantiates_isolated_template` (both template kinds).
+  Strengthened `test_kickoff_codes_in_order` and updated the existing read test
+  for grace-period behavior. All eight adjacent gate-order mutations are caught.
+  Round 1 SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passes: auth 15, game 297
+  with six database-specific skips, client 41; all format, lint, type and build
+  checks pass. No dependencies added.
+
 ## Removed
 
 None. No existing tests were removed or weakened.
@@ -73,16 +89,19 @@ None. No existing tests were removed or weakened.
 - §12.3 / §14.2: overlapping selectors choose the most specific matching line
   (item, tiered class, class), then authored order. A funded matching line rejects
   further payments. No inventory or project progress changes on rejected calls.
-- §12.3: `stalled` means a funding attempt with positive time since its last
-  contribution, including the erosion-free grace period described in the table.
-  An accepted payment clears it at that instant; building attempts are not stalled.
+- §12.3 (Round 1 ruling): `stalled` means a funding attempt whose idle time is
+  strictly greater than `economy.project.idle_grace_days`, so erosion applies.
+  It is false during grace, at the exact boundary, and during building. Any
+  accepted payment restarts grace. This follows the orchestrator's clarification
+  of the idle-erosion table's public-label wording.
 - §12.4: credits report summed quantities of goods consumed over the attempt,
   including contributions subsequently eroded; they are not surviving progress.
   Character UUIDs identify contributors; null identity is the separate realm
   share. A tag without a project-run link has empty credits and null kickoff.
-- §12.1 / §14.5: isolated realms finalize timed events but skip economy ticks,
-  retaining their specified exemption from upkeep and decay. Their tick cursor
-  advances without economic side effects.
+- §12.1 / §14.5 / §20 (Round 1 correction): isolated realms run every ordered
+  tick step, including ordinary project erosion and failure. Only caravan,
+  upkeep, decay, market and tax work is exempted within the owning steps;
+  isolation does not bypass the tick framework or the ordinary project engine.
 
 ## Deviations
 
@@ -96,20 +115,31 @@ None.
 
 - 13-stores-lines: use funding run snapshots for the project overlay. Replace or
   integrate first-touch zero-treasury realm initialization with world seed data;
-  seed each world realm before its first public resolve.
+  seed each world realm before its first public resolve. Preserve `_lock_realm`'s
+  guard: first touch must never create shared state for an isolated template;
+  isolated realms are per-player instances created by the tutorial lifecycle.
 - 14-realm-tick: fill steps 1–4, 6–7 and 10 in `services/realm_ticks.py` and add
   the scheduled driver. Step 5 must withdraw from stores above reserve, call
   `services.projects.contribute` with null character and milli-unit payment,
   then apply idle erosion. The contribution helper returns the consumed amount;
   the caller must withdraw it from stores in the same transaction. Handle build
-  events created during tick catch-up at their exact due times. Keep step order.
-- 15-decay: fill steps 8–9; preserve isolated-realm exemptions, D4 stamps and
+  events created during tick catch-up at their exact due times. Keep every step
+  running for isolated realms, with upkeep exemptions only inside steps 2–4 and
+  market/tax exemptions scoped within step 10. Project erosion/failure is never
+  skipped for isolation. Keep step order.
+- 15-decay: fill steps 8–9; exempt isolated realms from upkeep/decay gauge work
+  within these steps, never by skipping the tick loop. Preserve D4 stamps and
   exact transition completion through the realm resolver.
 - 19-votes: implement `has_open_vote`, `vote_close_event` and `close_due_vote`.
   Close using the supplied due time, update vote status, and start transitions
   from that exact time. The resolver rechecks newly scheduled events before ticks.
   Enforce D6's reciprocal active-project gate when calling a vote.
-- 20-caravans: fill step 0 arrivals before estate production and upkeep.
+- 20-caravans: fill step 0 arrivals before estate production and upkeep;
+  preserve its isolated-realm caravan exemption.
+- 34-tutorial: create isolated realms explicitly as owned per-player instances.
+  `_lock_realm` first touch must never auto-create a `realm_state` row from an
+  isolated template. Preserve its guard when adding instance lookup/lifecycle;
+  tutorial projects and tags use the ordinary resolver, including idle erosion.
 - 21-client-realm-estate: kickoff and contribution return a `ProjectRunResponse`;
   realm detail adds nullable `active_run`. Required lines are `{selector, quantity}`
   in authored order, and `contributed` is the parallel array in good units.

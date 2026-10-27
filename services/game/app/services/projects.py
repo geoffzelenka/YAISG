@@ -19,7 +19,7 @@ from app.models import (
     RealmProjectRun,
     RealmState,
 )
-from app.services.realms import _as_utc, stack_tags
+from app.services.realms import as_utc, stack_tags
 
 
 def active_run(session: Session, realm_id: str) -> RealmProjectRun | None:
@@ -133,11 +133,11 @@ def kickoff(
         .order_by(RealmProjectRun.failed_at.desc())
         .limit(1)
     )
-    if failed_at is not None and now < _as_utc(failed_at) + timedelta(
+    if failed_at is not None and now < as_utc(failed_at) + timedelta(
         hours=content.economy.project.fail_cooldown_hours
     ):
         raise api_error(409, "PROJECT_COOLDOWN", "The project is cooling down")
-    if character.last_kickoff_at is not None and now < _as_utc(
+    if character.last_kickoff_at is not None and now < as_utc(
         character.last_kickoff_at
     ) + timedelta(days=1):
         raise api_error(

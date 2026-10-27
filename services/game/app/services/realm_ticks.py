@@ -8,13 +8,15 @@ from app.content.loader import ContentIndex
 from app.engine.projects import erode_project
 from app.models import RealmState
 from app.services.projects import active_run
-from app.services.realms import _as_utc
+from app.services.realms import as_utc
 
 
 def step_0_arrivals(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 20: receive due caravan shipments."""
+    """Prompt 20: receive due caravan shipments; isolated realms have no caravans."""
+    if realm.isolated:
+        return
 
 
 def step_1_production(
@@ -26,19 +28,25 @@ def step_1_production(
 def step_2_larder_upkeep(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 14: consume estate larders."""
+    """Prompt 14: consume estate larders; isolated realms have no upkeep."""
+    if realm.isolated:
+        return
 
 
 def step_3_estate_upkeep(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 14: share stores above reserve among short estates."""
+    """Prompt 14: share upkeep above reserve; isolated realms have no upkeep."""
+    if realm.isolated:
+        return
 
 
 def step_4_realm_upkeep(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 14/18: consume realm upkeep and coin bullion."""
+    """Prompt 14/18: consume upkeep and coin bullion; skip isolated realm upkeep."""
+    if realm.isolated:
+        return
 
 
 def step_5_projects(
@@ -51,12 +59,12 @@ def step_5_projects(
     run.contributed = erode_project(
         [line["quantity"] * 1000 for line in run.required],
         run.contributed,
-        _as_utc(run.last_contribution_at),
+        as_utc(run.last_contribution_at),
         now,
         content.economy.project,
         content.economy.tick.per_day,
     )
-    if now > _as_utc(run.last_contribution_at) + timedelta(
+    if now > as_utc(run.last_contribution_at) + timedelta(
         days=content.economy.project.idle_grace_days
     ) and not any(run.contributed):
         run.status = "failed"
@@ -78,19 +86,26 @@ def step_7_caps(
 def step_8_gauges(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 15: update deficit gauges."""
+    """Prompt 15: update deficit gauges; isolated realms have no upkeep or decay."""
+    if realm.isolated:
+        return
 
 
 def step_9_decay(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 15: advance or recover decay."""
+    """Prompt 15: advance or recover decay; isolated realms have no decay."""
+    if realm.isolated:
+        return
 
 
 def step_10_lines(
     session: Session, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 14/16: recompute lines, budgets and treasury band."""
+    """Prompt 14/16: recompute lines, including isolated realms' project lines.
+
+    Skip only market budgets, treasury bands and tax work for isolated realms.
+    """
 
 
 TICK_STEPS = (

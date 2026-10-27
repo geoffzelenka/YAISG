@@ -13,7 +13,8 @@ from app.content.runtime import CONTENT
 from app.models import RealmState, RealmTag
 
 
-def _as_utc(value: datetime) -> datetime:
+def as_utc(value: datetime) -> datetime:
+    """Normalize a timestamp, restoring UTC omitted by SQLite."""
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
@@ -45,6 +46,9 @@ def _lock_realm(
     try:
         template = content.realm(realm_id)
     except KeyError:
+        return None
+    if template.isolated:
+        # Isolated templates become owned instances through the tutorial lifecycle.
         return None
     # Before world seeding (Prompt 13), travel can reach untouched templates.
     # The conflict-safe insert serializes concurrent first touches as well.
@@ -133,7 +137,7 @@ def _finalize_locked_realm(
     if state is None or state.pending_transition is None:
         return state
     pending = state.pending_transition
-    if _as_utc(datetime.fromisoformat(pending["completes_at"])) > _as_utc(now):
+    if as_utc(datetime.fromisoformat(pending["completes_at"])) > as_utc(now):
         return state
     node = content.development_node(pending["to_node"])
     allowed = set(node.carried_tags) | {
@@ -222,13 +226,13 @@ def _finalize_timed_events(
         events: list[tuple[datetime, TimedEventKind]] = []
         vote_due = vote_close_event(session, realm)
         if vote_due is not None:
-            events.append((_as_utc(vote_due), TimedEventKind.VOTE))
+            events.append((as_utc(vote_due), TimedEventKind.VOTE))
         if run is not None and run.build_completes_at is not None:
-            events.append((_as_utc(run.build_completes_at), TimedEventKind.BUILD))
+            events.append((as_utc(run.build_completes_at), TimedEventKind.BUILD))
         if realm.pending_transition is not None:
             events.append(
                 (
-                    _as_utc(
+                    as_utc(
                         datetime.fromisoformat(realm.pending_transition["completes_at"])
                     ),
                     TimedEventKind.TRANSITION,
@@ -265,18 +269,17 @@ def resolve_realm(
 
     if realm is None:
         return None
-    now = _as_utc(now)
+    now = as_utc(now)
     _finalize_timed_events(session, realm, now, content)
     interval = timedelta(days=1) / content.economy.tick.per_day
     ticks = min(
-        (now - _as_utc(realm.last_tick_at)) // interval,
+        (now - as_utc(realm.last_tick_at)) // interval,
         content.economy.tick.max_catchup,
     )
     for _ in range(max(0, ticks)):
-        tick_at = _as_utc(realm.last_tick_at) + interval
-        if not realm.isolated:
-            for step in TICK_STEPS:
-                step(session, realm, tick_at, content)
+        tick_at = as_utc(realm.last_tick_at) + interval
+        for step in TICK_STEPS:
+            step(session, realm, tick_at, content)
         realm.last_tick_at = tick_at
         session.flush()
     return realm

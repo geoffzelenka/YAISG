@@ -1,14 +1,14 @@
 """Public realm identities and map, with lazy transition completion."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal, cast
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.api.actions import _character
+from app.api.actions import get_character
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
@@ -24,7 +24,7 @@ from app.models import (
 from app.services.actions import resolve_character
 from app.services.projects import active_run, contribute_character, kickoff
 from app.services.realms import (
-    _as_utc,
+    as_utc,
     finalize_realm,
     finalize_realms,
     prepare_sqlite_write,
@@ -75,7 +75,9 @@ class ProjectRunResponse(BaseModel):
     build_completes_at: datetime | None
 
 
-def _run_response(run: RealmProjectRun, now: datetime) -> ProjectRunResponse:
+def _run_response(
+    run: RealmProjectRun, now: datetime, content: ContentIndex
+) -> ProjectRunResponse:
     return ProjectRunResponse(
         id=run.id,
         project_id=run.project_id,
@@ -83,7 +85,9 @@ def _run_response(run: RealmProjectRun, now: datetime) -> ProjectRunResponse:
         contributed=[amount / 1000 for amount in run.contributed],
         status=run.status,
         stalled=run.status == "funding"
-        and _as_utc(now) > _as_utc(run.last_contribution_at),
+        and as_utc(now)
+        > as_utc(run.last_contribution_at)
+        + timedelta(days=content.economy.project.idle_grace_days),
         last_contribution_at=run.last_contribution_at,
         build_completes_at=run.build_completes_at,
     )
@@ -134,7 +138,7 @@ def _realm_response(
     )
     run = active_run(session, realm_id)
     return RealmResponse(
-        active_run=_run_response(run, now) if run else None,
+        active_run=_run_response(run, now, content) if run else None,
         id=realm_id,
         name=realm.name,
         node=NodeIdentity(
@@ -268,12 +272,12 @@ async def kickoff_project(
 ) -> ProjectRunResponse:
     """Start an attempt after resolving presence and locking realms in id order."""
     content = _content(request)
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     _check_realm_id(session, content, realm_id)
     resolve_character(session, character.id, now, content, {realm_id})
     realm = _project_realm(session, realm_id)
     run = kickoff(session, character, realm, project_id, now, content)
-    response = _run_response(run, now)
+    response = _run_response(run, now, content)
     session.commit()
     return response
 
@@ -289,7 +293,7 @@ async def contribute_project(
 ) -> ProjectRunResponse:
     """Consume a clamped payment and record one immutable credit per call."""
     content = _content(request)
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     _check_realm_id(session, content, realm_id)
     resolve_character(session, character.id, now, content, {realm_id})
     realm = _project_realm(session, realm_id)
@@ -302,22 +306,34 @@ async def contribute_project(
         now,
         content,
     )
-    response = _run_response(run, now)
+    response = _run_response(run, now, content)
     session.commit()
     return response
 
 
-@router.get("/realms/{realm_id}/tags/{tag_id}")
+class TagCreditsResponse(BaseModel):
+    """Kickoff and consumed contribution credits for a currently held tag."""
+
+    tag_id: str
+    project_run_id: uuid.UUID | None
+    kicked_off_by: uuid.UUID | None
+    contributions: dict[str, float]
+    realm_share: float
+
+
+@router.get("/realms/{realm_id}/tags/{tag_id}", response_model=TagCreditsResponse)
 async def tag_credits(
     realm_id: str,
     tag_id: str,
     request: Request,
     now: ServerNow,
     session: DatabaseSession,
-) -> dict[str, object]:
+) -> TagCreditsResponse:
     """Return credits from the attempt that granted the currently held tag."""
     content = _content(request)
-    finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    if state is None and realm_id not in {realm.id for realm in content.realms}:
+        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
     tag = session.get(RealmTag, (realm_id, tag_id))
     if tag is None:
         raise api_error(404, "UNKNOWN_REALM_TAG", "The realm does not hold this tag")
@@ -335,12 +351,12 @@ async def tag_credits(
             else:
                 key = str(row.character_id)
                 totals[key] = totals.get(key, 0) + row.quantity_milli
-    response: dict[str, object] = {
-        "tag_id": tag_id,
-        "project_run_id": str(run.id) if run else None,
-        "kicked_off_by": str(run.kicked_off_by) if run else None,
-        "contributions": {key: value / 1000 for key, value in totals.items()},
-        "realm_share": realm_share / 1000,
-    }
+    response = TagCreditsResponse(
+        tag_id=tag_id,
+        project_run_id=run.id if run else None,
+        kicked_off_by=run.kicked_off_by if run else None,
+        contributions={key: value / 1000 for key, value in totals.items()},
+        realm_share=realm_share / 1000,
+    )
     session.commit()
     return response

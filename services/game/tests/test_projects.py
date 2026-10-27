@@ -36,7 +36,7 @@ from app.models import (
 from app.services import realm_ticks
 from app.services.projects import contribute, kickoff
 from app.services.realms import (
-    _as_utc,
+    as_utc,
     finalize_realm,
     push_realm_tag,
     resolve_realm,
@@ -114,51 +114,53 @@ def _hero(session: Session) -> Character:
     return hero
 
 
-@pytest.mark.parametrize(
-    "code",
-    [
-        "NOT_PRESENT",
-        "RESIDENTS_ONLY",
-        "PROJECT_NOT_OFFERED",
-        "PROJECT_ACTIVE",
-        "REALM_VOTING",
-        "REALM_TRANSITIONING",
-        "PROJECT_COOLDOWN",
-        "KICKOFF_LIMIT",
-        "MISSING_INPUTS",
-    ],
+KICKOFF_CODES = (
+    "NOT_PRESENT",
+    "RESIDENTS_ONLY",
+    "PROJECT_NOT_OFFERED",
+    "PROJECT_ACTIVE",
+    "REALM_VOTING",
+    "REALM_TRANSITIONING",
+    "PROJECT_COOLDOWN",
+    "KICKOFF_LIMIT",
+    "MISSING_INPUTS",
 )
+
+
+@pytest.mark.parametrize("code", KICKOFF_CODES)
 def test_kickoff_codes_in_order(realm_session: Session, code: str) -> None:
-    """Each gate wins over the later missing-payment gate."""
+    """Each gate wins while every later gate also rejects the kickoff."""
     session = realm_session
     realm = session.get(RealmState, REALM)
     assert realm is not None
     hero = _hero(session)
+    blocked = set(KICKOFF_CODES[KICKOFF_CODES.index(code) :])
     project = CONTENT.project(PROJECT).model_copy(
         update={"kickoff": ProjectKickoff(gold=1000, who="residents")}
     )
     content = _content(project)
-    if code == "NOT_PRESENT":
+    if "NOT_PRESENT" in blocked:
         hero.current_realm_id = "realm.ashen_reach"
-    elif code == "RESIDENTS_ONLY":
+    if "RESIDENTS_ONLY" in blocked:
         estate = session.get(Estate, hero.home_estate_id)
         assert estate is not None
         estate.realm_id = "realm.ashen_reach"
-    elif code == "PROJECT_NOT_OFFERED":
+    if "PROJECT_NOT_OFFERED" in blocked:
         push_realm_tag(session, realm, project.grants_tag, NOW)
-    elif code == "PROJECT_ACTIVE":
+    if "PROJECT_COOLDOWN" in blocked:
+        failed = _run(session, realm)
+        failed.status, failed.failed_at = "failed", NOW
+        session.flush()
+    if "PROJECT_ACTIVE" in blocked:
         _run(session, realm)
-    elif code == "REALM_TRANSITIONING":
+    if "REALM_TRANSITIONING" in blocked:
         start_transition(realm, "node.verdant_t2", "upgrade", NOW, content)
-    elif code == "PROJECT_COOLDOWN":
-        run = _run(session, realm)
-        run.status, run.failed_at = "failed", NOW
-        hero.last_kickoff_at = NOW
-    elif code == "KICKOFF_LIMIT":
+    if "KICKOFF_LIMIT" in blocked:
         hero.last_kickoff_at = NOW
     with (
         patch(
-            "app.services.projects.has_open_vote", return_value=code == "REALM_VOTING"
+            "app.services.projects.has_open_vote",
+            return_value="REALM_VOTING" in blocked,
         ),
         pytest.raises(HTTPException) as error,
     ):
@@ -212,7 +214,7 @@ def test_kickoff_selector_payment_and_gold_conservation(realm_session: Session) 
     )
     kickoff(session, hero, realm, PROJECT, NOW, _content(project))
     assert (currency.gold, realm.treasury, stack.quantity) == (75, 25, 4)
-    assert _as_utc(hero.last_kickoff_at) == NOW  # type: ignore[arg-type]
+    assert as_utc(hero.last_kickoff_at) == NOW  # type: ignore[arg-type]
 
 
 def test_daily_kickoff_limit_across_realms(realm_session: Session) -> None:
@@ -328,7 +330,7 @@ def test_build_exact_due_time_before_ticks_and_transition(
     with patch.object(realm_ticks, "TICK_STEPS", (tick,)):
         finalize_realm(session, REALM, due, CONTENT)
     tag = session.get(RealmTag, (REALM, "bonus.fake"))
-    assert tag is not None and _as_utc(tag.acquired_at) == NOW + timedelta(minutes=1)
+    assert tag is not None and as_utc(tag.acquired_at) == NOW + timedelta(minutes=1)
     assert tag.node_id == "node.verdant_t1" and tag.project_run_id == run.id
     assert seen == [("complete", "node.verdant_t2")] * 72
 
@@ -360,7 +362,7 @@ def test_erosion_failure_cooldown_and_reset(realm_session: Session) -> None:
         resolve_realm(session, realm, NOW + timedelta(days=day), CONTENT)
     assert run.status == "failed" and run.contributed == [0, 0]
     assert run.failed_at is not None
-    failed_at = _as_utc(run.failed_at)
+    failed_at = as_utc(run.failed_at)
     with pytest.raises(HTTPException) as error:
         kickoff(
             session,
@@ -392,7 +394,7 @@ def test_resolve_realm_idempotence_and_bounded_catchup(realm_session: Session) -
     due = NOW + timedelta(hours=200, minutes=30)
     for hours in [72, 144, 200, 200]:
         resolve_realm(realm_session, realm, due, CONTENT)
-        assert _as_utc(realm.last_tick_at) == NOW + timedelta(hours=hours)
+        assert as_utc(realm.last_tick_at) == NOW + timedelta(hours=hours)
     before = (run.status, list(run.contributed), run.failed_at)
     resolve_realm(realm_session, realm, due, CONTENT)
     assert (run.status, run.contributed, run.failed_at) == before
@@ -609,7 +611,7 @@ def test_realm_resolution_split_equals_single(
                 run.status,
                 list(run.contributed),
                 run.failed_at,
-                _as_utc(realm.last_tick_at),
+                as_utc(realm.last_tick_at),
             )
         )
     assert snapshots[0] == snapshots[1]
@@ -633,7 +635,7 @@ async def test_project_reads_and_contribution_errors(action_client: ApiFixture) 
         ).status_code == 422
     clock.advance(timedelta(hours=1))
     snapshot = (await client.get(url, headers=headers)).json()["active_run"]
-    assert snapshot["stalled"] and snapshot["status"] == "funding"
+    assert not snapshot["stalled"] and snapshot["status"] == "funding"
     assert snapshot["contributed"] == [0, 0]
     assert snapshot["required"][0] == {
         "selector": {"item": "item.demo_crate"},
@@ -693,3 +695,128 @@ def test_fractional_remainder_consumes_one_whole_player_good(
     assert run.contributed == [100000, 25000] and run.status == "building"
     assert realm_session.get(Inventory, (hero.id, "item.demo_crate")).quantity == 2  # type: ignore[union-attr]
     assert realm_session.scalar(select(RealmContribution.quantity_milli)) == 1000
+
+
+def test_isolated_project_erodes_and_fails(realm_session: Session) -> None:
+    """Tutorial instances use ordinary project erosion despite their decay exemption."""
+    realm = realm_session.get(RealmState, REALM)
+    assert realm is not None
+    realm.isolated = True
+    run = _run(realm_session, realm)
+    resolve_realm(realm_session, realm, NOW + timedelta(days=2), CONTENT)
+    assert run.contributed == [50000, 12500] and run.status == "funding"
+    resolve_realm(realm_session, realm, NOW + timedelta(days=3), CONTENT)
+    assert run.contributed == [30000, 7500] and run.status == "funding"
+    due = NOW + timedelta(days=4, hours=12)
+    resolve_realm(realm_session, realm, due, CONTENT)
+    assert run.contributed == [0, 0] and run.status == "failed"
+    assert run.failed_at is not None and as_utc(run.failed_at) == due
+    assert as_utc(realm.last_tick_at) == due
+
+
+@pytest.mark.anyio
+async def test_stalled_uses_content_grace_and_resets(action_client: ApiFixture) -> None:
+    """Stalling starts strictly after the authored grace, and payment resets it."""
+    from app.main import app
+
+    client, factory, clock, headers = action_client
+    content = replace(
+        CONTENT,
+        economy=CONTENT.economy.model_copy(
+            update={
+                "project": CONTENT.economy.project.model_copy(
+                    update={"idle_grace_days": 0.25}
+                ),
+            }
+        ),
+    )
+    with factory() as session:
+        realm = session.get(RealmState, REALM)
+        assert realm is not None
+        run = _run(session, realm, clock.now)
+        hero = _hero(session)
+        session.add(
+            Inventory(character_id=hero.id, item_id="item.demo_crate", quantity=5)
+        )
+        run_id = run.id
+        born = clock.now
+        session.commit()
+    url = f"/realms/{REALM}"
+    with patch.object(app.state, "content", content):
+        for offset, stalled in [(-1, False), (0, False), (1, True)]:
+            clock.now = born + timedelta(hours=6, microseconds=offset)
+            response = await client.get(url, headers=headers)
+            assert response.status_code == 200
+            assert response.json()["active_run"]["stalled"] is stalled
+        response = await client.post(
+            f"{url}/project/contribute",
+            headers=headers,
+            json={"item_id": "item.demo_crate", "quantity": 1},
+        )
+        assert response.status_code == 200 and not response.json()["stalled"]
+        with factory() as session:
+            loaded_run = session.get(RealmProjectRun, run_id)
+            assert loaded_run is not None
+            loaded_run.status = "building"
+            loaded_run.last_contribution_at = born
+            loaded_run.build_completes_at = clock.now + timedelta(days=1)
+            session.commit()
+        response = await client.get(url, headers=headers)
+        assert response.json()["active_run"]["status"] == "building"
+        assert not response.json()["active_run"]["stalled"]
+
+
+@pytest.mark.anyio
+async def test_tag_credits_realm_errors_and_typed_response(
+    action_client: ApiFixture,
+) -> None:
+    """Unknown realms differ from missing tags, and successful credits have a schema."""
+    from app.main import app
+
+    client, factory, _, headers = action_client
+    unknown = await client.get("/realms/unknown/tags/bonus.fake", headers=headers)
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "UNKNOWN_REALM"
+    missing = await client.get(f"/realms/{REALM}/tags/bonus.fake", headers=headers)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "UNKNOWN_REALM_TAG"
+    with factory() as session:
+        realm = session.get(RealmState, REALM)
+        assert realm is not None
+        push_realm_tag(session, realm, "bonus.fake", NOW)
+        session.commit()
+    response = await client.get(f"/realms/{REALM}/tags/bonus.fake", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {
+        "tag_id": "bonus.fake",
+        "project_run_id": None,
+        "kicked_off_by": None,
+        "contributions": {},
+        "realm_share": 0,
+    }
+    schema = app.openapi()["paths"]["/realms/{realm_id}/tags/{tag_id}"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+    assert schema == {"$ref": "#/components/schemas/TagCreditsResponse"}
+
+
+@pytest.mark.parametrize("isolated", [False, True])
+def test_first_touch_never_instantiates_isolated_template(
+    realm_session: Session, isolated: bool
+) -> None:
+    """Only world templates may become shared rows through first-touch resolution."""
+    template = CONTENT.realm("realm.ashen_reach").model_copy(
+        update={"isolated": isolated}
+    )
+    content = replace(
+        CONTENT,
+        _realms_by_id=MappingProxyType(
+            {r.id: template if r.id == template.id else r for r in CONTENT.realms}
+        ),
+    )
+    state = finalize_realm(realm_session, template.id, NOW, content)
+    realm_session.flush()
+    if isolated:
+        assert state is None and realm_session.get(RealmState, template.id) is None
+    else:
+        assert state is not None and state.template_id == template.id
