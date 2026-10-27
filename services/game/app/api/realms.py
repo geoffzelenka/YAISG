@@ -16,6 +16,7 @@ from app.content.schemas import CapBonus, DecayStage, Modifier
 from app.engine.tags import TagHolder, active_tags
 from app.errors import api_error
 from app.models import (
+    Estate,
     RealmContribution,
     RealmProjectRun,
     RealmState,
@@ -360,3 +361,36 @@ async def tag_credits(
     )
     session.commit()
     return response
+
+
+class RealmEstateResponse(BaseModel):
+    """Public estate ownership and condition without private holdings."""
+
+    id: uuid.UUID
+    owner: uuid.UUID | Literal["realm-owned"]
+    form: str
+    decay_stage: str
+
+
+@router.get("/realms/{realm_id}/estates", response_model=list[RealmEstateResponse])
+async def get_realm_estates(
+    realm_id: str, request: Request, now: ServerNow, session: DatabaseSession
+) -> list[RealmEstateResponse]:
+    """List player and realm estates after resolving the realm lazily."""
+    content = _content(request)
+    state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    if state is None and realm_id not in {realm.id for realm in content.realms}:
+        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    result = [
+        RealmEstateResponse(
+            id=estate.id,
+            owner=estate.owner_character_id or "realm-owned",
+            form=estate.form_id,
+            decay_stage=estate.decay_stage,
+        )
+        for estate in session.scalars(
+            select(Estate).where(Estate.realm_id == realm_id).order_by(Estate.id)
+        )
+    ]
+    session.commit()
+    return result

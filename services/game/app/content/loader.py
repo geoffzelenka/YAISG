@@ -19,7 +19,6 @@ from app.content.schemas import (
     EstateForm,
     EstateFormsPack,
     EstateUpgrade,
-    FormTransformation,
     Item,
     ItemsPack,
     MapPack,
@@ -82,7 +81,6 @@ class ContentIndex:
     upgrades: tuple[EstateUpgrade, ...]
     map: MapPack
     estate_forms: tuple[EstateForm, ...]
-    transformations: tuple[FormTransformation, ...]
     development_nodes: tuple[DevelopmentNode, ...]
     projects: tuple[Project, ...]
     caps: CapsConfig
@@ -346,21 +344,27 @@ def _validate(
         raise ContentError("map position references an unknown realm")
     forms = _unique(forms_pack.forms, "estate form")
     for form in forms.values():
-        _require_items(
-            (v.item_id for v in form.upkeep_profile),
-            item_ids,
-            f"form {form.id} upkeep",
-        )
-        _require_items(
-            (v.item_id for v in form.production_profile),
-            item_ids,
-            f"form {form.id} production",
-        )
-    for transformation in forms_pack.transformations:
-        if transformation.from_form not in forms or transformation.to_form not in forms:
-            raise ContentError("transformation references an unknown form")
-        _require_items(
-            (v.item_id for v in transformation.cost), item_ids, "transformation"
+        for selector in (
+            *(line.selector for line in form.build_cost.goods),
+            *(line.selector for line in form.upkeep),
+        ):
+            if not any(selector.matches(item) for item in items.values()):
+                raise ContentError(f"empty selector in form {form.id}")
+        _require_items((v.item_id for v in form.production), item_ids, form.id)
+        for target_id in (
+            *form.transforms_to,
+            *((form.regresses_to,) if form.regresses_to else ()),
+        ):
+            if target_id not in forms:
+                raise ContentError(f"unknown form {target_id} in form {form.id}")
+            if forms[target_id].mobility != form.mobility:
+                raise ContentError(f"form edge changes mobility in {form.id}")
+        if form.regresses_to and forms[form.regresses_to].tier >= form.tier:
+            raise ContentError(f"regression must lower tier in form {form.id}")
+    basic = forms.get(progression.basic_mobile_form)
+    if basic is None or basic.mobility != "mobile" or basic.upkeep or basic.production:
+        raise ContentError(
+            "basic_mobile_form must exist, be mobile, and have no upkeep or production"
         )
     _validate_development(nodes, projects, tags, items)
     for upgrade in upgrades.values():
@@ -470,7 +474,6 @@ def load_content(content_dir: Path) -> ContentIndex:
         tuple(upgrades.values()),
         map_pack,
         tuple(forms.values()),
-        forms_pack.transformations,
         tuple(nodes.values()),
         tuple(projects.values()),
         caps,

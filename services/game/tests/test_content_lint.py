@@ -21,7 +21,6 @@ from app.content.lint import (
 from app.content.loader import load_content
 from app.content.schemas import (
     Action,
-    CapType,
     EstateUpgrade,
     LintConfig,
     Modifier,
@@ -139,7 +138,9 @@ def test_stack_respects_slots_scope_and_inert_upgrades() -> None:
     node = content.development_nodes[0].model_copy(
         update={"modifiers": (), "cap_bonuses": (), "inherent_tags": ()}
     )
-    form = content.estate_forms[0].model_copy(update={"modifiers": (), "base_caps": {}})
+    form = content.estate_forms[0].model_copy(
+        update={"modifiers": (), "cap_bonuses": (), "upgrade_slots": 1}
+    )
     upgrade = EstateUpgrade(
         id="fake",
         name="Fake",
@@ -160,10 +161,9 @@ def test_stack_respects_slots_scope_and_inert_upgrades() -> None:
         development_nodes=(node,),
         estate_forms=(form,),
         upgrades=upgrades,
-        caps=content.caps.model_copy(update={"estate_upgrade_slots": 1}),
     )
     assert stack_bound(skill, content) == pytest.approx(1.5 * 1.2)
-    form = form.model_copy(update={"base_caps": {CapType.ESTATE_UPGRADE_SLOTS: 1}})
+    form = form.model_copy(update={"upgrade_slots": 2})
     assert stack_bound(skill, replace(content, estate_forms=(form,))) == pytest.approx(
         2 * 1.4
     )
@@ -254,7 +254,9 @@ def test_stack_maximizes_joint_factors_and_keeps_groups_separate() -> None:
             "cap_bonuses": (),
         }
     )
-    form = content.estate_forms[0].model_copy(update={"modifiers": (), "base_caps": {}})
+    form = content.estate_forms[0].model_copy(
+        update={"modifiers": (), "cap_bonuses": (), "upgrade_slots": 1}
+    )
     xp = EstateUpgrade(
         id="xp",
         name="Fake XP",
@@ -275,7 +277,6 @@ def test_stack_maximizes_joint_factors_and_keeps_groups_separate() -> None:
         development_nodes=(node,),
         estate_forms=(form,),
         upgrades=(xp, speed),
-        caps=content.caps.model_copy(update={"estate_upgrade_slots": 1}),
     )
     # XP upgrade yields 2 * 0.5 = 1; speed yields 1 * 1.5 = 1.5.
     assert stack_bound(skill, content) == pytest.approx(1.2 * 1.5)

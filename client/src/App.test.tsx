@@ -27,7 +27,7 @@ it('shows Maximum level when XP to next is null', () => {
     ],
     gold: 0,
     realm: { id: 'r', name: 'Realm', tags: [], active_modifiers: [] },
-    estate: { id: 'e', level: 1, upgrade_slots: 2, installed_upgrades: [] },
+    estate: { id: 'e', tier: 1, upgrade_slots: 2, installed_upgrades: [] },
     caps: {
       offline_hours: { base: 12, effective: 12 },
       inventory_slots: { base: 30, effective: 30 },

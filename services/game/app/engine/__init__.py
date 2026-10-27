@@ -25,6 +25,7 @@ from app.engine.core import (
     resolve,
     resolve_caps,
 )
+from app.engine.estates import vote_weight
 from app.engine.selectors import Shortfall, pay_selector
 
 __all__ = [
@@ -53,4 +54,5 @@ __all__ = [
     "input_payment",
     "resolve",
     "resolve_caps",
+    "vote_weight",
 ]

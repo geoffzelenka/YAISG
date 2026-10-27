@@ -108,7 +108,6 @@ def _hero(session: Session) -> Character:
             owner_character_id=hero.id,
             realm_id=REALM,
             form_id=CONTENT.estate_forms[0].id,
-            upgrade_slots=1,
         )
     )
     session.add(Currency(character_id=hero.id, gold=100))
@@ -506,7 +505,6 @@ def test_postgres_two_kickoffs_one_active_run(realm_session: Session) -> None:
             owner_character_id=second_hero.id,
             realm_id=REALM,
             form_id=CONTENT.estate_forms[0].id,
-            upgrade_slots=1,
         )
     )
     realm_session.add(Currency(character_id=second_hero.id, gold=100))

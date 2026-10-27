@@ -131,11 +131,11 @@ async def test_creation_builds_complete_profile(
     }
     assert fixed <= {skill["id"] for skill in profile["skills"]}
     assert profile["realm"]["name"] == "Verdant Vale"
-    assert profile["estate"]["upgrade_slots"] == 2
+    assert profile["estate"]["upgrade_slots"] == 4
     assert profile["estate"]["installed_upgrades"] == []
     assert profile["caps"]["inventory_slots"] == {"base": 30.0, "effective": 30.0}
     assert profile["caps"]["estate_upgrade_slots"] == {
-        "base": 2.0,
+        "base": 4.0,
         "effective": 4.0,
     }
     assert all(

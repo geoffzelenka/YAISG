@@ -59,25 +59,24 @@ export function EstatePanel() {
   )
   const freeSlots =
     estate.data.upgrade_slots - estate.data.installed_upgrades.length
-  const transformations = content.content.estate_forms.transformations.filter(
-    (edge) => edge.from === estate.data.form.id,
+  const source = content.content.estate_forms.forms.find(
+    (form) => form.id === estate.data.form.id,
   )
-  const selectedEdge = transformations.find((edge) => edge.to === confirmForm)
-  const destination = content.content.estate_forms.forms.find(
-    (form) => form.id === confirmForm,
+  const transformations = content.content.estate_forms.forms.filter((form) =>
+    source?.transforms_to.includes(form.id),
   )
+  const destination = transformations.find((form) => form.id === confirmForm)
   const slotDelta =
-    (destination?.base_caps.estate_upgrade_slots ?? 0) -
-    (estate.data.form.base_caps.estate_upgrade_slots ?? 0)
+    (destination?.upgrade_slots ?? 0) - estate.data.form.upgrade_slots
 
   return (
     <section>
       <h2 className="text-3xl font-bold">{estate.data.form.name}</h2>
       <p className="mt-2 text-slate-400">
-        Level {estate.data.level} ·{' '}
-        {estate.data.form.specialty_tags.length
-          ? estate.data.form.specialty_tags.join(', ')
-          : 'No specialty tags'}
+        Tier {estate.data.tier} ·{' '}
+        {estate.data.form.tags.length
+          ? estate.data.form.tags.join(', ')
+          : 'No tags'}
       </p>
       <h3 className="mt-8 text-xl font-semibold">Upgrade slots</h3>
       <div className="mt-3 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
@@ -144,26 +143,20 @@ export function EstatePanel() {
       </div>
       <h3 className="mt-8 text-xl font-semibold">Transform estate</h3>
       <div className="mt-3 flex flex-wrap gap-3">
-        {transformations.map((edge) => {
-          const form = content.content.estate_forms.forms.find(
-            (candidate) => candidate.id === edge.to,
-          )
-          return (
-            <button
-              className="secondary-button"
-              disabled={!canAfford(edge.cost, held)}
-              key={edge.to}
-              onClick={() => setConfirmForm(edge.to)}
-            >
-              Transform to {form?.name ?? edge.to} · <Cost cost={edge.cost} />
-            </button>
-          )
-        })}
+        {transformations.map((form) => (
+          <button
+            className="secondary-button"
+            key={form.id}
+            onClick={() => setConfirmForm(form.id)}
+          >
+            Transform to {form.name}
+          </button>
+        ))}
         {transformations.length === 0 && (
           <p className="text-slate-500">No transformations available.</p>
         )}
       </div>
-      {confirmForm && selectedEdge && destination && (
+      {confirmForm && destination && (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4"
           role="dialog"
@@ -180,7 +173,13 @@ export function EstatePanel() {
               {destination.name}'s values.
             </p>
             <p className="mt-2 text-slate-400">
-              Cost: <Cost cost={selectedEdge.cost} />
+              Cost: {destination.build_cost.gold} gold,{' '}
+              {destination.build_cost.goods
+                .map(
+                  (line) =>
+                    `${line.quantity} ${'item' in line.selector ? line.selector.item : line.selector.class}`,
+                )
+                .join(', ')}
             </p>
             <div className="mt-5 flex gap-3">
               <button

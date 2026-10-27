@@ -379,12 +379,8 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
     """Resolve global, estate-form, development-node, and upgrade caps."""
     bonuses: defaultdict[CapType, float] = defaultdict(float, state.cap_bonuses)
     for source in _estate_sources(state, content):
-        if isinstance(source, EstateForm):
-            for cap, value in source.base_caps.items():
-                bonuses[cap] += value
-        else:
-            for bonus in source.cap_bonuses:
-                bonuses[bonus.cap] += bonus.value
+        for bonus in source.cap_bonuses:
+            bonuses[bonus.cap] += bonus.value
     node = content.development_node(state.realm_node_id)
     for bonus in node.cap_bonuses:
         bonuses[bonus.cap] += bonus.value
@@ -401,7 +397,8 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
         key_listings=int(base.key_listings + bonuses[CapType.KEY_LISTINGS]),
         belt_slots=int(base.belt_slots + bonuses[CapType.BELT_SLOTS]),
         estate_upgrade_slots=int(
-            base.estate_upgrade_slots + bonuses[CapType.ESTATE_UPGRADE_SLOTS]
+            content.estate_form(state.estate_form_id).upgrade_slots
+            + bonuses[CapType.ESTATE_UPGRADE_SLOTS]
         ),
     )
 

@@ -85,7 +85,7 @@ class EstateSummary(BaseModel):
     """Estate progression visible in the profile."""
 
     id: uuid.UUID
-    level: int
+    tier: int
     upgrade_slots: int
     installed_upgrades: list[InstalledUpgrade]
 
@@ -207,10 +207,8 @@ async def create_character(
             id=estate_id,
             owner_character_id=character.id,
             realm_id=body.realm_id,
-            form_id="form.camp",
+            form_id=content.progression.basic_mobile_form,
             status="active",
-            level=1,
-            upgrade_slots=content.caps.estate_upgrade_slots,
             data={},
         )
     )
@@ -330,8 +328,8 @@ def _profile(
         ),
         estate=EstateSummary(
             id=estate.id,
-            level=estate.level,
-            upgrade_slots=estate.upgrade_slots,
+            tier=content.estate_form(estate.form_id).tier,
+            upgrade_slots=resolved.estate_upgrade_slots,
             installed_upgrades=[
                 InstalledUpgrade(
                     slot_index=upgrade.slot_index, upgrade_id=upgrade.upgrade_id
@@ -341,7 +339,11 @@ def _profile(
         ),
         caps={
             cap: CapSummary(
-                base=float(getattr(content.caps, cap.value)),
+                base=float(
+                    content.estate_form(estate.form_id).upgrade_slots
+                    if cap == CapType.ESTATE_UPGRADE_SLOTS
+                    else getattr(content.caps, cap.value)
+                ),
                 effective=float(value),
             )
             for cap, value in effective_caps.items()

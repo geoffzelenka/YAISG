@@ -100,12 +100,10 @@ describe('skill panel', () => {
             order_slots: 5,
             key_listings: 2,
             belt_slots: 2,
-            estate_upgrade_slots: 2,
           },
           '/content/map': { edges: [], positions: {} },
           '/content/estate_forms': {
             forms: [],
-            transformations: [],
           },
           '/content/development': { nodes: [], edges: [] },
           '/content/tags': { tags: [] },
