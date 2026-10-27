@@ -62,6 +62,8 @@ def match_response(match: MarketMatch) -> dict[str, object]:
         name: getattr(match, name)
         for name in (
             "id",
+            "buyer_character_id",
+            "seller_character_id",
             "maker_order_id",
             "taker_order_id",
             "item_id",
@@ -118,6 +120,23 @@ async def own_orders(
         .order_by(MarketOrder.created_at, MarketOrder.id)
     )
     return {"orders": [order_response(o) for o in orders]}
+
+
+@router.get("/history/me")
+async def own_history(
+    player: CurrentPlayer, session: DatabaseSession
+) -> dict[str, object]:
+    """Read durable executions for either participant, from any location."""
+    character = get_character(session, player.id)
+    matches = session.scalars(
+        select(MarketMatch)
+        .where(
+            (MarketMatch.buyer_character_id == character.id)
+            | (MarketMatch.seller_character_id == character.id)
+        )
+        .order_by(MarketMatch.matched_at.desc(), MarketMatch.id.desc())
+    )
+    return {"matches": [match_response(match) for match in matches]}
 
 
 @router.get("/book/{item_id}")

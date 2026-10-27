@@ -305,10 +305,22 @@ def test_scheduler_cadence_and_lifecycle() -> None:
     with patch("apscheduler.schedulers.background.BackgroundScheduler") as constructor:
         scheduler = start_scheduler(Mock(), CONTENT)
         constructor.return_value.start.assert_called_once()
-        call = constructor.return_value.add_job.call_args
-        assert call.kwargs["seconds"] == 86400 / CONTENT.economy.tick.per_day
-        assert call.kwargs["coalesce"] is True
-        assert call.kwargs["max_instances"] == 1
+        calls = {
+            call.kwargs["id"]: call
+            for call in constructor.return_value.add_job.call_args_list
+        }
+        assert set(calls) == {"realm_tick", "market_lifecycle"}
+        assert (
+            calls["realm_tick"].kwargs["seconds"]
+            == 86400 / CONTENT.economy.tick.per_day
+        )
+        assert (
+            calls["market_lifecycle"].kwargs["seconds"]
+            == CONTENT.economy.market.lifecycle_interval_seconds
+        )
+        for call in calls.values():
+            assert call.kwargs["coalesce"] is True
+            assert call.kwargs["max_instances"] == 1
         scheduler.shutdown()
         constructor.return_value.shutdown.assert_called_once()
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.content.loader import ContentIndex
 from app.models import RealmState
 from app.services.caravans import run_caravan_pass
+from app.services.market_lifecycle import run_market_lifecycle
 from app.services.realms import finalize_realm, prepare_sqlite_write
 
 # Stable application lock key, unrelated to content ids or tunable game rules.
@@ -82,6 +83,21 @@ def start_scheduler(factory: sessionmaker[Session], content: ContentIndex) -> Sc
         "interval",
         seconds=86400 / content.economy.tick.per_day,
         id="realm_tick",
+        coalesce=True,
+        max_instances=1,
+    )
+
+    def expire_orders() -> None:
+        try:
+            run_market_lifecycle(factory, content, datetime.now(UTC))
+        except Exception:
+            logging.getLogger(__name__).exception("Market lifecycle failed")
+
+    scheduler.add_job(
+        expire_orders,
+        "interval",
+        seconds=content.economy.market.lifecycle_interval_seconds,
+        id="market_lifecycle",
         coalesce=True,
         max_instances=1,
     )

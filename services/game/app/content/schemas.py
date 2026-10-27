@@ -644,6 +644,8 @@ class MarketConfig(ContentModel):
     tax_pct: float = Field(default=5, ge=0, le=100, allow_inf_nan=False)
     tax_burn_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
     order_days: int = Field(default=14, ge=1)
+    retention_days: int = Field(default=30, ge=1)
+    lifecycle_interval_seconds: int = Field(default=300, ge=1)
     f: float = Field(default=0.33, gt=0, allow_inf_nan=False)
     c: float = Field(default=2.1, gt=0, allow_inf_nan=False)
     k: int = Field(default=3, ge=1)
