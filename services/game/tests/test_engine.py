@@ -6,6 +6,7 @@ import random
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 from hypothesis import given
@@ -120,9 +121,9 @@ def test_exact_and_partial_cycle_timestamp_math(content: ContentIndex) -> None:
         START + timedelta(milliseconds=5_500),
         FixedRng(),
     )
-    assert result.cycles_completed == 2  # Verdant's -10% makes this 2,700 ms.
+    assert result.cycles_completed == 2  # Verdant's +10% speed makes this 2,727 ms.
     assert resolved_active is not None
-    assert resolved_active.last_resolved_at == START + timedelta(milliseconds=5_400)
+    assert resolved_active.last_resolved_at == START + timedelta(milliseconds=5_454)
     assert state.skills_xp["gathering"] == 20
 
 
@@ -164,10 +165,10 @@ def test_offline_cap_resolves_only_budgeted_cycles(content: ContentIndex) -> Non
     state, active, result = resolve(
         make_state(), make_active(), content, START + timedelta(hours=13), FixedRng()
     )
-    assert result.cycles_completed == 16_000
+    assert result.cycles_completed == 16_283
     assert result.stop_reason == StopReason.OFFLINE_CAP
     assert active is None
-    assert state.skills_xp["gathering"] == 160_000
+    assert state.skills_xp["gathering"] == 162_830
 
 
 def test_exact_offline_budget_advances_by_resolved_cycles(
@@ -177,10 +178,14 @@ def test_exact_offline_budget_advances_by_resolved_cycles(
     _, active, result = resolve(
         make_state(), make_active(), content, START + timedelta(hours=12), FixedRng()
     )
-    assert result.cycles_completed == 16_000
+    assert result.cycles_completed == 16_283
     assert result.stop_reason is None
     assert active is not None
-    assert active.last_resolved_at == START + timedelta(hours=12)
+    assert (
+        START + timedelta(hours=12, milliseconds=-2597)
+        < active.last_resolved_at
+        <= START + timedelta(hours=12)
+    )
 
 
 def test_offline_cap_does_not_end_action_when_no_cycle_fits(
@@ -226,7 +231,7 @@ def test_inventory_overflow_discards_drop_and_stops(content: ContentIndex) -> No
         make_state(inventory={"item.mock_ore": 1}),
         make_active(),
         tiny,
-        START + timedelta(milliseconds=2_700),
+        START + timedelta(milliseconds=2_727),
         FixedRng(),
     )
     assert result.cycles_completed == 1
@@ -245,7 +250,7 @@ def test_stack_limit_overflow_is_discarded(content: ContentIndex) -> None:
         make_state(inventory={sprig.id: 1}),
         make_active(),
         limited,
-        START + timedelta(milliseconds=2_700),
+        START + timedelta(milliseconds=2_727),
         FixedRng(),
     )
     assert state.inventory == {sprig.id: 1}
@@ -332,7 +337,7 @@ def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> 
         make_state(),
         make_active(),
         custom,
-        START + timedelta(milliseconds=2_700),
+        START + timedelta(milliseconds=2_727),
         FixedRng(),
         reward_strategy=LevelSensitiveRewards(),
     )
@@ -342,18 +347,20 @@ def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> 
     assert state.skill_levels["gathering"] == 2
 
 
-def test_modifiers_stack_additively_and_inert_upgrade_is_excluded(
+def test_source_groups_multiply_and_inert_upgrade_is_excluded(
     content: ContentIndex,
 ) -> None:
-    """Node, form, and active upgrades sum once; inert upgrades do nothing."""
+    """Node and estate multiply; inert upgrades do nothing."""
     active_upgrade = EstateUpgrade(
         id="upgrade.active",
         name="Active Test Upgrade",
         cost=(),
         modifiers=(
-            Modifier(type=ModifierType.CYCLE_TIME_PCT, value=-5),
+            Modifier(type=ModifierType.CYCLE_SPEED_PCT, value=5),
             Modifier(type=ModifierType.XP_PCT, value=10),
-            Modifier(type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=20),
+            Modifier(
+                type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=20, skill_id="gathering"
+            ),
         ),
         realm_tags=("verdant",),
     )
@@ -366,8 +373,8 @@ def test_modifiers_stack_additively_and_inert_upgrade_is_excluded(
         node_id="node.verdant_t2",
     )
     action = custom.action("gathering.fake_sprigs")
-    assert effective_cycle_time(action, state, custom) == 2_550
-    assert effective_xp(action, state, custom) == 11  # node +5%, upgrade +10%
+    assert effective_cycle_time(action, state, custom) == 2_597
+    assert effective_xp(action, state, custom) == 11  # 1.05 * 1.10, floored
     button = effective_drops(action, state, custom)[1]
     assert button.chance == pytest.approx(0.06)
 
@@ -394,16 +401,16 @@ def test_caps_include_active_upgrades_and_ignore_inert_ones(
 def test_form_and_node_sources_resolve_without_changing_t1_rate(
     content: ContentIndex,
 ) -> None:
-    """Camp plus the migrated t1 node preserves the former realm rate."""
+    """Camp plus the migrated t1 node uses the speed divisor."""
     action = content.action("gathering.fake_sprigs")
     state = make_state()
 
-    assert effective_cycle_time(action, state, content) == 2_700
+    assert effective_cycle_time(action, state, content) == 2_727
     assert effective_xp(action, state, content) == 10
     assert resolve_caps(state, content).estate_upgrade_slots == 4
 
     homestead = make_state(form_id="form.homestead")
-    assert effective_cycle_time(action, homestead, content) == 2_700
+    assert effective_cycle_time(action, homestead, content) == 2_727
     assert effective_xp(action, homestead, content) == 10
 
 
@@ -617,3 +624,148 @@ def test_omitted_requirements_do_not_block_start(content: ContentIndex) -> None:
         can_start(action.id, make_state(), content.with_overrides(actions=(action,)))
         == OK
     )
+
+
+@pytest.mark.parametrize(
+    ("category", "speed", "taper"),
+    [
+        ("gathering", [0, 5, 10, 15, 20], [1, 1, 1, 1, 1]),
+        ("refining", [0, 0, 5, 10, 20], [1, 1, 0.5, 0, 0]),
+        ("manufacturing", [0, 0, 10, 20, 30], [1, 0.5, 0, 0, 0]),
+        ("combat", [0, 0, 0, 0, 0], [1, 0.75, 0.5, 0.25, 0]),
+        ("travel", [0, 0, 0, 0, 0], [1, 1, 1, 1, 1]),
+        ("exploration", [0, 0, 0, 0, 0], [1, 1, 1, 1, 1]),
+    ],
+)
+@pytest.mark.parametrize("distance", range(5))
+def test_every_bonus_table_cell(
+    content: ContentIndex,
+    category: str,
+    speed: list[float],
+    taper: list[float],
+    distance: int,
+) -> None:
+    """Every design cell is literal, including the later combat offense row."""
+    from app.engine.core import proficiency_pct, taper_factor
+
+    skill = content.skill("gathering").model_copy(update={"category": category})
+    custom = replace(
+        content,
+        skills=tuple(skill if s.id == skill.id else s for s in content.skills),
+        _skills_by_id=MappingProxyType({**content._skills_by_id, skill.id: skill}),
+    )
+    action = custom.action("gathering.fake_sprigs")
+    state = make_state(level=[1, 50, 75, 90, 95][distance])
+    assert proficiency_pct(action, state, custom) == speed[distance]
+    assert taper_factor(action, state, custom) == taper[distance]
+
+
+def test_vision_groups_cap_floor_and_scope(content: ContentIndex) -> None:
+    """Gear adds internally, groups multiply, and only XP is capped."""
+    from app.api.schemas import action_values
+    from app.engine.core import bonus_total
+
+    action = content.action("gathering.fake_sprigs")
+    modifier = Modifier(type=ModifierType.XP_PCT, value=5)
+    form = content.estate_form("form.camp").model_copy(
+        update={"modifiers": (modifier.model_copy(update={"value": 10}),)}
+    )
+    node = content.development_node("node.verdant_t1").model_copy(
+        update={"modifiers": (modifier.model_copy(update={"value": 20}),)}
+    )
+    custom = replace(
+        content,
+        _forms_by_id=MappingProxyType({**content._forms_by_id, form.id: form}),
+        _nodes_by_id=MappingProxyType({**content._nodes_by_id, node.id: node}),
+    )
+    state = replace(make_state(), gear_modifiers=(modifier, modifier))
+    assert bonus_total(ModifierType.XP_PCT, action, state, custom) == pytest.approx(
+        1.452
+    )
+    report = action_values(action, state, custom)
+    assert report.xp_bonus_uncapped == pytest.approx(45.2)
+    assert report.xp_bonus_capped == pytest.approx(45)
+    assert report.xp_per_cycle == 14
+    away = replace(state, realm_id="away", estate_realm_id="home")
+    assert bonus_total(ModifierType.XP_PCT, action, away, custom) == pytest.approx(1.32)
+    malus = modifier.model_copy(update={"value": -1000})
+    state = replace(make_state(), gear_modifiers=(malus, malus))
+    assert bonus_total(ModifierType.XP_PCT, action, state, content) == 0.25
+
+
+def test_cycle_minimum_and_drop_clamp(content: ContentIndex) -> None:
+    """Speed is uncapped while cycles and chances respect their bounds."""
+    action = content.action("gathering.fake_sprigs")
+    state = replace(
+        make_state(),
+        gear_modifiers=(
+            Modifier(type=ModifierType.CYCLE_SPEED_PCT, value=1e9),
+            Modifier(
+                type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=1e9, skill_id="gathering"
+            ),
+        ),
+    )
+    assert (
+        effective_cycle_time(action, state, content) == content.progression.min_cycle_ms
+    )
+    assert all(drop.chance == 1 for drop in effective_drops(action, state, content))
+
+
+def test_tier_up_resegments_time_and_xp(content: ContentIndex) -> None:
+    """The crossing cycle earns old XP; subsequent cycles use new proficiency/taper."""
+    action = content.action("gathering.fake_sprigs").model_copy(update={"outputs": ()})
+    skill = content.skill("gathering").model_copy(update={"category": "refining"})
+    custom = replace(
+        content.with_overrides(actions=(action,)),
+        skills=tuple(skill if s.id == skill.id else s for s in content.skills),
+        _skills_by_id=MappingProxyType({**content._skills_by_id, skill.id: skill}),
+    )
+    xp = content.xp_curve.levels[74].xp - 10
+    state = make_state(xp=xp, level=74)
+    updated, active, result = resolve(
+        state, make_active(), custom, START + timedelta(milliseconds=5400), FixedRng()
+    )
+    assert result.cycles_completed == 2
+    assert result.xp_gained == {"gathering": 15}
+    assert updated.skill_levels["gathering"] == 75
+    assert active is not None
+    assert active.last_resolved_at == START + timedelta(milliseconds=5324)
+
+
+def test_scope_and_cap_before_taper(content: ContentIndex) -> None:
+    """Category scope matches; other skills/types do not leak into XP."""
+    action = content.action("refining.mock_ingot").model_copy(update={"xp": 101})
+    state = replace(
+        make_state(),
+        skill_levels={"refining": 75},
+        gear_modifiers=(
+            Modifier(type=ModifierType.XP_PCT, value=100, category="refining"),
+            Modifier(type=ModifierType.XP_PCT, value=100, skill_id="gathering"),
+            Modifier(type=ModifierType.CYCLE_SPEED_PCT, value=100),
+        ),
+    )
+    assert effective_xp(action, state, content) == 73  # floor(101 * 1.45 * .5)
+
+
+def test_proficiency_never_changes_xp(content: ContentIndex) -> None:
+    """Nonzero proficiency affects speed while uncapped XP remains unchanged."""
+    from app.api.schemas import action_values
+    from app.engine.core import bonus_total
+
+    action = content.action("gathering.fake_sprigs")
+    node = content.development_node("node.verdant_t1").model_copy(
+        update={"modifiers": ()}
+    )
+    custom = replace(
+        content,
+        _nodes_by_id=MappingProxyType({**content._nodes_by_id, node.id: node}),
+    )
+    state = make_state(level=95)
+    assert bonus_total(ModifierType.XP_PCT, action, state, custom) == 1
+    assert bonus_total(ModifierType.CYCLE_SPEED_PCT, action, state, custom) == 1.2
+    assert effective_xp(action, state, custom) == 10
+    report = action_values(action, state, custom)
+    assert report.proficiency_pct == 20
+    assert report.xp_per_cycle == 10
+    assert report.xp_bonus_uncapped == 0
+    assert report.xp_bonus_capped == 0

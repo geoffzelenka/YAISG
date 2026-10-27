@@ -144,12 +144,12 @@ async def test_start_poll_poll_stop_persists_matching_rewards(
         json={"action_id": "gathering.fake_sprigs"},
     )
     assert started.status_code == 200
-    assert started.json()["cycle_ms"] == 2700
+    assert started.json()["cycle_ms"] == 2727
     assert datetime.fromisoformat(started.json()["started_at"]).tzinfo is not None
 
-    clock.advance(timedelta(milliseconds=2700))
+    clock.advance(timedelta(milliseconds=2727))
     first = await client.get("/characters/me/action", headers=headers)
-    clock.advance(timedelta(milliseconds=5400))
+    clock.advance(timedelta(milliseconds=5454))
     second = await client.get("/characters/me/action", headers=headers)
     stopped = await client.delete("/characters/me/action", headers=headers)
 
@@ -229,10 +229,10 @@ async def test_offline_cap_rewards_once_and_stops(
     feed = response.json()
     assert feed["active"] is None
     assert feed["stop_reason"] == "offline_cap"
-    assert feed["since_last"]["cycles_completed"] == 16_000
+    assert feed["since_last"]["cycles_completed"] == 16_283
     with factory() as session:
         log = session.scalar(select(RewardLog))
-        assert log is not None and log.cycles == 16_000
+        assert log is not None and log.cycles == 16_283
 
 
 async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
@@ -270,9 +270,9 @@ async def test_profile_resolution_remains_in_reward_feed(
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
-    clock.advance(timedelta(milliseconds=2700))
+    clock.advance(timedelta(milliseconds=2727))
     profile = await client.get("/characters/me", headers=headers)
-    clock.advance(timedelta(milliseconds=2700))
+    clock.advance(timedelta(milliseconds=2727))
 
     poll = await client.get("/characters/me/action", headers=headers)
 
@@ -290,7 +290,7 @@ async def test_zero_cycle_stop_reason_survives_prior_unclaimed_rewards(
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
-    clock.advance(timedelta(milliseconds=2700))
+    clock.advance(timedelta(milliseconds=2727))
     await client.get("/characters/me", headers=headers)
     with factory() as session:
         stack = session.scalar(
@@ -333,7 +333,7 @@ async def test_concurrent_resolves_contend_and_do_not_double_reward(
     with factory() as session:
         character_id = session.scalar(select(CharacterSkill.character_id))
     assert character_id is not None
-    clock.advance(timedelta(milliseconds=2700))
+    clock.advance(timedelta(milliseconds=2727))
     first_has_lock = threading.Event()
     release_first = threading.Event()
     second_finished = threading.Event()
@@ -375,3 +375,25 @@ async def test_concurrent_resolves_contend_and_do_not_double_reward(
 
     with factory() as session:
         assert session.scalar(select(func.sum(RewardLog.cycles))) == 1
+
+
+async def test_profile_and_available_report_same_effective_values(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+) -> None:
+    """Both reporting surfaces share server-computed rates and bonus figures."""
+    client, _, _, headers = action_client
+    profile = (await client.get("/characters/me", headers=headers)).json()
+    available = (
+        await client.get("/characters/me/actions/available", headers=headers)
+    ).json()
+    action = available["skills"][0]["actions"][0]
+    report = profile["actions"][action["action_id"]]
+    assert report == {key: action[key] for key in report}
+    assert report == {
+        "cycle_ms": 2727,
+        "xp_per_cycle": 10,
+        "xp_bonus_uncapped": 0,
+        "xp_bonus_capped": 0,
+        "proficiency_pct": 0,
+        "taper_factor": 1,
+    }

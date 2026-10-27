@@ -10,11 +10,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.api.schemas import ActionValues, action_values
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import CapType, Modifier
 from app.engine import CharacterState, resolve_caps
+from app.engine.core import modifier_groups
 from app.engine.levels import level_for_xp, tier_for_level, xp_progress
 from app.errors import api_error
 from app.models import (
@@ -104,6 +106,7 @@ class ProfileResponse(BaseModel):
     realm: RealmSummary
     estate: EstateSummary
     caps: dict[CapType, CapSummary]
+    actions: dict[str, ActionValues]
 
 
 class InventoryStack(BaseModel):
@@ -301,16 +304,15 @@ def _profile(
         inventory={},
         gold=currency.gold,
         estate_form_id=estate.form_id,
+        realm_id=character.realm_id,
+        estate_realm_id=estate.realm_id,
         realm_node_id=node.id,
         installed_upgrades=tuple(upgrade.upgrade_id for upgrade in upgrades),
     )
     resolved = resolve_caps(state, content)
-    active_modifiers = [*node.modifiers, *content.estate_form(estate.form_id).modifiers]
-    node_tags = set(node.tags)
-    for installed in upgrades:
-        upgrade = content.upgrade(installed.upgrade_id)
-        if "*" in upgrade.realm_tags or node_tags.intersection(upgrade.realm_tags):
-            active_modifiers.extend(upgrade.modifiers)
+    active_modifiers = [
+        modifier for group in modifier_groups(state, content) for modifier in group
+    ]
     effective_caps = {
         CapType.OFFLINE_HOURS: resolved.offline_hours,
         CapType.INVENTORY_SLOTS: resolved.inventory_slots,
@@ -320,6 +322,11 @@ def _profile(
         CapType.ESTATE_UPGRADE_SLOTS: resolved.estate_upgrade_slots,
     }
     return ProfileResponse(
+        actions={
+            action.id: action_values(action, state, content)
+            for skill in content.skills
+            for action in skill.actions
+        },
         character=CharacterSummary.model_validate(character, from_attributes=True),
         skills=skills,
         gold=currency.gold,

@@ -9,15 +9,15 @@ import {
 import { gameRequest } from './http'
 
 export type ModifierType =
-  | 'cycle_time_pct'
+  | 'cycle_speed_pct'
   | 'xp_pct'
   | 'extra_drop_chance_pct'
-  | 'market_tax_pct'
 
 export type ItemQuantity = { item_id: string; qty: number }
 export type Modifier = {
   type: ModifierType
   value: number
+  category?: Skill['category'] | null
   skill_id?: string | null
 }
 export type Selector =
@@ -158,7 +158,15 @@ type ContentPacks = {
     transformations: FormTransformation[]
   }
   development: { nodes: DevelopmentNode[]; edges: DevelopmentEdge[] }
-  progression: { tier_thresholds: number[]; tier_titles: string[] }
+  progression: {
+    tier_thresholds: number[]
+    tier_titles: string[]
+    min_factor: number
+    min_cycle_ms: number
+    xp_bonus_cap_pct: number
+    proficiency: Record<Skill['category'], number[]>
+    taper: Record<Skill['category'], number[]>
+  }
   projects: { projects: Project[] }
 }
 type PackName = keyof ContentPacks

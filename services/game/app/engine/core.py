@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import heapq
 import itertools
+import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -22,7 +23,7 @@ from app.content.schemas import (
     Modifier,
     ModifierType,
 )
-from app.engine.levels import level_for_xp
+from app.engine.levels import level_for_xp, tier_for_level
 from app.engine.selectors import Shortfall, pay_selector
 
 
@@ -48,6 +49,10 @@ class CharacterState:
     gold: int
     estate_form_id: str
     realm_node_id: str
+    realm_id: str = ""
+    estate_realm_id: str = ""
+    gear_modifiers: tuple[Modifier, ...] = ()
+    consumable_modifiers: tuple[Modifier, ...] = ()
     installed_upgrades: tuple[str, ...] = ()
     cap_bonuses: Mapping[CapType, float] = field(default_factory=dict)
 
@@ -137,60 +142,111 @@ def _tags_match(required: Sequence[str], actual: set[str]) -> bool:
     return "*" in required or bool(set(required) & actual)
 
 
-def _active_modifiers(
+def tier_distance(action: Action, state: CharacterState, content: ContentIndex) -> int:
+    """Return the action's distance below the character's skill tier."""
+    tier = tier_for_level(
+        state.skill_levels.get(action.skill_id, 1), content.progression.tier_thresholds
+    )
+    return max(0, tier - action.tier)
+
+
+def proficiency_pct(
     action: Action, state: CharacterState, content: ContentIndex
-) -> list[Modifier]:
-    node = content.development_node(state.realm_node_id)
-    modifiers = [*node.modifiers, *content.estate_form(state.estate_form_id).modifiers]
-    realm_tags = set(node.tags)
-    for upgrade_id in state.installed_upgrades:
-        upgrade = content.upgrade(upgrade_id)
-        if _tags_match(upgrade.realm_tags, realm_tags):
-            modifiers.extend(upgrade.modifiers)
-    return [
-        modifier
-        for modifier in modifiers
-        if modifier.skill_id is None or modifier.skill_id == action.skill_id
+) -> float:
+    """Look up the speed-only proficiency percentage."""
+    category = content.skill(action.skill_id).category
+    return content.progression.proficiency[category][
+        tier_distance(action, state, content)
     ]
 
 
-def _modifier_total(
+def taper_factor(action: Action, state: CharacterState, content: ContentIndex) -> float:
+    """Look up the XP taper (combat uses this for offense only)."""
+    category = content.skill(action.skill_id).category
+    return content.progression.taper[category][tier_distance(action, state, content)]
+
+
+def modifier_groups(
+    state: CharacterState, content: ContentIndex
+) -> tuple[tuple[Modifier, ...], ...]:
+    """Provide G, E, R and C, excluding absent estates and inert upgrades."""
+    node = content.development_node(state.realm_node_id)
+    estate: list[Modifier] = []
+    if state.estate_realm_id == state.realm_id:
+        estate.extend(content.estate_form(state.estate_form_id).modifiers)
+        for upgrade_id in state.installed_upgrades:
+            upgrade = content.upgrade(upgrade_id)
+            if _tags_match(upgrade.realm_tags, set(node.tags)):
+                estate.extend(upgrade.modifiers)
+    return (
+        state.gear_modifiers,
+        tuple(estate),
+        node.modifiers,
+        state.consumable_modifiers,
+    )
+
+
+def bonus_total(
     modifier_type: ModifierType,
     action: Action,
     state: CharacterState,
     content: ContentIndex,
 ) -> float:
-    return sum(
-        modifier.value
-        for modifier in _active_modifiers(action, state, content)
-        if modifier.type == modifier_type
+    """Add matching percentages within groups, then multiply group factors."""
+    category = content.skill(action.skill_id).category
+    factors = []
+    for group in modifier_groups(state, content):
+        percent = sum(
+            m.value
+            for m in group
+            if m.type == modifier_type
+            and (m.skill_id is None or m.skill_id == action.skill_id)
+            and (m.category is None or m.category == category)
+        )
+        factors.append(max(content.progression.min_factor, 1 + percent / 100))
+    percent = (
+        proficiency_pct(action, state, content)
+        if modifier_type == ModifierType.CYCLE_SPEED_PCT
+        else 0
     )
+    factors.append(max(content.progression.min_factor, 1 + percent / 100))
+    return math.prod(factors)
 
 
 def effective_cycle_time(
     action: Action, state: CharacterState, content: ContentIndex
 ) -> int:
-    """Return cycle milliseconds after applying all additive modifiers once."""
-    percent = _modifier_total(ModifierType.CYCLE_TIME_PCT, action, state, content)
-    return max(1, int(action.base_cycle_ms * (1 + percent / 100)))
+    """Floor base time divided by speed, respecting the content minimum."""
+    total = bonus_total(ModifierType.CYCLE_SPEED_PCT, action, state, content)
+    return max(
+        content.progression.min_cycle_ms, math.floor(action.base_cycle_ms / total)
+    )
+
+
+def xp_factors(
+    action: Action, state: CharacterState, content: ContentIndex
+) -> tuple[float, float]:
+    """Return uncapped and capped XP multipliers before taper."""
+    total = bonus_total(ModifierType.XP_PCT, action, state, content)
+    return total, min(total, 1 + content.progression.xp_bonus_cap_pct / 100)
 
 
 def effective_xp(action: Action, state: CharacterState, content: ContentIndex) -> int:
-    """Return XP per cycle after applying all additive modifiers once."""
-    percent = _modifier_total(ModifierType.XP_PCT, action, state, content)
-    return max(0, int(action.xp * (1 + percent / 100)))
+    """Apply the XP cap, then taper, then floor once."""
+    return math.floor(
+        action.xp
+        * xp_factors(action, state, content)[1]
+        * taper_factor(action, state, content)
+    )
 
 
 def effective_drops(
     action: Action, state: CharacterState, content: ContentIndex
 ) -> tuple[Drop, ...]:
-    """Return drop entries with additively modified chances."""
-    percent = _modifier_total(
-        ModifierType.EXTRA_DROP_CHANCE_PCT, action, state, content
-    )
-    multiplier = 1 + percent / 100
+    """Multiply drop chances and clamp each to the probability interval."""
+    total = bonus_total(ModifierType.EXTRA_DROP_CHANCE_PCT, action, state, content)
     return tuple(
-        drop.model_copy(update={"chance": min(1.0, max(0.0, drop.chance * multiplier))})
+        drop.model_copy(update={"chance": min(1.0, max(0.0, drop.chance * total))})
         for drop in action.outputs
     )
 
@@ -231,13 +287,17 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
     """Resolve global, estate-form, development-node, and upgrade caps."""
     bonuses: defaultdict[CapType, float] = defaultdict(float, state.cap_bonuses)
     form = content.estate_form(state.estate_form_id)
-    for cap, value in form.base_caps.items():
+    for cap, value in (
+        form.base_caps.items() if state.realm_id == state.estate_realm_id else ()
+    ):
         bonuses[cap] += value
     node = content.development_node(state.realm_node_id)
     for bonus in node.cap_bonuses:
         bonuses[bonus.cap] += bonus.value
     realm_tags = set(node.tags)
-    for upgrade_id in state.installed_upgrades:
+    for upgrade_id in (
+        state.installed_upgrades if state.realm_id == state.estate_realm_id else ()
+    ):
         upgrade = content.upgrade(upgrade_id)
         if _tags_match(upgrade.realm_tags, realm_tags):
             for bonus in upgrade.cap_bonuses:

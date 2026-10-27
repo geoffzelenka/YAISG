@@ -43,10 +43,9 @@ function RequireAuth() {
 
 function describeModifier(modifier: Modifier): string {
   const labels: Record<Modifier['type'], string> = {
-    cycle_time_pct: 'cycle time',
+    cycle_speed_pct: 'cycle speed',
     xp_pct: 'XP',
     extra_drop_chance_pct: 'extra drop chance',
-    market_tax_pct: 'market tax',
   }
   const prefix = modifier.value > 0 ? '+' : ''
   const skill = modifier.skill_id ? ` (${modifier.skill_id})` : ''

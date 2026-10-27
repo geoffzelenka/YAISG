@@ -10,7 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.schemas import RewardsResponse, rewards_response
+from app.api.schemas import (
+    ActionValues,
+    RewardsResponse,
+    action_values,
+    rewards_response,
+)
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
@@ -65,13 +70,12 @@ class ActionFeedResponse(BaseModel):
     stop_reason: str | None
 
 
-class AvailableAction(BaseModel):
+class AvailableAction(ActionValues):
     """Content action annotated with current start eligibility."""
 
     action_id: str
     name: str
     unlock_level: int
-    cycle_ms: int
     startable: bool
     blocked_by: list[str]
 
@@ -166,7 +170,7 @@ async def available_actions(
                     action_id=action.id,
                     name=action.name,
                     unlock_level=action.unlock_level,
-                    cycle_ms=effective_cycle_time(action, state, content),
+                    **action_values(action, state, content).model_dump(),
                     startable=not blocked,
                     blocked_by=blocked,
                 )
