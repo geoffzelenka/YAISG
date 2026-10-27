@@ -30,7 +30,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 20 | `20-caravans` | Trade between realms | done | v08/20-caravans | d0d64e5 | Caravan passes: remoteness, §16.3 selection, fees/burn, loss, shipments |
 | 21 | `21-client-realm-estate` | Client: realm, projects, votes, estate | done | v08/21-client-realm-estate | 3b9eead | Client realm/estate panels, votes, D8 confirmations, kickoff availability |
 | 22 | `22-client-realm-market` | Client: realm market and world health | done | v08/22-client-realm-market | c40f60f | Client realm market, quote-then-confirm trade, gift, hungry-realms map |
-| 23 | `23-global-market` | Global order book, slots, tax, access | pending | — | — | — |
+| 23 | `23-global-market` | Global order book, slots, tax, access | ready for review | `v08/23-global-market` | — | Global escrow slots, price-time matching, access, seller tax and conservation accounting. |
 | 24 | `24-market-lifecycle` | Order expiry, purge, world conservation suite | pending | — | — | — |
 | 25 | `25-client-global-market` | Client: global market | pending | — | — | — |
 | 26 | `26-equipment` | Equipment slots and gear bonuses | pending | — | — | — |

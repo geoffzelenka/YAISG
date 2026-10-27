@@ -197,7 +197,12 @@ async def test_admin_economy_operator_only(
     monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({str(user_id)}))
     result = await client.get("/admin/economy", headers=headers)
     assert result.status_code == 200
-    assert result.json()["holders"] == {"wallets": 100, "treasuries": 0}
+    assert result.json()["holders"] == {
+        "wallets": 100,
+        "treasuries": 0,
+        "order_escrow": 0,
+        "order_slots": 0,
+    }
     assert result.json()["ledger"] == {"world_seed": 0}
 
 
@@ -213,6 +218,8 @@ async def test_admin_economy_operator_only(
         st.sampled_from(
             [
                 "mint",
+                "order_trade",
+                "order_cancel",
                 "buy",
                 "sell",
                 "gift",
@@ -227,10 +234,32 @@ async def test_admin_economy_operator_only(
     )
 )
 async def test_random_gold_operations_match_ledger(
-    estate_client: ApiFixture, operations: list[str]
+    estate_client: ApiFixture, operations: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, factory, headers, clock = estate_client
     content = mint_content()
+    node = content.development_node("node.verdant_t1")
+    content = replace(
+        content,
+        _nodes_by_id=MappingProxyType(
+            {
+                **content._nodes_by_id,
+                node.id: node.model_copy(
+                    update={"inherent_tags": (*node.inherent_tags, "access.fake")}
+                ),
+            }
+        ),
+    )
+    content = replace(
+        content,
+        economy=content.economy.model_copy(
+            update={
+                "market": content.economy.market.model_copy(
+                    update={"tax_burn_pct": 100}
+                )
+            }
+        ),
+    )
     forms = tuple(
         f.model_copy(
             update={"build_cost": BuildCost(gold=7), "upkeep": (), "production": ()}
@@ -293,15 +322,17 @@ async def test_random_gold_operations_match_ledger(
             replace_lines(session, realm.id, context.lines)
             session.commit()
 
-        def net() -> int:
-            with factory() as session:
-                return (
-                    int(session.scalar(select(func.sum(Currency.gold))) or 0)
-                    + int(session.scalar(select(func.sum(RealmState.treasury))) or 0)
-                    - int(session.scalar(select(func.sum(GoldLedger.amount))) or 0)
-                )
+        with factory() as session:
+            user_id = session.scalar(select(Player.auth_user_id))
+        monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({str(user_id)}))
 
-        baseline = net()
+        async def net() -> int:
+            report = await client.get("/admin/economy", headers=headers)
+            assert report.status_code == 200
+            data = report.json()
+            return int(sum(data["holders"].values()) - sum(data["ledger"].values()))
+
+        baseline = await net()
         # Exercise every gold flow before the random interleavings.
         prefix = [
             "transform",
@@ -314,6 +345,8 @@ async def test_random_gold_operations_match_ledger(
             "buy",
             "gift",
             "mint",
+            "order_trade",
+            "order_cancel",
         ]
         for index, operation in enumerate([*prefix, *operations]):
             if operation == "mint":
@@ -322,6 +355,33 @@ async def test_random_gold_operations_match_ledger(
                     realm = session.get(RealmState, REALM)
                     assert realm is not None
                     resolve_realm(session, realm, clock["now"], content)
+            elif operation in ("order_trade", "order_cancel"):
+                order_ids = []
+                for side in ["sell", "buy"] if operation == "order_trade" else ["buy"]:
+                    result = await client.post(
+                        "/market/orders",
+                        headers=headers,
+                        json={
+                            "side": side,
+                            "item_id": BULLION,
+                            "quantity": 1,
+                            "unit_price": 3,
+                        },
+                    )
+                    assert result.status_code == 201, result.text
+                    order_ids.append(result.json()["order"]["id"])
+                    assert await net() == baseline
+                for order_id in order_ids:
+                    if operation == "order_cancel":
+                        result = await client.post(
+                            f"/market/orders/{order_id}/cancel", headers=headers
+                        )
+                        assert result.status_code == 200
+                        assert await net() == baseline
+                    result = await client.post(
+                        f"/market/orders/{order_id}/collect", headers=headers
+                    )
+                    assert result.status_code == 200
             else:
                 routes = {
                     "transform": (
@@ -357,7 +417,7 @@ async def test_random_gold_operations_match_ledger(
                 assert result.status_code in (200, 204, 409), result.text
                 if index < len(prefix):
                     assert result.status_code in (200, 204), result.text
-            assert net() == baseline
+            assert await net() == baseline
     finally:
         app.state.content = original
 

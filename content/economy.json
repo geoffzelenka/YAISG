@@ -43,7 +43,10 @@
       14
     ],
     "band_hysteresis_pct": 10,
-    "m": 0.25
+    "m": 0.25,
+    "tax_pct": 5,
+    "tax_burn_pct": 0,
+    "order_days": 14
   },
   "coinage_multiple": 1.2,
   "vote": {
