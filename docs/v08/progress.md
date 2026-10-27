@@ -24,7 +24,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 14 | `14-realm-tick` | The realm tick and the scheduled job | done | v08/14-realm-tick | 24ab9fc | Tick steps 0-10 (reserve priority, pro-rata, production, spoilage, caps, realm-funded overlay), APScheduler liveness job under PG advisory lock |
 | 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | done | v08/15-decay | fddd09a | Realm/estate gauges and stages, bounded shedding, regression with restamp, estate decay chain with tombstoned history, make seed-check |
 | 16 | `16-realm-pricing` | Realm market pricing and visibility | done | v08/16-realm-pricing | b7b163f | Scarcity curve and integral pricing with margin, budget allocation and bisection, hysteretic band, typed market/quote endpoints hiding treasury |
-| 17 | `17-realm-trade` | Realm trade and treasury gift | ready for review | v08/17-realm-trade | — | Atomic presence-gated trades and gifts, exact milli-store transfers, spent budgets and conservation/race tests |
+| 17 | `17-realm-trade` | Realm trade and treasury gift | done | v08/17-realm-trade | a90289a | Presence-gated realm sell/buy at integral prices with PRICE_MOVED rollback, exact milli transfers, budget+treasury debit, treasury gift |
 | 18 | `18-mint-gold` | Mint and the gold ledger | pending | — | — | — |
 | 19 | `19-votes` | Realm upgrade votes and transitions | pending | — | — | — |
 | 20 | `20-caravans` | Trade between realms | pending | — | — | — |
