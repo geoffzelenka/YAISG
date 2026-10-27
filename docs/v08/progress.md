@@ -6,7 +6,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 
 | # | Prompt | Title | Status | Branch | Merge commit | Summary |
 |---|---|---|---|---|---|---|
-| 00 | `00-preflight` | Baseline alignment audit | ready for review | v08/00-preflight | — | Baseline mapped; FIX-HERE realm lock ordering fixed with PostgreSQL regression test; other drift assigned; no blockers; PostgreSQL fix verification pending. |
+| 00 | `00-preflight` | Baseline alignment audit | done | v08/00-preflight | 6069863 | Baseline audited (94 OK / 6 DRIFT / 1 MISSING / 1 PARTIAL, no BLOCKER); FIX-HERE: GET /realms now locks realms in id order, PostgreSQL regression test; codebase map written. |
 | 01 | `01-foundation` | Schema reset, XP curve, levels to 100, tiers, zero gold | pending | — | — | — |
 | 02 | `02-content-model` | Goods, actions, selectors, categories, caps | pending | — | — | — |
 | 03 | `03-bonus-model` | Source groups, multiplication, XP cap, proficiency, taper | pending | — | — | — |
