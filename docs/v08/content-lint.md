@@ -31,7 +31,9 @@ Their product is maximized jointly over each group's alternatives:
 - Realm: each development node's modifiers.
 - Estate: each form with every subset of distinct, non-inert upgrades that fits
   the global plus form plus node plus selected-upgrade slot cap. Upgrade tag
-  matching follows the current engine (empty, wildcard or any matching tag).
+  matching accepts empty, wildcard or any matching tag. Empty tags follow
+  §7.4; the current engine instead treats them as inert. Including these
+  upgrades deliberately preserves a conservative upper bound.
 - Gear and consumables: identity factors until their content schemas exist.
 - Proficiency: excluded, as required by §7.3.
 

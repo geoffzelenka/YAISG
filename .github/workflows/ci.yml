@@ -55,13 +55,14 @@ jobs:
         run: alembic upgrade head && alembic current && alembic check
         env:
           GAME_DATABASE_URL: postgresql+psycopg://yaisg:yaisg@localhost:5432/yaisg_test
-      - name: XP-rate content report (warning only)
-        if: matrix.service == 'game'
-        run: make content-lint
       - name: Check service
         run: make ${{ matrix.service }}-ci
         env:
           TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://yaisg:yaisg@localhost:5432/yaisg_test' || '' }}
+      - name: XP-rate content report (warning only)
+        if: always() && matrix.service == 'game'
+        continue-on-error: true
+        run: make content-lint
 
   client:
     runs-on: ubuntu-latest

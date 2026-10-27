@@ -1,7 +1,7 @@
 """Exact rate integration, warning suppression and command behavior."""
 
 import json
-import os
+import shutil
 import subprocess
 import sys
 from dataclasses import replace
@@ -69,6 +69,8 @@ def test_exact_training_ladders(step: int, g: float, expected: int) -> None:
 def test_level_one_alone_is_exactly_2880_hours() -> None:
     content = load_content(CONTENT_DIR)
     assert training_hours(_ladder(100, 1.015969), content.xp_curve.root) == 2880
+    report = lint_content(replace(content, skills=(_ladder(1, 1.015969),)))[0]
+    assert report.level_one_hours == pytest.approx(2880)
 
 
 def test_training_uses_best_unlocked_rate_and_exact_costs() -> None:
@@ -176,24 +178,35 @@ def test_empty_skills_report_blocked_and_combat_is_skipped() -> None:
     assert report.level_one_hours is None
 
 
-def test_content_lint_command_exits_zero_with_warnings() -> None:
-    root = Path(__file__).resolve().parents[3]
+def test_content_lint_command_exits_zero_with_warnings(tmp_path: Path) -> None:
+    content_dir = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, content_dir)
+    skill = _ladder(100, 1.015969)
+    action = skill.actions[0].model_copy(update={"xp": 1, "base_cycle_ms": 3_600_000})
+    skill = skill.model_copy(update={"actions": (action,)})
+    skills_path = content_dir / "skills.json"
+    skills = json.loads(skills_path.read_text())
+    skills["skills"].append(skill.model_dump(mode="json"))
+    skills_path.write_text(json.dumps(skills))
+    progression_path = content_dir / "progression.json"
+    progression = json.loads(progression_path.read_text())
+    progression["lint"] = {"g": 1.015969, "tolerance_pct": 15}
+    progression_path.write_text(json.dumps(progression))
     result = subprocess.run(
-        ["make", "--no-print-directory", "content-lint"],
-        cwd=root,
+        [sys.executable, "-m", "app.content.lint", "--content-dir", str(content_dir)],
+        cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
         text=True,
         check=False,
-        env={
-            **os.environ,
-            "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}",
-        },
     )
     assert result.returncode == 0, result.stderr
     assert "WARNING" in result.stdout
     assert "XP-rate content lint" in result.stdout
     reports = json.loads(result.stdout[result.stdout.index("[\n") :])
-    assert any(action["warning"] for report in reports for action in report["actions"])
+    crafted_report = next(
+        report for report in reports if report["skill_id"] == skill.id
+    )
+    assert crafted_report["actions"][0]["warning"]
 
 
 @pytest.mark.parametrize(

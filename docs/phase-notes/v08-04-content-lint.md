@@ -57,6 +57,11 @@ None.
 
 ## Hand-offs
 
+- 05-tags: reconcile the engine treating empty upgrade realm_tags as inert
+  with §7.4 and the lint treating them as unrestricted. Keep scope matching in
+  lint.py `_group_bound` aligned with engine `bonus_total` (or share a helper)
+  when changing tag or scope matching.
+
 - 05-tags / 09-development-graph: extend stack candidates with tag modifiers
   offered on each node, respecting tag stacking/eligibility in the same group.
   There is currently no tags pack; node tag strings only govern inert upgrades.
