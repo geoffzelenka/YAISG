@@ -33,7 +33,7 @@
   test_modifier_rejects_invalid_scope (two cases).
 - Round 1 final SQLite make ci passed: auth 15, game 179 passed / one
   PostgreSQL-only skip, client 23; all lint, formatting, type, build and scripts
-  checks green. git diff --check passed. Changes left uncommitted.
+  checks green. git diff --check passed. Committed by the orchestrator (a2b06c2, 9ee388a).
 - Round 1 mutation check: temporarily applied group P to XP as well as speed;
   test_proficiency_never_changes_xp failed (1.2 != 1). Restored the engine.
 - Orchestrator verification on a2b06c2: PostgreSQL 16 game-ci 176 passed,
