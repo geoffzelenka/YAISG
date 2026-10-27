@@ -265,7 +265,8 @@ def resolve_realm(
     The caller owns persistence and the transaction. Events are reconsidered
     after each completion because a vote can schedule another due event.
     """
-    from app.services.realm_ticks import TICK_STEPS
+    from app.services.projects import active_run
+    from app.services.realm_ticks import TICK_STEPS, RealmTickContext
 
     if realm is None:
         return None
@@ -276,10 +277,11 @@ def resolve_realm(
         (now - as_utc(realm.last_tick_at)) // interval,
         content.economy.tick.max_catchup,
     )
+    context = RealmTickContext(active_run=active_run(session, realm.id))
     for _ in range(max(0, ticks)):
         tick_at = as_utc(realm.last_tick_at) + interval
         for step in TICK_STEPS:
-            step(session, realm, tick_at, content)
+            step(context, realm, tick_at, content)
         realm.last_tick_at = tick_at
-        session.flush()
+    session.flush()
     return realm

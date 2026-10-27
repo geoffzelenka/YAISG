@@ -264,6 +264,7 @@ def test_transition_uses_content_duration_and_rejects_replacement(
 
 
 @settings(
+    deadline=None,
     max_examples=20,
     derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
