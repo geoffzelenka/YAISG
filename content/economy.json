@@ -46,7 +46,9 @@
     "m": 0.25,
     "tax_pct": 5,
     "tax_burn_pct": 0,
-    "order_days": 14
+    "order_days": 14,
+    "retention_days": 30,
+    "lifecycle_interval_seconds": 300
   },
   "coinage_multiple": 1.2,
   "vote": {

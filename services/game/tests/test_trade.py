@@ -114,6 +114,8 @@ def test_trade_errors_are_atomic(
     with pytest.raises(HTTPException) as caught:
         trade(realm_session, character, realm, CONTENT, ITEM, side, quantity, limit)
     assert cast(dict[str, Any], caught.value.detail)["error"]["code"] == code
+    # Inspect the failed transaction before rollback can hide partial transfers.
+    assert holdings(realm_session, character, realm) == before
     realm_session.rollback()
     assert holdings(realm_session, character, realm) == before
 
