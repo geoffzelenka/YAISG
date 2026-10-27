@@ -1,7 +1,7 @@
 """Pure, fixed-precision realm pricing in whole line units and gold."""
 
 from dataclasses import dataclass, replace
-from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, localcontext
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_EVEN, Decimal, localcontext
 from typing import Literal
 
 from app.content.loader import ContentIndex
@@ -40,6 +40,8 @@ def multiplier(stock: Decimal, cap: Decimal, settings: MarketConfig) -> Decimal:
     """Return the spot bid multiple, clamped at full stores."""
     with localcontext() as ctx:
         ctx.prec = PRECISION
+        if cap <= 0:
+            return D(str(settings.f))
         return (
             D(str(settings.f))
             + (D(str(settings.c)) - D(str(settings.f)))
@@ -48,15 +50,21 @@ def multiplier(stock: Decimal, cap: Decimal, settings: MarketConfig) -> Decimal:
 
 
 def integral(a: Decimal, b: Decimal, cap: Decimal, settings: MarketConfig) -> Decimal:
-    """Integrate the scarcity curve over a valid stock interval."""
-    if not 0 <= a <= b <= cap or cap <= 0:
-        raise ValueError("pricing interval must satisfy 0 <= a <= b <= cap")
+    """Integrate nonnegative stock, pricing any above-cap stretch at the floor."""
+    if not 0 <= a <= b:
+        raise ValueError("pricing interval must satisfy 0 <= a <= b")
     with localcontext() as ctx:
         ctx.prec = PRECISION
         f, c = D(str(settings.f)), D(str(settings.c))
+        if cap <= 0:
+            return f * (b - a)
+        excess = f * max(D(0), b - max(a, cap))
+        a, b = min(a, cap), min(b, cap)
         power = settings.k + 1
-        return f * (b - a) + (c - f) * cap / power * (
-            (1 - a / cap) ** power - (1 - b / cap) ** power
+        return (
+            excess
+            + f * (b - a)
+            + (c - f) * cap / power * ((1 - a / cap) ** power - (1 - b / cap) ** power)
         )
 
 
@@ -165,3 +173,23 @@ def treasury_band(days: Decimal, previous: str | None, settings: MarketConfig) -
     while band > 0 and days < boundaries[band - 1] * (1 - hysteresis):
         band -= 1
     return str(band)
+
+
+def spot_bid(ctx: QuoteContext) -> str:
+    """Publish a spot bid with eight fixed decimal places."""
+    with localcontext() as precision:
+        precision.prec = PRECISION
+        value = ctx.reference_price * multiplier(ctx.stock, ctx.cap, ctx.settings)
+        return format(value.quantize(D("0.00000001"), rounding=ROUND_HALF_EVEN), "f")
+
+
+def band_from_upkeep(
+    treasury: int, upkeep: Decimal, previous: str | None, settings: MarketConfig
+) -> str:
+    """An empty treasury has no cover, including when upkeep is zero."""
+    with localcontext() as precision:
+        precision.prec = PRECISION
+        if treasury == 0:
+            return "0"
+        days = D(treasury) / upkeep if upkeep else D("Infinity")
+        return treasury_band(days, previous, settings)

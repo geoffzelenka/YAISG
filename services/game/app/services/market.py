@@ -1,14 +1,14 @@
 """Market projections from locked, resolved realm holdings."""
 
+from decimal import ROUND_CEILING, localcontext
 from decimal import Decimal as D
-from decimal import localcontext
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.content.schemas import Selector
-from app.engine.market import PRECISION, QuoteContext, multiplier, quote
+from app.engine.market import PRECISION, QuoteContext, multiplier, quote, spot_bid
 from app.engine.stores import Line, line_weight, membership, warehouse_cap
 from app.models import RealmLine, RealmState, RealmStore
 
@@ -17,6 +17,14 @@ def market_contexts(
     session: Session, realm: RealmState, content: ContentIndex
 ) -> dict[str, tuple[Line | None, QuoteContext]]:
     """Assign every item to at most one line, preserving its stored budget."""
+    with localcontext() as precision:
+        precision.prec = PRECISION
+        return _market_contexts(session, realm, content)
+
+
+def _market_contexts(
+    session: Session, realm: RealmState, content: ContentIndex
+) -> dict[str, tuple[Line | None, QuoteContext]]:
     lines = tuple(
         Line(
             r.line_key,
@@ -41,9 +49,11 @@ def market_contexts(
     }
     node = content.development_node(realm.current_node_id)
     settings = content.economy.market
-    margin = D(str(settings.m * 100 if node.margin_pct is None else node.margin_pct))
+    margin = (
+        D(str(settings.m)) * 100 if node.margin_pct is None else D(str(node.margin_pct))
+    )
     result = {}
-    for item in content.items:
+    for item in sorted(content.items, key=lambda item: (item.reference_price, item.id)):
         line = membership(item, lines)
         stock = line.stock if line else stores.get(item.id, 0)
         cap = line.cap if line else max(stock, warehouse_cap(item, content))
@@ -67,9 +77,7 @@ def market_contexts(
 
 def spot_ask(ctx: QuoteContext) -> int | None:
     """Return the rounded spot unit ask only when a whole item is for sale."""
-    from decimal import ROUND_CEILING
-
-    if ctx.available <= 0 or ctx.stock - ctx.reserve < ctx.w or ctx.cap <= 0:
+    if ctx.available <= 0 or ctx.stock - ctx.reserve < ctx.w:
         return None
     with localcontext() as precision:
         precision.prec = PRECISION
@@ -90,6 +98,7 @@ def market_view(
     grouped: dict[str, dict[str, object]] = {}
     sales = []
     missing_by_line: dict[str, int] = {}
+    best_capacity: dict[str, int] = {}
     for item_id, (line, ctx) in contexts.items():
         ask = spot_ask(ctx)
         if ask is not None:
@@ -102,16 +111,12 @@ def market_view(
                     "spot_ask": ask,
                 }
             )
-        if line is None or ctx.cap <= 0:
+        if line is None:
             continue
         funded = quote(ctx, item_id, "sell", max(1, int((ctx.cap - ctx.stock) / ctx.w)))
         member = {
             "item_id": item_id,
-            "spot_bid": str(
-                ctx.reference_price * multiplier(ctx.stock, ctx.cap, ctx.settings)
-            )
-            if funded.max_quantity
-            else None,
+            "spot_bid": spot_bid(ctx) if funded.max_quantity else None,
             "funded_quantity": funded.max_quantity,
             "funded_total": quote(ctx, item_id, "sell", funded.max_quantity).gold
             if funded.max_quantity
@@ -133,6 +138,14 @@ def market_view(
                 else None,
                 "members": [],
             }
+        capacity = funded.max_quantity * ctx.w * 1000
+        if capacity > best_capacity.get(line.key, -1):
+            best_capacity[line.key] = capacity
+            grouped[line.key].update(
+                spot_bid=member["spot_bid"],
+                funded_quantity=capacity,
+                funded_total=member["funded_total"],
+            )
         members = grouped[line.key]["members"]
         assert isinstance(members, list)
         members.append(member)

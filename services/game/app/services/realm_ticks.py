@@ -3,7 +3,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from fractions import Fraction
 
 from sqlalchemy import select
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.content.loader import ContentIndex
 from app.content.schemas import ActionInput, DecayStage, DevelopmentNode, Tag
 from app.engine.decay import advance_gauge, advance_shed, gauge_stage
-from app.engine.market import allocate_budgets, treasury_band
+from app.engine.market import PRECISION, allocate_budgets, band_from_upkeep
 from app.engine.projects import erode_project
 from app.engine.realm_ticks import shares, take
 from app.engine.stores import (
@@ -615,19 +615,20 @@ def step_10_lines(
         )
         node = content.development_node(realm.current_node_id)
         holders: tuple[DevelopmentNode | Tag, ...] = (node, *context.tags)
-        upkeep_value = sum(
-            Decimal(str(line.per_day)) * context.line_weights[line_key(line.selector)]
-            for holder in holders
-            for line in holder.upkeep
-        )
-        days = (
-            Decimal(realm.treasury) / upkeep_value
-            if upkeep_value
-            else Decimal("Infinity")
-        )
-        realm.treasury_band = treasury_band(
-            days, realm.treasury_band, content.economy.market
-        )
+        with localcontext() as precision:
+            precision.prec = PRECISION
+            upkeep_value = sum(
+                Decimal(str(line.per_day))
+                * context.line_weights[line_key(line.selector)]
+                for holder in holders
+                for line in holder.upkeep
+            )
+            realm.treasury_band = band_from_upkeep(
+                realm.treasury,
+                Decimal(upkeep_value),
+                realm.treasury_band,
+                content.economy.market,
+            )
 
 
 TICK_STEPS = (

@@ -30,6 +30,13 @@
   world creation pass. Focused market tests pass (14 with one database-specific
   skip); git diff --check is clean.
 
+- Round 1: fixed above-cap/zero-cap integrals and empty-treasury bands; made
+  published spot bids and band arithmetic deterministic at fixed precision;
+  selected line figures by best funded capacity with stable ties; added typed
+  market responses and reused one market snapshot per estate listing. Added
+  regression coverage for these cases and all three requested funding mutants.
+  SQLite make ci passes (auth 15; game 443 with 12 skips; client 41).
+
 ## Removed
 
 None. No tests or routes removed.
@@ -43,7 +50,8 @@ None. No tests or routes removed.
 - §15.5: bands are stored as strings "0" through "4", ordered from poorest to
   richest. Upward transitions require 110% of a boundary, downward transitions
   require less than 90%; initial placement uses the unadjusted boundaries.
-  With no realm upkeep, treasury cover is infinite and the band is "4".
+  Zero treasury always has band "0". With positive treasury and no realm
+  upkeep, treasury cover is infinite and the band is "4".
   Band upkeep counts the node and live tag upkeep, not estate/project appetite.
 - §15.5: line amounts and shortfalls remain milli-line-units, matching Prompt
   13. Member quotes use whole item quantities. Per-line funded quantity is in
@@ -51,6 +59,27 @@ None. No tests or routes removed.
   independently funded promises. Shortfalls use the best member's capacity.
 - §13.4: spot unit asks round upward to integral gold for the existing UnitAsk
   provider contract. Selling requires at least one whole available item.
+
+- §15.2 / §15.5: stock may remain above a newly reduced cap until the next
+  step 7. The integral charges the floor f on the part above cap, including
+  when cap <= 0 (all nonnegative stock is then above cap). This extends the
+  existing clamped spot curve continuously and preserves the bid/ask margin.
+- §15.1 / §15.2: a stored good without a demand line is offered with reserve 0
+  and cap max(stock, warehouse_cap). This uses the same scarcity pricing for
+  warehouse surplus while allowing no funded demand for that good.
+- §15.5: line figures use the member with greatest funded milli-line capacity;
+  ties choose lowest reference price, then item id. Its spot bid and funded
+  total accompany that capacity, and shortfalls use the same best capacity.
+  Member bids are alternatives, so they are never summed as independent bids.
+  Spot bid strings have eight decimal places, computed at 50-digit precision.
+- §15.5 / V§9.4.8: funded totals and visible budget weights inherently allow
+  players to estimate treasury closely. This is a known inference disclosure
+  for human assessment; the required fields remain published and the raw
+  balance remains absent. Behaviour follows the explicit design fields.
+- §15.5: the design does not settle zero treasury divided by zero upkeep.
+  Zero treasury is assigned band 0 because it cannot buy any upkeep; positive
+  treasury with zero upkeep retains infinite cover. Hysteresis cannot retain
+  a richer band when treasury is empty.
 
 ## Deviations
 

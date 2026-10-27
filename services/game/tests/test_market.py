@@ -237,6 +237,12 @@ def test_all_realm_and_map_response_schemas_hide_treasury() -> None:
     from app.main import app
 
     schema = app.openapi()
+    assert schema["paths"]["/realms/{realm_id}/market"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]["$ref"].endswith("/MarketResponse")
+    assert schema["paths"]["/realms/{realm_id}/market/quote"]["get"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"]["$ref"].endswith("/MarketQuoteResponse")
     seen: set[str] = set()
 
     def check(value: object) -> None:
@@ -264,7 +270,201 @@ def test_quote_precision_is_independent_of_decimal_context() -> None:
     from decimal import localcontext
 
     ctx = context(101)
+    from app.engine.market import spot_bid
+
     expected = quote(ctx, "example", "sell", 500)
+    expected_spot = spot_bid(ctx)
+    assert len(expected_spot.split(".")[1]) == 8
     with localcontext() as precision:
         precision.prec = 2
         assert quote(ctx, "example", "sell", 500) == expected
+        assert spot_bid(ctx) == expected_spot
+
+
+@pytest.mark.parametrize("cap", [D(1000), D(0)])
+def test_over_cap_buy_keeps_margin(cap: D) -> None:
+    ctx = replace(context(1200), cap=cap)
+    quantity = 400
+    buy = quote(ctx, "example", "buy", quantity).gold
+    sell = total(replace(ctx, stock=ctx.stock - quantity), "sell", quantity)
+    raw = D(ctx.reference_price) * integral(
+        ctx.stock - quantity, ctx.stock, cap, ctx.settings
+    )
+    assert buy >= raw * D("1.25") >= D(sell) * D("1.25")
+    assert buy - raw * D("1.25") < 1
+    assert multiplier(D(1200), cap, ctx.settings) == D(".33")
+
+
+def test_budgets_double_only_below_reserve() -> None:
+    selector = Selector(item=CONTENT.items[0].id)
+    lines = (
+        Line("hungry", selector, 1, 100, 1000, 0, False),
+        Line("fed", selector, 1, 0, 1000, 0, False),
+    )
+    funded = allocate_budgets(lines, 300, CONTENT)
+    assert [line.budget_gold for line in funded] == [200, 100]
+
+
+def test_quote_respects_treasury_after_surrender() -> None:
+    ctx = replace(context(), budget=10000, treasury=10)
+    maximum = quote(ctx, "example", "sell", 100).max_quantity
+    assert maximum < 100
+    assert total(ctx, "sell", maximum) <= 10
+    assert total(ctx, "sell", maximum + 1) > 10
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cap_days", [0, 11])
+async def test_over_cap_buy_endpoint(
+    estate_client: ApiFixture, cap_days: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import MappingProxyType
+
+    from app.engine.market import QuoteContext
+    from app.main import app
+    from app.models import Estate, RealmStore
+
+    client, factory, headers, _ = estate_client
+    node = CONTENT.development_node("node.verdant_t1").model_copy(
+        update={"cap_days": cap_days}
+    )
+    content = replace(
+        CONTENT, _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: node})
+    )
+    monkeypatch.setattr(app.state, "content", content)
+    with factory() as session:
+        session.add(Estate(realm_id="realm.verdant_vale", form_id="form.fake_workshop"))
+        session.add(
+            RealmStore(
+                realm_id="realm.verdant_vale",
+                item_id="item.fake_sprig",
+                quantity_milli=20000,
+            )
+        )
+        session.commit()
+    response = await client.get(
+        "/realms/realm.verdant_vale/market/quote",
+        headers=headers,
+        params={"item_id": "item.fake_sprig", "side": "buy", "quantity": 5},
+    )
+    assert response.status_code == 200, response.text
+    ctx = QuoteContext(
+        1, 1, D(20), D(cap_days), D(3), content.economy.market, D(25), 0, 0, 20
+    )
+    sell = total(replace(ctx, stock=D(15)), "sell", 5)
+    raw = integral(D(15), D(20), D(cap_days), ctx.settings)
+    assert D(response.json()["gold"]) >= raw * D("1.25") >= D(sell) * D("1.25")
+
+
+@pytest.mark.anyio
+async def test_empty_treasury_publishes_no_bids(estate_client: ApiFixture) -> None:
+    from app.models import Estate
+
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert realm is not None
+        realm.treasury = 0
+        session.add(Estate(realm_id=realm.id, form_id="form.fake_workshop"))
+        session.commit()
+    response = await client.get("/realms/realm.verdant_vale/market", headers=headers)
+    assert response.status_code == 200, response.text
+    lines = response.json()["lines"]
+    assert lines
+    for line in lines:
+        assert line["spot_bid"] is None
+        assert line["funded_quantity"] == line["funded_total"] == 0
+        assert all(
+            member["spot_bid"] is None and member["funded_quantity"] == 0
+            for member in line["members"]
+        )
+
+
+def test_empty_treasury_without_upkeep_has_lowest_band() -> None:
+    from app.engine.market import band_from_upkeep
+
+    assert band_from_upkeep(0, D(0), "4", MarketConfig()) == "0"
+    assert band_from_upkeep(1, D(0), None, MarketConfig()) == "4"
+    from decimal import localcontext
+
+    with localcontext() as precision:
+        precision.prec = 2
+        assert band_from_upkeep(1099, D(1000), "0", MarketConfig()) == "0"
+
+
+def test_line_figures_do_not_depend_on_content_order(realm_session: Session) -> None:
+    from app.models import RealmLine
+    from app.services.market import market_view
+
+    realm = realm_session.get(RealmState, "realm.verdant_vale")
+    assert realm is not None
+    realm.treasury = 100
+    realm_session.add(
+        RealmLine(
+            realm_id=realm.id,
+            line_key="weighted",
+            selector={"class": "placeholder"},
+            value_measured=True,
+            stock=0,
+            reserve=100000,
+            cap=200000,
+            draw_per_day=10000,
+            in_transit=0,
+            budget_gold=50,
+        )
+    )
+    realm_session.flush()
+    forward = market_view(realm_session, realm, CONTENT)
+    backward = market_view(
+        realm_session, realm, replace(CONTENT, items=tuple(reversed(CONTENT.items)))
+    )
+    assert forward == backward
+    lines = forward["lines"]
+    assert isinstance(lines, list)
+    line = lines[0]
+    best = min(
+        line["members"],
+        key=lambda m: (
+            -m["funded_quantity"] * CONTENT.item(m["item_id"]).reference_price,
+            CONTENT.item(m["item_id"]).reference_price,
+            m["item_id"],
+        ),
+    )
+    assert line["spot_bid"] == best["spot_bid"]
+    assert line["funded_total"] == best["funded_total"]
+    assert (
+        line["funded_quantity"]
+        == best["funded_quantity"]
+        * CONTENT.item(best["item_id"]).reference_price
+        * 1000
+    )
+
+
+@pytest.mark.anyio
+async def test_estate_listing_loads_market_once(estate_client: ApiFixture) -> None:
+    from unittest.mock import patch
+
+    from app.models import Estate
+    from app.services.market import market_contexts
+
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        session.add_all(
+            [
+                Estate(realm_id="realm.verdant_vale", form_id="form.fake_workshop")
+                for _ in range(3)
+            ]
+        )
+        session.commit()
+    with patch(
+        "app.services.estates.market_contexts", wraps=market_contexts
+    ) as contexts:
+        response = await client.get(
+            "/realms/realm.verdant_vale/estates", headers=headers
+        )
+    assert response.status_code == 200, response.text
+    assert (
+        len([estate for estate in response.json() if estate["sale_price"] is not None])
+        == 3
+    )
+    assert contexts.call_count == 1
