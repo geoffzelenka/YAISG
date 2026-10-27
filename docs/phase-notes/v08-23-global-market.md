@@ -148,3 +148,15 @@ None.
 - MARKET_RETRY (409): a swept seller realm was created outside the prepared lock
   set; retry in a fresh transaction to preserve realm/estate/order lock order.
 - Reused UNKNOWN_ITEM, MISSING_INPUTS and INSUFFICIENT_GOLD. No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on 9e9f3d3: SQLite make ci green (auth 15, game 606 / 19
+  skipped, client 76); PostgreSQL 16 game-ci 624 / 1 skipped; PG db-reset,
+  alembic check and boot green. Pre-review fix: PG SUM returned Decimal in the
+  book. Review: round 1 APPROVE (nits applied at the orchestrator's request),
+  round 2 APPROVE.
+- Self-matching ratification does not block 24: its history is per-player.
+- 25-client-market / 36-hardening: MARKET_RETRY (409) is returned to the
+  client after a full rollback; the client may retry once automatically, or
+  36 may add a bounded server-side retry.
