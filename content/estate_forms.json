@@ -104,6 +104,38 @@
           }
         ]
       }
+    },
+    {
+      "id": "form.fake_workshop",
+      "name": "Fake Workshop",
+      "modifiers": [],
+      "mobility": "fixed",
+      "travel_profile": null,
+      "tier": 1,
+      "upgrade_slots": 4,
+      "cap_bonuses": [],
+      "upkeep": [
+        {
+          "selector": {
+            "class": "fake_plant"
+          },
+          "per_day": 1
+        }
+      ],
+      "production": [],
+      "transforms_to": [],
+      "regresses_to": null,
+      "build_cost": {
+        "gold": 20,
+        "goods": [
+          {
+            "selector": {
+              "class": "fake_plant"
+            },
+            "quantity": 2
+          }
+        ]
+      }
     }
   ]
 }

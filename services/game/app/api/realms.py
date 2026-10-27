@@ -13,6 +13,7 @@ from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import CapBonus, DecayStage, Modifier
+from app.engine.estates import sale_price
 from app.engine.tags import TagHolder, active_tags
 from app.errors import api_error
 from app.models import (
@@ -23,6 +24,7 @@ from app.models import (
     RealmTag,
 )
 from app.services.actions import resolve_character
+from app.services.estates import persisted_estate_value
 from app.services.projects import active_run, contribute_character, kickoff
 from app.services.realms import (
     as_utc,
@@ -370,6 +372,7 @@ class RealmEstateResponse(BaseModel):
     owner: uuid.UUID | Literal["realm-owned"]
     form: str
     decay_stage: str
+    sale_price: int | None = None
 
 
 @router.get("/realms/{realm_id}/estates", response_model=list[RealmEstateResponse])
@@ -385,11 +388,20 @@ async def get_realm_estates(
         RealmEstateResponse(
             id=estate.id,
             owner=estate.owner_character_id or "realm-owned",
+            sale_price=sale_price(
+                persisted_estate_value(session, estate, content).value,
+                content.economy.estate.sale_markup_pct,
+            )
+            if estate.owner_character_id is None
+            else None,
             form=estate.form_id,
             decay_stage=estate.decay_stage,
         )
         for estate in session.scalars(
-            select(Estate).where(Estate.realm_id == realm_id).order_by(Estate.id)
+            select(Estate)
+            .where(Estate.realm_id == realm_id)
+            .order_by(Estate.id)
+            .with_for_update()
         )
     ]
     session.commit()

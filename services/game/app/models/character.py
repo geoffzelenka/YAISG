@@ -295,3 +295,17 @@ class RealmContribution(Base):
     __table_args__ = (
         CheckConstraint("quantity_milli > 0", name="ck_contribution_positive"),
     )
+
+
+class EstateLarder(Base):
+    """Goods irreversibly deposited toward estate upkeep."""
+
+    __tablename__ = "estate_larder"
+    estate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("estates.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    quantity_milli: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    __table_args__ = (
+        CheckConstraint("quantity_milli > 0", name="ck_estate_larder_positive"),
+    )

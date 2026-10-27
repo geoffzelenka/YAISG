@@ -966,6 +966,7 @@ async def test_realm_owned_estates_listed(
         "owner": "realm-owned",
         "form": "form.orchard",
         "decay_stage": "strained",
+        "sale_price": 44,
     }
     assert any(row["owner"] != "realm-owned" for row in rows)
     unknown = await client.get("/realms/missing/estates", headers=headers)
@@ -1228,3 +1229,201 @@ async def test_profile_estate_slots_use_form_base_plus_bonuses(
     slots = response.json()["caps"]["estate_upgrade_slots"]
     assert slots == {"base": 7, "effective": 7 + bonus}
     assert slots["base"] + bonus == slots["effective"]
+
+
+@pytest.mark.parametrize("donate", [False, True])
+async def test_build_buy_surrender_and_larder(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    donate: bool,
+) -> None:
+    """Ownership flows conserve gold and preserve one home."""
+    from app.models import EstateLarder, EstateOwnershipHistory
+
+    client, factory, headers, clock = estate_client
+    character_id = _give(factory, "item.fake_sprig", 10)
+    with factory() as session:
+        character = session.get(Character, character_id)
+        assert character is not None
+        old_id = character.home_estate_id
+        session.add(
+            EstateUpgrade(
+                estate_id=old_id,
+                slot_index=0,
+                upgrade_id=app.state.content.upgrades[0].id,
+                purchased_at=clock["now"],
+            )
+        )
+        session.commit()
+    built = await client.post(
+        "/estates/build", headers=headers, json={"form_id": "form.fake_workshop"}
+    )
+    assert built.status_code == 200, built.text
+    fixed_id = uuid.UUID(built.json()["id"])
+    with factory() as session:
+        assert session.get(Estate, old_id) is None
+        assert session.get(EstateUpgrade, (old_id, 0)) is None
+        assert (
+            session.scalar(
+                select(EstateOwnershipHistory).where(
+                    EstateOwnershipHistory.estate_id == fixed_id
+                )
+            )
+            is not None
+        )
+        assert_world_estate_invariant(session)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert realm is not None and realm.treasury == 20
+        realm.treasury = 3
+        session.commit()
+    rejected = await client.post(
+        "/estates/me/larder",
+        headers=headers,
+        json={"item_id": "item.fake_plank", "quantity": 1},
+    )
+    assert rejected.json()["error"]["code"] == "NOT_UPKEEP_ITEM"
+    deposited = await client.post(
+        "/estates/me/larder",
+        headers=headers,
+        json={"item_id": "item.fake_sprig", "quantity": 3},
+    )
+    assert deposited.status_code == 200
+    assert (
+        await client.delete("/estates/me/larder", headers=headers)
+    ).status_code == 405
+    surrendered = await client.post(
+        "/estates/me/surrender", headers=headers, json={"donate": donate}
+    )
+    assert surrendered.status_code == 200
+    with factory() as session:
+        holding = session.get(EstateLarder, (fixed_id, "item.fake_sprig"))
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert holding is not None and holding.quantity_milli == 3000
+        assert currency is not None and currency.gold == 80 + (0 if donate else 3)
+        assert realm is not None and realm.treasury == (3 if donate else 0)
+        assert_world_estate_invariant(session)
+    bought = await client.post(f"/estates/{fixed_id}/buy", headers=headers)
+    assert bought.status_code == 200, bought.text
+    with factory() as session:
+        assert_world_estate_invariant(session)
+    again = await client.post(f"/estates/{fixed_id}/buy", headers=headers)
+    assert again.json()["error"]["code"] == "MOBILE_ESTATE_REQUIRED"
+
+
+async def test_postgres_two_buyers_one_estate(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """The realm and estate locks serialize competing ownership transfers."""
+    from app.api.estates import buy_estate
+
+    client, factory, _, clock = estate_client
+    if factory.kw["bind"].dialect.name != "postgresql":
+        pytest.skip("Concurrent row locking requires PostgreSQL")
+    created = await client.post(
+        "/characters",
+        headers={"Authorization": f"Bearer {_token()}"},
+        json={"name": "Second Buyer", "realm_id": "realm.verdant_vale"},
+    )
+    assert created.status_code == 201
+    with factory() as session:
+        players = list(session.scalars(select(Player.id)))
+        for currency in session.scalars(select(Currency)):
+            currency.gold = 100
+        estate = Estate(form_id="form.fake_workshop", realm_id="realm.verdant_vale")
+        session.add(estate)
+        session.commit()
+        estate_id = estate.id
+    barrier = threading.Barrier(2, timeout=10)
+
+    def buy_once(player_id: uuid.UUID) -> tuple[int, str | None]:
+        with factory() as session:
+            session.execute(text("SET LOCAL statement_timeout = '10s'"))
+            player = session.get(Player, player_id)
+            assert player is not None
+            barrier.wait()
+            try:
+                asyncio.run(
+                    buy_estate(
+                        estate_id,
+                        Request({"type": "http", "app": app}),
+                        clock["now"],
+                        player,
+                        session,
+                    )
+                )
+            except HTTPException as error:
+                assert isinstance(error.detail, dict)
+                return error.status_code, error.detail["error"]["code"]
+            return 200, None
+
+    results = await asyncio.gather(
+        *(asyncio.to_thread(buy_once, player_id) for player_id in players)
+    )
+    assert sorted(results) == [(200, None), (409, "NOT_FOR_SALE")]
+    with factory() as session:
+        assert_world_estate_invariant(session)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert realm is not None
+        total = sum(currency.gold for currency in session.scalars(select(Currency)))
+        assert total + realm.treasury == 200
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(Estate)
+                .where(Estate.id == estate_id, Estate.owner_character_id.is_not(None))
+            )
+            == 1
+        )
+
+
+async def test_ownership_flow_preconditions(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Invalid ownership requests preserve holdings."""
+    client, factory, headers, _ = estate_client
+    for form_id in ("missing", "form.camp", "form.homestead"):
+        result = await client.post(
+            "/estates/build", headers=headers, json={"form_id": form_id}
+        )
+        assert result.json()["error"]["code"] == "INVALID_BUILD_FORM"
+    result = await client.post(
+        "/estates/me/surrender", headers=headers, json={"donate": False}
+    )
+    assert result.json()["error"]["code"] == "CANNOT_SURRENDER_MOBILE"
+    original = app.state.content
+    form = original.estate_form("form.fake_workshop")
+    app.state.content = replace(
+        original,
+        _forms_by_id=MappingProxyType(
+            {
+                **original._forms_by_id,
+                form.id: form.model_copy(
+                    update={"requires_realm_tags": ("missing.tag",)}
+                ),
+            }
+        ),
+    )
+    result = await client.post(
+        "/estates/build", headers=headers, json={"form_id": form.id}
+    )
+    assert result.json()["error"]["code"] == "MISSING_REALM_TAGS"
+    app.state.content = original
+    with factory() as session:
+        character = session.scalar(select(Character))
+        assert character is not None
+        character.current_realm_id = "realm.ashen_reach"
+        session.commit()
+    result = await client.post(
+        "/estates/build", headers=headers, json={"form_id": form.id}
+    )
+    assert result.json()["error"]["code"] == "NOT_PRESENT"
+    with factory() as session:
+        currency = session.scalar(select(Currency))
+        assert currency is not None and currency.gold == 100
+        assert_world_estate_invariant(session)

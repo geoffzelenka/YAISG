@@ -47,6 +47,7 @@ const packBodies = {
       fail_cooldown_hours: 36,
     },
     tick: { per_day: 24, max_catchup: 72 },
+    estate: { sale_markup_pct: 15 },
   },
   progression: {
     visit_profile: {

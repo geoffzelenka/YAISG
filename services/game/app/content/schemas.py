@@ -593,10 +593,17 @@ class TickConfig(ContentModel):
     max_catchup: int = Field(default=72, gt=0)
 
 
+class EstateConfig(ContentModel):
+    """Estate resale settings."""
+
+    sale_markup_pct: int = Field(default=15, gt=0)
+
+
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
     decay: DecayConfig
+    estate: EstateConfig = EstateConfig()
     transition: TransitionConfig = TransitionConfig()
     project: ProjectConfig = ProjectConfig()
     tick: TickConfig = TickConfig()

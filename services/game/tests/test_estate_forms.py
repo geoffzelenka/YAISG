@@ -5,10 +5,12 @@ import shutil
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from app.config import CONTENT_DIR
 from app.content import ContentError, load_content
-from app.engine.estates import vote_weight
+from app.engine.estates import estate_value, sale_price, vote_weight
 
 
 @pytest.mark.parametrize(
@@ -59,7 +61,7 @@ def test_estate_form_graph_validation(tmp_path: Path, case: str) -> None:
     shutil.copytree(CONTENT_DIR, content_dir)
     path = content_dir / "estate_forms.json"
     pack = json.loads(path.read_text())
-    basic, higher, _ = pack["forms"]
+    basic, higher = pack["forms"][:2]
     progression_path = content_dir / "progression.json"
     progression = json.loads(progression_path.read_text())
     if case == "transform_mobility":
@@ -110,3 +112,79 @@ def test_fixed_form_graph_loads(tmp_path: Path) -> None:
     assert [
         vote_weight(content.estate_form(f"fixed.{tier}")) for tier in range(1, 4)
     ] == [10, 11, 12]
+
+
+def test_valuation_goods_selector_gold_and_provider() -> None:
+    """Rebuild costs use the cheapest selector match and an injectable unit ask."""
+    content = load_content(CONTENT_DIR)
+    form = content.estate_form("form.fake_workshop")
+    expected = 20 + 2 * min(
+        item.reference_price
+        for item in content.items
+        if form.build_cost.goods[0].selector.matches(item)
+    )
+    value = estate_value(form.id, (), "realm.verdant_vale", content)
+    assert value.value == expected
+    assert value.path == (form.id,)
+    assert (
+        estate_value(
+            form.id, (), "realm.verdant_vale", content, lambda realm, item: 1
+        ).value
+        == 22
+    )
+    upgrade = content.upgrades[0]
+    upgraded = estate_value(form.id, (upgrade.id,), "realm.verdant_vale", content)
+    assert upgraded.value == expected + sum(
+        entry.qty * content.item(entry.item_id).reference_price
+        for entry in upgrade.cost
+    )
+
+
+@given(
+    value=st.integers(min_value=1, max_value=10**12),
+    treasury=st.integers(min_value=0, max_value=10**12),
+)
+def test_buy_surrender_always_loses_gold(value: int, treasury: int) -> None:
+    """Positive rebuild values cannot yield a profitable treasury round trip."""
+    paid = sale_price(value, 15)
+    received = min(value, treasury + paid)
+    assert received < paid
+    assert -paid + received + (treasury + paid - received) == treasury
+
+
+def test_valuation_records_cheapest_tier_one_path() -> None:
+    """Alternative rebuild roots and cyclic edges cannot inflate the chosen cost."""
+    from dataclasses import replace
+    from types import MappingProxyType
+
+    from app.content.schemas import BuildCost
+
+    content = load_content(CONTENT_DIR)
+    base = content.estate_form("form.fake_workshop")
+    target = base.model_copy(
+        update={"id": "fixed.target", "tier": 2, "build_cost": BuildCost(gold=7)}
+    )
+    expensive = base.model_copy(
+        update={
+            "id": "fixed.expensive",
+            "transforms_to": (target.id,),
+            "build_cost": BuildCost(gold=100),
+        }
+    )
+    cheap = base.model_copy(
+        update={
+            "id": "fixed.cheap",
+            "transforms_to": (target.id,),
+            "build_cost": BuildCost(gold=10),
+        }
+    )
+    target = target.model_copy(update={"transforms_to": (cheap.id,)})
+    forms = (expensive, cheap, target)
+    content = replace(
+        content,
+        estate_forms=forms,
+        _forms_by_id=MappingProxyType({form.id: form for form in forms}),
+    )
+    value = estate_value(target.id, (), "realm.verdant_vale", content)
+    assert value.value == 17
+    assert value.path == (cheap.id, target.id)
