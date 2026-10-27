@@ -553,3 +553,70 @@ async def get_market_quote(
     result = quote(ctx, item_id, side, quantity)
     session.commit()
     return MarketQuoteResponse(gold=result.gold, max_quantity=result.max_quantity)
+
+
+class TradeRequest(BaseModel):
+    """Whole-item intent with an all-or-nothing gold limit."""
+
+    model_config = ConfigDict(extra="forbid")
+    item_id: str
+    side: Literal["buy", "sell"]
+    quantity: int = Field(gt=0, strict=True)
+    limit_gold: int = Field(ge=0, strict=True)
+
+
+class GiftRequest(BaseModel):
+    """Positive integral gold to transfer to a realm."""
+
+    model_config = ConfigDict(extra="forbid")
+    gold: int = Field(gt=0, strict=True)
+
+
+@router.post("/realms/{realm_id}/market/trade", response_model=MarketQuoteResponse)
+async def trade_market(
+    realm_id: str,
+    body: TradeRequest,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> MarketQuoteResponse:
+    """Resolve and serialize holdings before executing a whole trade."""
+    from app.services.trade import trade
+
+    content = _content(request)
+    character = get_character(session, player.id)
+    _check_realm_id(session, content, realm_id)
+    resolve_character(session, character.id, now, content, {realm_id})
+    gold = trade(
+        session,
+        character,
+        _project_realm(session, realm_id),
+        content,
+        body.item_id,
+        body.side,
+        body.quantity,
+        body.limit_gold,
+    )
+    session.commit()
+    return MarketQuoteResponse(gold=gold, max_quantity=body.quantity)
+
+
+@router.post("/realms/{realm_id}/treasury/gift", status_code=204)
+async def gift_treasury(
+    realm_id: str,
+    body: GiftRequest,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> None:
+    """Give gold to the realm where the resolved character is present."""
+    from app.services.trade import gift
+
+    content = _content(request)
+    character = get_character(session, player.id)
+    _check_realm_id(session, content, realm_id)
+    resolve_character(session, character.id, now, content, {realm_id})
+    gift(session, character, _project_realm(session, realm_id), body.gold)
+    session.commit()

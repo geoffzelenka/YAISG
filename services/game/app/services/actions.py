@@ -119,9 +119,11 @@ def _load_state(
     )
 
 
-def load_character_state(session: Session, character_id: uuid.UUID) -> CharacterState:
+def load_character_state(
+    session: Session, character_id: uuid.UUID, content: ContentIndex = CONTENT
+) -> CharacterState:
     """Load engine state without acquiring a write lock or mutating it."""
-    return _load_state(session, character_id)
+    return _load_state(session, character_id, content)
 
 
 def _persist_state(
