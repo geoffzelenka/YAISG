@@ -52,7 +52,8 @@
 - Round 1 final SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passed: auth 15,
   game 115 passed / 1 PostgreSQL-only skip, client 23. All formatting, lint,
   type checks and build passed, including scripts-ci using game configuration.
-  Round 1 PostgreSQL execution remains for the orchestrator.
+  Orchestrator on 11fb758: PostgreSQL 16 game-ci 116 passed; PG db-reset green;
+  alembic check reports no drift.
 
 ## Removed
 
@@ -95,11 +96,11 @@ None.
   and rate settings; tier titles are placeholder content, not balance.
 - 08-client-skills-travel: tier fields are available in profile API/types;
   full skill/tier UI remains yours. Existing UI supports null at maximum level.
-- Orchestrator: run PostgreSQL 16 make ci with TEST_DATABASE_URL. For db-reset,
-  set separate GAME_DATABASE_URL and AUTH_DATABASE_URL disposable databases
-  (not TEST_DATABASE_URL); the role needs database creation privileges. Then
-  run each service's alembic upgrade head and verify content boot. The orchestrator
-  committed the initial implementation as a79d26a; round 1 edits remain uncommitted.
+- Any prompt that overrides the XP curve: build it with `XpCurve.model_validate`;
+  `model_copy(update=...)` and `model_construct` leave cached thresholds stale.
+- 36-hardening: GitHub CI does not run `make scripts-ci` (only local `make ci`
+  does); add a workflow step. db-reset's shared-database guard compares PG hosts
+  textually (`localhost` vs `127.0.0.1` are treated as distinct).
 
 ## New error codes
 
