@@ -48,7 +48,7 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _lock_character_and_load_action(
+def lock_character_and_load_action(
     session: Session, character_id: uuid.UUID
 ) -> ActiveActionRecord | None:
     """Acquire the per-character serialization lock before loading state."""
@@ -171,7 +171,7 @@ def resolve_character(
     additional_realm_ids: set[str] | None = None,
 ) -> Resolution:
     """Resolve and persist one character inside the caller's transaction."""
-    record = _lock_character_and_load_action(session, character_id)
+    record = lock_character_and_load_action(session, character_id)
     return resolve_locked_character(
         session, character_id, now, content, additional_realm_ids, record
     )

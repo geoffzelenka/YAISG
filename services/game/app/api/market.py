@@ -86,7 +86,7 @@ async def place_order(
     """Place one fully escrowed order and return its immediate fills."""
     character = get_character(session, player.id)
     content = request.app.state.content
-    prepare_market(session, character, now, content)
+    locked_realm_ids = prepare_market(session, character, now, content)
     order, matches = create_order(
         session,
         character,
@@ -96,6 +96,7 @@ async def place_order(
         body.unit_price,
         now,
         content,
+        locked_realm_ids,
     )
     response: dict[str, object] = {
         "order": order_response(order),
@@ -123,6 +124,8 @@ async def own_orders(
 async def book(
     item_id: str,
     request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
     session: DatabaseSession,
     depth: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict[str, object]:
@@ -137,6 +140,7 @@ async def book(
                 MarketOrder.item_id == item_id,
                 MarketOrder.side == side,
                 MarketOrder.status == "open",
+                MarketOrder.expires_at > now,
             )
             .group_by(price)
             .order_by(price.desc() if side == "buy" else price.asc())

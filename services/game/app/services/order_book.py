@@ -20,12 +20,16 @@ from app.models import (
     MarketOrder,
     RealmState,
 )
-from app.services.actions import load_character_state, resolve_character
+from app.services.actions import (
+    load_character_state,
+    lock_character_and_load_action,
+    resolve_locked_character,
+)
 
 
 def prepare_market(
     session: Session, character: Character, now: datetime, content: ContentIndex
-) -> None:
+) -> frozenset[str]:
     """Resolve the character and serialize the book before touching any orders.
 
     Sorted world realm locks also cover every possible seller tax recipient and
@@ -33,10 +37,17 @@ def prepare_market(
     coarse first implementation can later use per-good serialization, provided
     it preserves character -> sorted realms -> estate -> price-time order locks.
     """
+    record = lock_character_and_load_action(session, character.id)
     realm_ids = set(session.scalars(select(RealmState.id)))
-    resolve_character(
-        session, character.id, now, content, additional_realm_ids=realm_ids
+    resolve_locked_character(
+        session,
+        character.id,
+        now,
+        content,
+        additional_realm_ids=realm_ids,
+        record=record,
     )
+    return frozenset(realm_ids)
 
 
 def require_access(
@@ -73,6 +84,7 @@ def create_order(
     unit_price: int,
     now: datetime,
     content: ContentIndex,
+    locked_realm_ids: frozenset[str],
 ) -> tuple[MarketOrder, list[MarketMatch]]:
     """Escrow the full intent and sweep makers at their resting prices."""
     require_access(session, character, content)
@@ -100,7 +112,7 @@ def create_order(
     )
     session.add(order)
     session.flush()
-    matches = _sweep(session, order, now, content)
+    matches = _sweep(session, order, now, content, locked_realm_ids)
     session.flush()
     return order, matches
 
@@ -122,7 +134,11 @@ def _check_slots(session: Session, character: Character, content: ContentIndex) 
 
 
 def _sweep(
-    session: Session, order: MarketOrder, now: datetime, content: ContentIndex
+    session: Session,
+    order: MarketOrder,
+    now: datetime,
+    content: ContentIndex,
+    locked_realm_ids: frozenset[str],
 ) -> list[MarketMatch]:
     price = MarketOrder.unit_price
     crossing = (
@@ -134,6 +150,7 @@ def _sweep(
             MarketOrder.item_id == order.item_id,
             MarketOrder.side == ("sell" if order.side == "buy" else "buy"),
             MarketOrder.status == "open",
+            MarketOrder.expires_at > now,
             crossing,
         )
         .order_by(
@@ -155,7 +172,7 @@ def _sweep(
             .execution_options(populate_existing=True)
         )
         assert maker is not None
-        matches.append(_match(session, maker, order, now, content))
+        matches.append(_match(session, maker, order, now, content, locked_realm_ids))
     return matches
 
 
@@ -190,8 +207,14 @@ def _match(
     taker: MarketOrder,
     now: datetime,
     content: ContentIndex,
+    locked_realm_ids: frozenset[str],
 ) -> MarketMatch:
     buy, sell = (taker, maker) if taker.side == "buy" else (maker, taker)
+    if sell.realm_id not in locked_realm_ids:
+        # A realm can appear after enumeration. Estate and order locks are
+        # already held, so taking ANY new realm lock here violates §23.1.
+        # Roll back this request and let a fresh transaction enumerate it first.
+        raise api_error(409, "MARKET_RETRY", "The realm set changed; retry the order")
     quantity = min(maker.quantity_remaining, taker.quantity_remaining)
     gross = quantity * maker.unit_price
     tax, burned = seller_tax(gross, content.economy.market)
@@ -203,6 +226,9 @@ def _match(
         order.quantity_remaining -= quantity
         if order.quantity_remaining == 0:
             order.status = "collectable"
+            if order.fill_items == order.fill_gold == 0:
+                order.status = "closed"
+                order.closed_at = now
     realm = session.get(RealmState, sell.realm_id)
     assert realm is not None
     realm.treasury += tax - burned
