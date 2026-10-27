@@ -9,7 +9,8 @@ Paths below are repository-relative; a symbol or test identifies the evidence.
 Grouped rows cover related clauses with the same implementation and owner.
 Absorbing prompt means scheduled work that must address the finding; it does
 not mean that work has already been implemented or that its prompt text has
-been amended. No runtime code, content or design documents changed.
+been amended. The only runtime change fixes shipped GET /realms lock ordering, with a
+PostgreSQL regression test. No content or design documents changed.
 
 Build item 2: the orchestrator recorded `make ci` green on SQLite at 697dd2d:
 auth 15, game 99, client 22 tests, approximately 67 seconds total. Its PostgreSQL
@@ -30,11 +31,17 @@ above, not an independent green run here. No database or source failure is
 inferred from the blocked connection. Logs were kept in temporary files
 `/tmp/yaisg-sqlite.log` and `/tmp/yaisg-postgres.log` (not committed).
 
+Review round 1 verification: SQLite `make game-ci` passed Ruff/format/strict
+mypy and pytest (99 passed, 1 PostgreSQL-only test skipped, 6.73s). The new
+`test_get_realms_locks_in_id_order` still needs orchestrator execution on
+PostgreSQL 16; the earlier green baseline does not verify this fix.
+
 Severity: INFO is expected baseline or drift absorbable by named work;
 FIX-HERE requires a small shipped-behavior regression fix now; BLOCKER means
-a later prompt cannot absorb its false starting point. There are no FIX-HERE
-or BLOCKER findings. The transaction ordering discrepancy requires coordinated
-resolver/presence changes, so it is recorded for 06 rather than patched here.
+a later prompt cannot absorb its false starting point. One FIX-HERE finding
+(GET /realms lock ordering) is fixed with a PostgreSQL regression test. There
+are no BLOCKER findings. Other transaction ordering drift remains assigned to
+07-travel and 12-estate-ownership, with character locking carried into 06.
 
 | §ref | mark | status (OK / DRIFT / MISSING / PARTIAL) | evidence | absorbing prompt | severity (INFO / FIX-HERE / BLOCKER) |
 |---|---|---|---|---|---|
@@ -70,8 +77,8 @@ resolver/presence changes, so it is recorded for 06 rather than patched here.
 | §13.3 | SHIPPED | OK | `services/game/app/api/estates.py:transform_estate` implements INVALID_TRANSFORMATION, MISSING_INPUTS, ESTATE_BUSY, WOULD_ORPHAN_UPGRADES, excluding installed bonuses for destination cap; `tests/test_estates.py:test_transform_errors_and_shrinking_slots, test_transform_rejects_busy_estate_before_charging`. Costs currently transformation-edge items (future build_cost belongs to 11). | — | INFO |
 | §13.3 | SHIPPED | OK | `services/game/app/api/estates.py:_home_estate(lock=True), purchase_upgrade`; `tests/test_estates.py:test_last_slot_concurrency_installs_exactly_once` uses two sessions on PostgreSQL; SQLite branch checks final outcome, not real handler contention. | — | INFO |
 | §21, §23.1 | SHIPPED | OK | `services/game/app/db.py:configure_sqlite_engine` emits BEGIN IMMEDIATE for sqlite_write_intent; `services/actions.py:_lock_active_action`, `services/realms.py:prepare_sqlite_write` acquire writer intent before loading; PostgreSQL uses with_for_update(). | — | INFO |
-| §23.1 | SHIPPED | DRIFT | `services/game/app/services/actions.py:_lock_active_action` locks active action if present, character only when absent; `resolve_character` calls finalize_relocation (estate lock) before finalize_realms (realm locks). Target character→realm→estate ordering is not universal. Resolver/presence transaction work must establish it before adding mutations. | 06-resolver-presence | INFO |
-| §21, §23.1 | SHIPPED | OK | `services/game/app/services/realms.py:finalize_realms` locks sorted realm ids before finalizing; `api/realms.py:relocate` supplies origin/destination via resolve_character. | — | INFO |
+| §23.1 | SHIPPED | DRIFT | `services/game/app/services/actions.py:_lock_active_action` locks active action if present, character only when absent; `resolve_character` calls finalize_relocation (estate lock) before finalize_realms (realm locks). Target character→realm→estate ordering is not universal. 07 removes finalize_relocation; 12 Build 7 establishes character→realm→estate ordering. | 07-travel; 12-estate-ownership | INFO |
+| §21, §23.1 | SHIPPED | DRIFT | FIXED: GET /realms previously locked in content order, opposite to sorted multi-realm mutations (reviewer reproduced a PostgreSQL AB-BA deadlock). `services/game/app/api/realms.py:get_realms` now calls `services/realms.py:finalize_realms` before building responses in content order; `services/game/tests/test_estates.py:test_get_realms_locks_in_id_order` proves the higher-id row remains available while the request waits on the lower-id row. PostgreSQL test execution pending orchestrator verification. | 00-preflight | FIX-HERE |
 | §23.4 | SHIPPED | OK | `services/game/tests/test_engine.py:test_repeated_resolve_equals_one_large_resolve, test_recipe_input_conservation` use Hypothesis; `test_seeded_drop_frequency_is_close_to_declared_chance` uses seeded RNG. | — | INFO |
 | §23.4 | SHIPPED | OK | `services/game/tests/test_actions.py:test_concurrent_resolves_contend_and_do_not_double_reward` thread events verify blocking and one reward; `test_estates.py:test_last_slot_concurrency_installs_exactly_once`; both fixtures honor TEST_DATABASE_URL. | — | INFO |
 | §23.5 | SHIPPED | OK | `services/game/app/main.py:require_authentication`, `app/auth.py:verify_access_token`; auth `app/rate_limit.py:IpRateLimiter` and `tests/test_rate_limit.py`; boundary Pydantic schemas and route validation. Game mutation rate limits absent as intended until 36. | — | INFO |
@@ -89,7 +96,7 @@ resolver/presence changes, so it is recorded for 06 rather than patched here.
 | §11.1 | CHANGE | OK | `schemas.py:MapEdge, MapCost` undirected pair plus gold/items/time_ms; `engine/core.py:path_cost` chooses gold then time; no terrain/supply/Travel gates. | 07-travel | INFO |
 | §11.2 | CHANGE | OK | `services/game/app/models/character.py:Character.realm_id` residence cache synchronized from home estate; no current_realm_id or independent presence. | 06-resolver-presence | INFO |
 | §12.1–12.2 | CHANGE | OK | `schemas.py:DevelopmentNode, DevelopmentEdge`; `models/character.py:RealmState, RealmEdgeProgress` table realm_edge_progress (not realm_edges); node archetype/tags/modifiers/caps; edges progress_target/kind/transition_ms. | 09-development-graph | INFO |
-| §12.3 | CHANGE | OK | `models/character.py:RealmProject` realm_projects with totals/status; `schemas.py:Project` targets/edge awards; `api/realms.py:contribute` from anywhere, clamps contributions; no kickoff/build/erosion or project tiers in shipped schema. | 10-project-runs | INFO |
+| §12.3 | CHANGE | OK | `models/character.py:RealmProject` realm_projects with totals/status; `schemas.py:Project` targets/edge awards; `api/realms.py:contribute` from anywhere, clamps contributions; no kickoff/build/erosion or project tiers in shipped schema. | 09-development-graph; 10-project-runs | INFO |
 | §12.6 | CHANGE | OK | `services/game/app/services/realms.py:award_edge_progress, finalize_realm, finalize_realms` awards start transitions; finalization resets departed-node edges and closes unavailable projects; `tests/test_realms.py` exercises both. | 09-development-graph | INFO |
 | §13.1–13.2 | CHANGE | OK | `models/character.py:Estate` has relocating_to_realm_id, relocation_completes_at, level, upgrade_slots; `schemas.py:EstateForm` relocation_class/base_caps and dormant upkeep_profile/production_profile; `EstateFormsPack` edge transformations. | 11-estate-forms | INFO |
 | §4.2 realms, §15 | CHANGE | OK | `schemas.py:Realm.market_offers, MarketOffer` fixed buy/sell prices; `content/realms.json` offers only, no executing market routes. Remove field as templates are remodeled. | 09-development-graph | INFO |
@@ -126,7 +133,7 @@ resolver/presence changes, so it is recorded for 06 rather than patched here.
 | §23.2 | NEW | OK | Scheduled driver/advisory lock absent as expected: `services/game/app/main.py has no startup scheduler; pyproject.toml no scheduler dependency`. | 14-realm-tick | INFO |
 | §23.6 extended | NEW | OK | Economy/game counters absent as expected: `services/game/app/logging.py:log_request only request timing/status, no metrics backend`. | 36-hardening | INFO |
 | §24 extended | NEW | OK | New client panels absent as expected: `client/src/App.tsx route registry has shipped skills/profile/estate/realm/map only; no market/equipment/combat/keys/tutorial panels`. | 08-client-skills-travel; 21-client-realm-estate; 22-client-realm-market; 25-client-global-market; 30-client-equipment-combat; 35-client-keys-tutorial | INFO |
-| §10, §6.3 combat | NEW | PARTIAL | `content/skills.json` empty combat-monsters skill; `services/game/tests/test_actions.py:test_available_actions_reflect_realm_level_and_combat_placeholder`; `engine/core.py:CycleRewardStrategy` future-combat seam. No combatants, stats, hit/stance logic, pools or combat resolver. Replace placeholder content/model in 28; resolver in 29. | 28-combat-model; 29-combat-resolver | INFO |
+| §10, §6.3 combat | NEW | PARTIAL | `content/skills.json` empty combat-monsters skill; `services/game/tests/test_actions.py:test_available_actions_reflect_realm_level_and_combat_placeholder`; `engine/core.py:CycleRewardStrategy` future-combat seam. No combatants, stats, hit/stance logic, pools or combat resolver. 02 removes the placeholder skill; 06 removes CycleRewardStrategy; 28/29 build the combat model/resolver. | 02-content-model; 06-resolver-presence; 28-combat-model; 29-combat-resolver | INFO |
 | §4.2 tags | NEW | OK | `services/game/app/content/loader.py:PUBLIC_PACKS, load_content` and `content/` contain no tags pack; owning prompt creates it (world_seed remains private). | 05-tags | INFO |
 | §4.2 combatants | NEW | OK | `services/game/app/content/loader.py:PUBLIC_PACKS, load_content` and `content/` contain no combatants pack; owning prompt creates it (world_seed remains private). | 28-combat-model | INFO |
 | §4.2 exploration | NEW | OK | `services/game/app/content/loader.py:PUBLIC_PACKS, load_content` and `content/` contain no exploration pack; owning prompt creates it (world_seed remains private). | 31-keys | INFO |
@@ -135,7 +142,7 @@ resolver/presence changes, so it is recorded for 06 rather than patched here.
 | §4.2 tutorial | NEW | OK | `services/game/app/content/loader.py:PUBLIC_PACKS, load_content` and `content/` contain no tutorial pack; owning prompt creates it (world_seed remains private). | 34-tutorial | INFO |
 | §4.2 world_seed | NEW | OK | `services/game/app/content/loader.py:PUBLIC_PACKS, load_content` and `content/` contain no world_seed pack; owning prompt creates it (world_seed remains private). | 13-stores-lines | INFO |
 | Build 2 | CHECK | OK | `Makefile:ci`; local SQLite exit 0 at baseline 697dd2d: 15 auth, 99 game, 22 client; Ruff/format/mypy/eslint/prettier/tsc/Vitest/build passed. Timings above. | 00-preflight | INFO |
-| Build 2 | CHECK | DRIFT | Local PostgreSQL make ci could not connect: 25 fixture setup errors; direct socket probe PermissionError errno 1. Orchestrator PostgreSQL 16 game-ci green: 99 tests, ~15s at 697dd2d. Environment limitation, not a code regression. | 00-preflight | INFO |
+| Build 2 | CHECK | OK | Local PostgreSQL make ci could not connect: 25 fixture setup errors; direct socket probe PermissionError errno 1. Orchestrator PostgreSQL 16 game-ci green: 99 tests, ~15s at 697dd2d. Environment limitation, not design drift or a code regression; recorded baseline evidence accepted under the task environment notes. | 00-preflight | INFO |
 | §22 actions | CHANGE | OK | `services/game/app/api/actions.py` exposes GET /characters/me/actions/available, POST /characters/me/action, GET /characters/me/action, DELETE /characters/me/action; consolidated v0.8 /actions/start,poll,stop paths are future work. | 06-resolver-presence | INFO |
 | §22 profile/map/realms | CHANGE | OK | `services/game/app/api/characters.py:ProfileResponse` old skills/estate/caps; `api/realms.py:get_map, RealmResponse` old topology and development progress, without v0.8 gauge, stores, active run or vote. | 08-client-skills-travel; 21-client-realm-estate; 22-client-realm-market | INFO |
 | §22 realm detail additions | NEW | OK | `services/game/app/api/realms.py` has no /realms/{id}/estates or /realms/{id}/tags/{tag_id} routes; holdings/tag-detail APIs absent as expected. | 09-development-graph; 12-estate-ownership | INFO |

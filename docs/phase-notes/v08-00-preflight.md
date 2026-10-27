@@ -4,7 +4,19 @@
   `v08/00-preflight`; read AGENTS.md, CLAUDE.md, design v0.8 and the vision.
 - Added `docs/v08/baseline-audit.md`: 102 evidence rows, with 94 OK, 6 DRIFT,
   1 MISSING and 1 PARTIAL. Every non-OK row names its absorbing prompt.
-  No FIX-HERE or BLOCKER findings; no runtime, content or test changes.
+  One FIX-HERE finding fixed; no BLOCKER findings or content changes.
+  Counts describe baseline findings: DRIFT includes the fixed lock-order bug;
+  the sandbox PostgreSQL limitation is OK with an environment note.
+- Fixed §23.1 shipped GET /realms lock ordering (review B1): call
+  finalize_realms to acquire locks in id order, then return content order.
+  Added test_get_realms_locks_in_id_order: PostgreSQL confirms the request is
+  blocked on the lower realm via pg_blocking_pids; a third session acquires
+  the higher realm NOWAIT. The old route fails this check. Bounded waits and
+  a statement timeout prevent hangs; SQLite skips this PostgreSQL-only test.
+- Round 1 SQLite `PATH=$PWD/.venv/bin:$PATH make game-ci` passed Ruff lint,
+  format check, strict mypy and pytest: 99 passed, 1 skipped, three existing
+  datetime-adapter warnings, pytest 6.73s. PostgreSQL regression execution
+  remains pending with the orchestrator because sandbox access is blocked.
 - Added `docs/v08/codebase-map.md`: service/engine/content/client locations,
   extension recipes, fixtures, clock/RNG injection, database setup and checks.
 - Added `docs/v08/progress.md`: all 38 prompts; 00 ready for review, others
@@ -36,9 +48,6 @@ under `prompts/yaisg-v08-prompts/` was left untouched and excluded from staging.
 - §5.1, §2.1 R1: the baseline generator accumulates each exponential step into
   cumulative thresholds. Recorded its actual formula instead of interpreting
   the reconciliation table's shorthand as a direct cumulative exponential.
-- §3 versus §23.2: recorded the absent scheduler as shipped-label drift absorbed
-  by 14-realm-tick, which explicitly introduces the scheduled job. Did not add
-  a scheduler in a documentation-only prompt.
 
 ## Deviations
 
@@ -46,18 +55,6 @@ under `prompts/yaisg-v08-prompts/` was left untouched and excluded from staging.
   run was possible in this sandbox. The attempted run and permission probe are
   recorded; PostgreSQL acceptance evidence is the orchestrator's supplied green
   baseline, as explicitly permitted by the task's environment notes.
-- §6.3: existing resolve loops per cycle, although the document calls it
-  closed-form. Preserved behavior and assigned resolver work to 06.
-- §6.4: no requirements-lost stop exists; assigned to 05-tags.
-- §23.1: active-action locking substitutes for a character lock when an action
-  exists, and relocation finalization locks the estate before realm locks.
-  Assigned coordinated transaction work to 06-resolver-presence; not a small
-  isolated FIX-HERE correction.
-- §4.1: schemas forbid extras and are frozen but permit Pydantic coercion and
-  have shallow nested-dictionary immutability. Recorded strict-type ambiguity
-  as drift for 02-content-model to resolve with schema work.
-- §27: retired market_tax_pct survives in the schema/client types and display
-  labels, with no active tax engine behavior. Assigned removal to 03-bonus-model.
 
 ## Ratification needed
 
@@ -71,25 +68,31 @@ strict-schema interpretation should be made explicit in 02's phase note.
   tested offline-cap and reward-claim semantics while resetting the schema.
 - 02-content-model: explicitly settle strict type coercion and nested frozen
   schema expectations; old Skill has no category; old Project has targets and
-  awards, not project tiers. Current table is realm_edge_progress, not
-  realm_edges. See map before assuming names from design shorthand.
+  awards, not project tiers. Remove the empty combat-monsters skill in 02.
+  Current table is realm_edge_progress, not realm_edges. See map before assuming names from design shorthand.
 - 03-bonus-model: remove retired market_tax_pct across schema and client, and
   replace additive cycle_time_pct stacking; preserve inert-upgrade exclusion.
 - 05-tags: add requirements-lost stopping when revalidating active actions;
   existing upgrade restriction field is realm_tags, not requires_realm_tags.
-- 06-resolver-presence: establish character → sorted realms → estate locking
-  across existing mutation paths, replace reward-strategy seam as required,
-  and account for the old per-cycle resolver and old character-scoped action
-  routes when wiring the consolidated API.
-- 07-travel: remove relocation fields/routes/path-cost mechanics end to end.
+- 06-resolver-presence: replace active-action serialization with consistent
+  character locking and remove CycleRewardStrategy as required; the shipped
+  resolver loops per cycle despite §6.3 calling it closed-form. Also
+  account for the old character-scoped action routes when wiring the
+  consolidated API.
+- 07-travel / 12-estate-ownership: address the estate-before-realm lock drift.
+  07 removes finalize_relocation and relocation fields/routes/path-cost
+  mechanics; 12 Build 7 establishes character → realm → estate locking.
 - 09-development-graph / 10-project-runs: replace edge awards and old project
   totals; remove realm market_offers during template remodel.
 - 11-estate-forms / 12-estate-ownership: preserve decoupled ownership/history
   and upgrade/transform error contracts while replacing relocation and slots.
-- 14-realm-tick: add the scheduler from scratch; dependency addition still
-  needs human approval under AGENTS.md. No dependency was added here.
-- 28-combat-model / 29-combat-resolver: replace the empty combat-monsters skill
-  and future-combat reward seam; no combat mechanics currently exist.
+- 14-realm-tick: add the scheduler from scratch. §3 labels it shipped, but
+  §23.2 correctly treats it as new; no scheduler exists in the baseline.
+  Dependency addition still needs human approval under AGENTS.md. No
+  dependency was added here.
+- 28-combat-model / 29-combat-resolver: build combat mechanics after 02 removes
+  the placeholder skill and 06 removes the reward-strategy seam; no combat
+  mechanics currently exist.
 - Every later prompt: read the audit's individual absorbing-prompt column;
   PostgreSQL fixtures drop metadata in the dedicated test database, and only
   action/estate fixtures select TEST_DATABASE_URL. Do not claim that all tests

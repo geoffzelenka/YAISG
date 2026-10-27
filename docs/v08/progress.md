@@ -6,7 +6,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 
 | # | Prompt | Title | Status | Branch | Merge commit | Summary |
 |---|---|---|---|---|---|---|
-| 00 | `00-preflight` | Baseline alignment audit | ready for review | v08/00-preflight | — | Baseline mapped; drift assigned; SQLite green, recorded PostgreSQL green; no blockers. |
+| 00 | `00-preflight` | Baseline alignment audit | ready for review | v08/00-preflight | — | Baseline mapped; FIX-HERE realm lock ordering fixed with PostgreSQL regression test; other drift assigned; no blockers; PostgreSQL fix verification pending. |
 | 01 | `01-foundation` | Schema reset, XP curve, levels to 100, tiers, zero gold | pending | — | — | — |
 | 02 | `02-content-model` | Goods, actions, selectors, categories, caps | pending | — | — | — |
 | 03 | `03-bonus-model` | Source groups, multiplication, XP cap, proficiency, taper | pending | — | — | — |
