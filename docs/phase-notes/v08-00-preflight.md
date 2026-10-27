@@ -15,8 +15,9 @@
   a statement timeout prevent hangs; SQLite skips this PostgreSQL-only test.
 - Round 1 SQLite `PATH=$PWD/.venv/bin:$PATH make game-ci` passed Ruff lint,
   format check, strict mypy and pytest: 99 passed, 1 skipped, three existing
-  datetime-adapter warnings, pytest 6.73s. PostgreSQL regression execution
-  remains pending with the orchestrator because sandbox access is blocked.
+  datetime-adapter warnings, pytest 6.73s. Orchestrator ran PostgreSQL 16
+  `make game-ci` at 786e5bf: 100 passed. With only the old `get_realms`
+  restored, `test_get_realms_locks_in_id_order` fails with LockNotAvailable.
 - Added `docs/v08/codebase-map.md`: service/engine/content/client locations,
   extension recipes, fixtures, clock/RNG injection, database setup and checks.
 - Added `docs/v08/progress.md`: all 38 prompts; 00 ready for review, others
@@ -69,6 +70,10 @@ strict-schema interpretation should be made explicit in 02's phase note.
 - 02-content-model: explicitly settle strict type coercion and nested frozen
   schema expectations; old Skill has no category; old Project has targets and
   awards, not project tiers. Remove the empty combat-monsters skill in 02.
+  `test_get_realms_locks_in_id_order` only detects content-order locking
+  because content lists realms out of id order (verdant_vale before
+  ashen_reach); if realm content changes, keep the realms out of id order in
+  that test (e.g. via content overrides) and use first/last sorted ids.
   Current table is realm_edge_progress, not realm_edges. See map before assuming names from design shorthand.
 - 03-bonus-model: remove retired market_tax_pct across schema and client, and
   replace additive cycle_time_pct stacking; preserve inert-upgrade exclusion.
