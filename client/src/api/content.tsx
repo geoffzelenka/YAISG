@@ -214,6 +214,7 @@ type ContentPacks = {
       fail_cooldown_hours: number
     }
     tick: { per_day: number; max_catchup: number }
+    estate: { sale_markup_pct: number }
   }
   skills: { skills: Skill[] }
   items: { items: Item[] }

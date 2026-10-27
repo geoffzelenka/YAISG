@@ -13,5 +13,8 @@
   "tick": {
     "per_day": 24,
     "max_catchup": 72
+  },
+  "estate": {
+    "sale_markup_pct": 15
   }
 }
