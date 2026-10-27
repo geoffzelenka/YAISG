@@ -16,7 +16,7 @@ UnitAsk = Callable[[str, str], int | None]
 
 
 def not_selling(realm_id: str, item_id: str) -> None:
-    """Placeholder unit-ask provider until realm pricing is available."""
+    """Default provider for valuations without a market snapshot."""
     return None
 
 

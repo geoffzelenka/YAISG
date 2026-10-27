@@ -558,7 +558,7 @@ async def test_map_is_public_and_returns_content_graph(
         assert node["node"]
         assert node["tier"] == 1
         assert node["decay_stage"] == "fed"
-        assert node["treasury_band"] is None
+        assert node["treasury_band"] in {"0", "1", "2", "3", "4"}
         assert node["transition_pending"] is False
         assert "treasury" not in node
 

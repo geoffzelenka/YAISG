@@ -23,7 +23,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 13 | `13-stores-lines` | Stores, demand lines, world seed | done | v08/13-stores-lines | 8099216 | Store due math, demand lines with most-specific membership, reserve/cap, private versioned world seed created once at boot |
 | 14 | `14-realm-tick` | The realm tick and the scheduled job | done | v08/14-realm-tick | 24ab9fc | Tick steps 0-10 (reserve priority, pro-rata, production, spoilage, caps, realm-funded overlay), APScheduler liveness job under PG advisory lock |
 | 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | done | v08/15-decay | fddd09a | Realm/estate gauges and stages, bounded shedding, regression with restamp, estate decay chain with tombstoned history, make seed-check |
-| 16 | `16-realm-pricing` | Realm market pricing and visibility | pending | — | — | — |
+| 16 | `16-realm-pricing` | Realm market pricing and visibility | ready for review | `v08/16-realm-pricing` | — | Decimal integral quotes, funded budgets, treasury bands and market visibility |
 | 17 | `17-realm-trade` | Realm trade and treasury gift | pending | — | — | — |
 | 18 | `18-mint-gold` | Mint and the gold ledger | pending | — | — | — |
 | 19 | `19-votes` | Realm upgrade votes and transitions | pending | — | — | — |

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Literal, cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
@@ -24,7 +24,7 @@ from app.models import (
     RealmTag,
 )
 from app.services.actions import resolve_character
-from app.services.estates import persisted_estate_value
+from app.services.estates import estate_ask_provider, persisted_estate_value
 from app.services.projects import active_run, contribute_character, kickoff
 from app.services.realms import (
     as_utc,
@@ -417,12 +417,13 @@ async def get_realm_estates(
     state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if state is None and realm_id not in {realm.id for realm in content.realms}:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    unit_ask = estate_ask_provider(session, state, content)
     result = [
         RealmEstateResponse(
             id=estate.id,
             owner=estate.owner_character_id or "realm-owned",
             sale_price=sale_price(
-                persisted_estate_value(session, estate, content).value,
+                persisted_estate_value(session, estate, content, unit_ask).value,
                 content.economy.estate.sale_markup_pct,
             )
             if estate.owner_character_id is None
@@ -440,3 +441,115 @@ async def get_realm_estates(
     ]
     session.commit()
     return result
+
+
+class MarketMemberResponse(BaseModel):
+    """One alternative item bid sharing the line budget."""
+
+    item_id: str
+    spot_bid: str | None
+    funded_quantity: int
+    funded_total: int
+
+
+class MarketLineResponse(BaseModel):
+    """Demand and its best funded member, in milli-line-units."""
+
+    line_key: str
+    selector: dict[str, object]
+    stock: int
+    reserve: int
+    cap: int
+    draw_per_day: int
+    spot_bid: str | None
+    funded_quantity: int
+    funded_total: int
+    days_of_cover: float | None
+    members: list[MarketMemberResponse]
+
+
+class MarketSaleResponse(BaseModel):
+    """Whole items offered from surplus stores."""
+
+    item_id: str
+    quantity: int
+    spot_ask: int
+
+
+class MarketShortfallResponse(BaseModel):
+    """Unfunded reserve deficit in milli-line-units."""
+
+    line_key: str
+    missing_milli: int
+
+
+class MarketResponse(BaseModel):
+    """Public market projection, excluding private balances and budgets."""
+
+    lines: list[MarketLineResponse]
+    for_sale: list[MarketSaleResponse]
+    shortfalls: list[MarketShortfallResponse]
+    decay_stage: str
+    gauge_days: float
+    treasury_band: str | None
+
+
+class MarketQuoteResponse(BaseModel):
+    """Integrated gold total and current physical/funding limit."""
+
+    gold: int
+    max_quantity: int
+
+
+@router.get("/realms/{realm_id}/market", response_model=MarketResponse)
+async def get_market(
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+    player: CurrentPlayer,
+) -> MarketResponse:
+    """Inspect any realm market from any location."""
+    from app.services.market import market_view
+
+    content = _content(request)
+    realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    if realm is None:
+        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    recompute_lines(session, realm, content)
+    session.flush()
+    result = MarketResponse.model_validate(market_view(session, realm, content))
+    session.commit()
+    return result
+
+
+@router.get("/realms/{realm_id}/market/quote", response_model=MarketQuoteResponse)
+async def get_market_quote(
+    realm_id: str,
+    item_id: str,
+    side: Literal["buy", "sell"],
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+    player: CurrentPlayer,
+    quantity: int = Query(gt=0),
+) -> MarketQuoteResponse:
+    """Return an integrated quote and the currently executable maximum."""
+    from app.engine.market import quote
+    from app.services.market import market_contexts
+
+    content = _content(request)
+    realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    if realm is None:
+        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    recompute_lines(session, realm, content)
+    session.flush()
+    contexts = market_contexts(session, realm, content)
+    if item_id not in contexts:
+        raise api_error(404, "UNKNOWN_ITEM", "The item does not exist")
+    line, ctx = contexts[item_id]
+    if side == "sell" and line is None:
+        raise api_error(400, "NO_DEMAND", "The realm has no demand for this item")
+    result = quote(ctx, item_id, side, quantity)
+    session.commit()
+    return MarketQuoteResponse(gold=result.gold, max_quantity=result.max_quantity)

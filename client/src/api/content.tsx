@@ -209,6 +209,14 @@ type ContentPacks = {
   economy: {
     reserve_days: number
     cap_days: number
+    market?: {
+      f: number
+      c: number
+      k: number
+      m: number
+      band_days: [number, number, number, number]
+      band_hysteresis_pct: number
+    }
     warehouse_value_cap: number
     decay: { faltering_factor: number }
     transition: { duration_days: number }

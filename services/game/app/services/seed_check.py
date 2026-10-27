@@ -23,6 +23,7 @@ class SeedReport:
     treasury: int
     stores: dict[str, int]
     reached_faltering: bool
+    arrival_bids_check: str = "skipped: tutorial pack is not available"
 
 
 def check_seed(content: ContentIndex, *, days: int = 30) -> list[SeedReport]:
@@ -73,7 +74,8 @@ def main() -> None:
     for report in reports:
         print(
             f"{report.realm_id}: gauge={report.gauge:.6f} "
-            f"treasury={report.treasury} stores_milli={report.stores}"
+            f"treasury={report.treasury} stores_milli={report.stores} "
+            f"arrival_bids={report.arrival_bids_check}"
         )
     if any(report.reached_faltering for report in reports):
         raise SystemExit("Seed check failed: a realm reached Faltering")

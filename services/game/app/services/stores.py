@@ -1,13 +1,16 @@
 """Recompute materialized demand under the caller's realm lock."""
 
+from dataclasses import replace
 from datetime import datetime, timedelta
+from decimal import Decimal, localcontext
 from fractions import Fraction
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
-from app.content.schemas import ActionInput, DecayStage
+from app.content.schemas import ActionInput, DecayStage, DevelopmentNode, Tag
+from app.engine.market import PRECISION, allocate_budgets, band_from_upkeep
 from app.engine.stores import Demand, Line, derive_lines, mint_demands, project_demands
 from app.engine.tags import TagHolder, economy_tags
 from app.models import Estate, RealmLine, RealmState, RealmStore, RealmTag
@@ -70,6 +73,35 @@ def recompute_lines(
         transition_days(realm),
         mint_demands(),
     )
+    previous = {
+        r.line_key: r.budget_gold
+        for r in session.scalars(
+            select(RealmLine).where(RealmLine.realm_id == realm.id)
+        )
+    }
+    if previous:
+        lines = tuple(
+            replace(line, budget_gold=previous.get(line.key, 0)) for line in lines
+        )
+    elif not realm.isolated and realm.treasury_band is None:
+        lines = allocate_budgets(lines, realm.treasury, content)
+    if not realm.isolated and realm.treasury_band is None:
+        holders: tuple[DevelopmentNode | Tag, ...] = (node, *tags)
+        with localcontext() as precision:
+            precision.prec = PRECISION
+            daily = sum(
+                Decimal(str(upkeep.per_day))
+                * next(
+                    i.reference_price
+                    for i in content.items
+                    if upkeep.selector.matches(i)
+                )
+                for holder in holders
+                for upkeep in holder.upkeep
+            )
+            realm.treasury_band = band_from_upkeep(
+                realm.treasury, Decimal(daily), None, content.economy.market
+            )
     return replace_lines(session, realm.id, lines)
 
 
