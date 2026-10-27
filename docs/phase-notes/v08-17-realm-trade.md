@@ -72,3 +72,18 @@ None.
 - Reused NO_DEMAND, NOT_FOR_SALE, MISSING_INPUTS, NOT_PRESENT, UNKNOWN_ITEM,
   UNKNOWN_REALM and the shared boundary-validation envelope.
 - No dependencies added.
+
+### Orchestrator verification and review hand-offs
+
+- Verified by the orchestrator on e824193:
+  - SQLite `make ci`: auth 15, game 456 passed / 13 skipped, client 41.
+  - PostgreSQL 16 game-ci: 469 passed.
+  - PostgreSQL `make db-reset` and `alembic check`: both clean.
+  - The app boots.
+  - Codex hit a usage limit during its own final self-check.
+- 24-market-lifecycle (world conservation suite):
+  - test_trade_errors_are_atomic (test_trade.py:117) rolls back before it compares snapshots, so it cannot detect a trade that moved state and then raised.
+  - Add atomicity checks taken after the raise and before the rollback. Cover buy-side PRICE_MOVED and a physical-limit code.
+  - Extend the conservation property to two realms and two items.
+- 22-client-realm-market: NO_DEMAND is 409 from trade but 400 from the quote endpoint (api/realms.py:552). Handle both statuses, or align them, and record the outcome.
+- 18-mint-gold: UNFUNDED_DEMAND builds its HTTPException envelope inline (trade.py:64). Extend `api_error` with an `extra=` payload and route this error and any new ones through it.
