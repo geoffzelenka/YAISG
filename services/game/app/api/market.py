@@ -1,15 +1,19 @@
 """Global player market reads and atomic slot mutations."""
 
+import base64
+import binascii
 import uuid
+from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from app.api.actions import get_character
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
+from app.errors import api_error
 from app.models import MarketMatch, MarketOrder
 from app.services.order_book import (
     cancel_order,
@@ -19,6 +23,7 @@ from app.services.order_book import (
     prepare_market,
     validate_good,
 )
+from app.services.realms import as_utc
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -56,24 +61,25 @@ def order_response(order: MarketOrder) -> dict[str, object]:
     }
 
 
-def match_response(match: MarketMatch) -> dict[str, object]:
-    """Report immediate executions at actual maker prices."""
+def match_response(match: MarketMatch, side: str) -> dict[str, object]:
+    """Report execution prices and the caller's side without participant ids."""
     return {
-        name: getattr(match, name)
-        for name in (
-            "id",
-            "buyer_character_id",
-            "seller_character_id",
-            "maker_order_id",
-            "taker_order_id",
-            "item_id",
-            "quantity",
-            "unit_price",
-            "tax_gold",
-            "burned_gold",
-            "tax_realm_id",
-            "matched_at",
-        )
+        "side": side,
+        **{
+            name: getattr(match, name)
+            for name in (
+                "id",
+                "maker_order_id",
+                "taker_order_id",
+                "item_id",
+                "quantity",
+                "unit_price",
+                "tax_gold",
+                "burned_gold",
+                "tax_realm_id",
+                "matched_at",
+            )
+        },
     }
 
 
@@ -102,7 +108,7 @@ async def place_order(
     )
     response: dict[str, object] = {
         "order": order_response(order),
-        "fills": [match_response(m) for m in matches],
+        "fills": [match_response(m, body.side) for m in matches],
     }
     session.commit()
     return response
@@ -122,21 +128,67 @@ async def own_orders(
     return {"orders": [order_response(o) for o in orders]}
 
 
+def history_cursor(match: MarketMatch) -> str:
+    """Encode the stable descending (timestamp, UUID) page boundary."""
+    value = f"{as_utc(match.matched_at).isoformat()}|{match.id}"
+    return base64.urlsafe_b64encode(value.encode()).decode().rstrip("=")
+
+
+def parse_history_cursor(value: str) -> tuple[datetime, uuid.UUID]:
+    """Validate an opaque cursor without loading an order or match row."""
+    try:
+        raw = base64.b64decode(
+            value + "=" * (-len(value) % 4), altchars=b"-_", validate=True
+        )
+        timestamp, identifier = raw.decode().split("|")
+        at = datetime.fromisoformat(timestamp)
+        if at.utcoffset() is None:
+            raise ValueError("timestamp requires a timezone")
+        return as_utc(at), uuid.UUID(identifier)
+    except (ValueError, OverflowError, UnicodeError, binascii.Error):
+        raise api_error(
+            422, "INVALID_CURSOR", "Invalid market history cursor"
+        ) from None
+
+
 @router.get("/history/me")
 async def own_history(
-    player: CurrentPlayer, session: DatabaseSession
+    player: CurrentPlayer,
+    session: DatabaseSession,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    before: Annotated[str | None, Query(max_length=256)] = None,
 ) -> dict[str, object]:
-    """Read durable executions for either participant, from any location."""
+    """Page durable private executions, newest first, from any location."""
     character = get_character(session, player.id)
-    matches = session.scalars(
-        select(MarketMatch)
-        .where(
-            (MarketMatch.buyer_character_id == character.id)
-            | (MarketMatch.seller_character_id == character.id)
-        )
-        .order_by(MarketMatch.matched_at.desc(), MarketMatch.id.desc())
+    statement = select(MarketMatch).where(
+        (MarketMatch.buyer_character_id == character.id)
+        | (MarketMatch.seller_character_id == character.id)
     )
-    return {"matches": [match_response(match) for match in matches]}
+    if before is not None:
+        at, identifier = parse_history_cursor(before)
+        statement = statement.where(
+            or_(
+                MarketMatch.matched_at < at,
+                and_(MarketMatch.matched_at == at, MarketMatch.id < identifier),
+            )
+        )
+    matches = list(
+        session.scalars(
+            statement.order_by(
+                MarketMatch.matched_at.desc(), MarketMatch.id.desc()
+            ).limit(limit + 1)
+        )
+    )
+    page = matches[:limit]
+    return {
+        "matches": [
+            match_response(
+                match, "buy" if match.buyer_character_id == character.id else "sell"
+            )
+            for match in page
+        ],
+        "next_cursor": history_cursor(page[-1]) if len(matches) > limit else None,
+    }
 
 
 @router.get("/book/{item_id}")
