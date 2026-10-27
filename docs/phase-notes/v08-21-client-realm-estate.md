@@ -22,11 +22,11 @@
   its consumed costs; transformation retains its confirmation.
 - Build/buy confirmation names the mobile estate, larder and all installed
   upgrades lost under D8. Surrender names ownership/assets transferred and
-  either the current payout or zero-payout donation. Presence state and map
-  travel links accompany estate/realm controls.
+  either the uncapped payout upper bound or zero-payout donation. Presence
+  state and map travel links accompany estate/realm controls.
 - Extended the private home-estate response with larder milli-unit holdings and
-  a nullable current surrender payout. Prices/payouts are explicitly rechecked
-  at execution. Existing mutations and lock order remain authoritative.
+  a nullable uncapped surrender_value for fixed estates. Prices/payments are
+  rechecked at execution. Existing mutations and lock order remain authoritative.
 - Added typed development reads/mutations and invalidation of realm, estate,
   profile/inventory/action and map queries after successful changes. Countdown
   expiry refreshes realm state through the existing shared cosmetic clock.
@@ -35,17 +35,37 @@
   build confirmation asset losses/cancellation, RESERVE_SHORT on both entry
   points, and the earlier Prompt 08 completed-edge arrival toast hand-off.
 - Added test_kickoff_availability_reports_gates_without_payment and extended
-  test_build_buy_surrender_and_larder to verify the private projection, capped
-  payout and empty replacement larder. Database fixtures honor TEST_DATABASE_URL.
+  test_build_buy_surrender_and_larder to verify the private projection, uncapped
+  value independent of treasury, actual capped payment and empty replacement
+  larder. Database fixtures honor TEST_DATABASE_URL.
 - Disposable SQLite db-reset and subsequent upgrade to head succeeded.
 - SQLite PATH=$PWD/.venv/bin:$PATH make ci passes: auth 15, game 575
-  with 18 database-specific skips, client 55. Formatting, lint, strict typing,
+  with 18 database-specific skips, client 60. Formatting, lint, strict typing,
   production build, migration/reset tests, scripts and content lint pass.
-  git diff --check is clean.
+
+- Review round 1: removed the treasury-derived surrender preview. Regression
+  asserts the exposed value remains unchanged at treasury 3 while actual
+  surrender conservation still holds. Audited the new response fields:
+  larder comes from estate holdings, surrender_value from asset valuation,
+  project availability from existing gates; none returns a treasury-derived
+  amount. Existing treasury bands remain categorical health projections.
+- Review round 1: replaced estate/realm navigation anchors with router Links.
+  Estate travel passes its realm as a destination query parameter; MapPanel
+  validates it against visible destinations through TravelForm before selecting.
+  Purchases display form names, required response fields have no dead
+  fallbacks, ProjectRun uses a top-level type import and Estate field order
+  matches its response. Successful confirmed vote casts reset mutation state.
+- Added estate-to-map preselection, invalid/current-destination rejection,
+  upper-bound surrender/donation confirmation and successful vote reset client
+  tests. Extended kickoff availability with a
+  resolved empty-demand-line RESERVE_SHORT assertion and unchanged wallet,
+  inventory and attempt count.
 
 ## Removed
 
-None. No existing tests or gameplay features removed.
+- Removed the treasury-derived surrender_payout response field, replacing it
+  with the uncapped surrender_value. Actual surrender payment is unchanged.
+- No existing tests or gameplay features removed.
 
 ## Design ambiguities resolved
 
@@ -56,9 +76,14 @@ None. No existing tests or gameplay features removed.
   upkeep, shown separately for each selector. The UI explains shared goods for
   overlapping selectors and that realm supplies/spoilage change actual cover.
   Zero daily upkeep displays “No upkeep”; this is not a simulated survival timer.
-- §24 / §13.4–13.5: expose only the surrender payout, not the underlying
-  valuation or treasury. Confirmation labels it a current snapshot because
-  lazy resolution and competing activity can change the execution-time amount.
+- §24 / §13.4–13.5 / §15.5: expose the uncapped estate surrender value,
+  independent of treasury funding. Confirmation promises only “up to” that
+  amount and explains that the realm pays less if its treasury cannot cover it,
+  rechecked on surrender. A capped preview would disclose the raw treasury
+  whenever funding falls below the estate value; it is not returned.
+- §24 / §12.5: the realm projection does not expose vote_cooldown_until.
+  The server remains authoritative for vote-call cooldowns; rejected calls
+  display the existing VOTE_COOLDOWN message and code.
 
 ## Deviations
 

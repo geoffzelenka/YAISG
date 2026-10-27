@@ -81,7 +81,7 @@ class EstateResponse(BaseModel):
     decay_stage: str
     gauge: float
     larder: dict[str, int]
-    surrender_payout: int | None
+    surrender_value: int | None
     status: str
     upgrade_slots: int
     installed_upgrades: list[InstalledUpgradeSummary]
@@ -196,10 +196,7 @@ def _estate_response(
                 select(EstateLarder).where(EstateLarder.estate_id == estate.id)
             )
         },
-        surrender_payout=min(
-            persisted_estate_value(session, estate, content).value,
-            realm.treasury if realm else 0,
-        )
+        surrender_value=persisted_estate_value(session, estate, content).value
         if form.mobility == "fixed"
         else None,
         status=estate.status,

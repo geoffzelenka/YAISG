@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 
+import type { ProjectRun } from './development'
 import type { MapEdge, Modifier, Selector } from './content'
 import { gameRequest, readApiError } from './http'
 
@@ -16,7 +17,7 @@ export type RealmDemandLine = {
 }
 
 export type RealmDetail = {
-  active_run: import('./development').ProjectRun | null
+  active_run: ProjectRun | null
   lines: RealmDemandLine[]
   id: string
   name: string

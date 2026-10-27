@@ -5,9 +5,6 @@ import type { CapBonus, ItemQuantity, Modifier } from './content'
 import { gameRequest, readApiError } from './http'
 
 export type Estate = {
-  gauge: number
-  larder: Record<string, number>
-  surrender_payout: number | null
   id: string
   form: {
     id: string
@@ -25,6 +22,9 @@ export type Estate = {
   mobility: 'mobile' | 'fixed'
   tags: string[]
   decay_stage: string
+  gauge: number
+  larder: Record<string, number>
+  surrender_value: number | null
   status: string
   upgrade_slots: number
   installed_upgrades: {

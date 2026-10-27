@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import type { CharacterProfile } from '../../api/characters'
 import type { Content } from '../../api/content'
@@ -143,7 +144,10 @@ export function DevelopmentControls({
         {present
           ? 'You are present in this realm'
           : 'Presence required to contribute or kick off'}{' '}
-        · <a href="/realm/map">Travel</a>
+        ·{' '}
+        <Link to={`/realm/map?destination=${encodeURIComponent(realm.id)}`}>
+          Travel
+        </Link>
       </p>
       <h3>Tags</h3>
       {realm.node.tags.map((t) => (
@@ -363,7 +367,7 @@ export function DevelopmentControls({
           {e.sale_price !== null && `· Sale: ${e.sale_price} gold`}
         </p>
       ))}
-      <a href="/estate">Manage estate / buy</a>
+      <Link to="/estate">Manage estate / buy</Link>
       {confirmation && (
         <div role="dialog" aria-modal="true" aria-label="Confirm realm action">
           <p>{confirmation.message}</p>
@@ -371,7 +375,10 @@ export function DevelopmentControls({
             disabled={action.isPending}
             onClick={() =>
               action.mutate(confirmation, {
-                onSuccess: () => setConfirmation(null),
+                onSuccess: () => {
+                  setConfirmation(null)
+                  if (confirmation.path.endsWith('/vote')) action.reset()
+                },
               })
             }
           >

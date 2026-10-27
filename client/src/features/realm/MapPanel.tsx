@@ -1,8 +1,11 @@
+import { useSearchParams } from 'react-router-dom'
 import type { CharacterProfile } from '../../api/characters'
 import { useRealmMap } from '../../api/realms'
 import { TravelForm } from './TravelForm'
 
 export function MapPanel({ profile }: { profile: CharacterProfile }) {
+  const [search] = useSearchParams()
+  const destination = search.get('destination') ?? ''
   const map = useRealmMap()
   if (map.isPending) return <p>Loading map…</p>
   if (map.isError) return <p className="text-red-300">Unable to load map.</p>
@@ -10,7 +13,8 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
     <section>
       <h2 className="text-3xl font-bold">Realm map</h2>
       <TravelForm
-        key={profile.character.current_realm_id}
+        key={`${profile.character.current_realm_id}:${destination}`}
+        initialDestination={destination}
         profile={profile}
         nodes={map.data.nodes}
       />
@@ -18,8 +22,8 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
       <ul className="mt-4">
         {map.data.nodes.map((node) => (
           <li key={node.realm_id}>
-            {node.name} · Tier {node.tier} · {node.decay_stage}
-            {node.gauge !== undefined && ` · Gauge: ${node.gauge} days`}
+            {node.name} · Tier {node.tier} · {node.decay_stage}· Gauge:{' '}
+            {node.gauge} days
             {node.treasury_band && ` · Treasury: ${node.treasury_band}`}
             {node.transition_pending && ' · Transition pending'}
           </li>

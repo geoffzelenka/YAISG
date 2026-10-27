@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Content } from '../../api/content'
 import type { Estate } from '../../api/estates'
 import { useCharacterProfile } from '../../api/characters'
@@ -32,22 +33,29 @@ export function EstateLifecycle({
   const present = current === estate.realm_id
   const mobile = estate.form.mobility === 'mobile'
   const source = content.estate_forms.forms.find((f) => f.id === estate.form.id)
+  const formName = (id: string) =>
+    content.estate_forms.forms.find((f) => f.id === id)?.name ?? id
   const lost = `Your ${estate.form.name}, its larder and these upgrades will be lost: ${estate.installed_upgrades.map((u) => u.name).join(', ') || 'none'}.`
   return (
     <section>
       <p>
-        {estate.form.mobility} · {estate.decay_stage} · Gauge:{' '}
-        {estate.gauge ?? 0} days
+        {estate.form.mobility} · {estate.decay_stage} · Gauge: {estate.gauge}{' '}
+        days
       </p>
       <p>
         {present ? 'Present at estate' : 'Away from estate; presence required'}{' '}
-        · <a href="/realm/map">Travel to estate realm {estate.realm_id}</a>
+        ·{' '}
+        <Link
+          to={`/realm/map?destination=${encodeURIComponent(estate.realm_id)}`}
+        >
+          Travel to estate realm {estate.realm_id}
+        </Link>
       </p>
       <h3>Transforms graph</h3>
       {content.estate_forms.forms.map((f) => (
         <p key={f.id}>
           {f.name} →{' '}
-          {(f.transforms_to ?? [])
+          {f.transforms_to
             .map(
               (id) =>
                 content.estate_forms.forms.find((t) => t.id === id)?.name ?? id,
@@ -60,7 +68,7 @@ export function EstateLifecycle({
         Cover is shown per upkeep line; overlapping selectors share goods. Realm
         supplies and spoilage can change actual cover.
       </p>
-      {Object.entries(estate.larder ?? {}).map(([id, amount]) => (
+      {Object.entries(estate.larder).map(([id, amount]) => (
         <p key={id}>
           {content.items.items.find((i) => i.id === id)?.name ?? id}:{' '}
           {amount / 1000}
@@ -69,7 +77,7 @@ export function EstateLifecycle({
       {(source?.upkeep ?? []).map((line, index) => {
         const stock = content.items.items
           .filter((item) => matches(item, line.selector))
-          .reduce((sum, item) => sum + (estate.larder?.[item.id] ?? 0), 0)
+          .reduce((sum, item) => sum + (estate.larder[item.id] ?? 0), 0)
         return (
           <p key={index}>
             {selectorLabel(line.selector)}: {coverDays(stock, line.per_day)} of
@@ -163,11 +171,11 @@ export function EstateLifecycle({
                   setConfirm({
                     path: `/estates/${encodeURIComponent(e.id)}/buy`,
                     body: {},
-                    message: `Buy ${e.form} for current price ${e.sale_price} gold? Price is rechecked at purchase. ${lost}`,
+                    message: `Buy ${formName(e.form)} for current price ${e.sale_price} gold? Price is rechecked at purchase. ${lost}`,
                   })
                 }
               >
-                Buy {e.form} · {e.sale_price} gold
+                Buy {formName(e.form)} · {e.sale_price} gold
               </button>
             ))}
         </>
@@ -178,13 +186,13 @@ export function EstateLifecycle({
             <button
               key={String(donate)}
               disabled={
-                !present || action.isPending || estate.surrender_payout == null
+                !present || action.isPending || estate.surrender_value == null
               }
               onClick={() =>
                 setConfirm({
                   path: '/estates/me/surrender',
                   body: { donate },
-                  message: `Give up ownership of ${estate.form.name}, its larder and upgrades (${estate.installed_upgrades.map((u) => u.name).join(', ') || 'none'}) to the realm and receive a basic mobile estate. ${donate ? 'Donation: no payout.' : `Current payout: ${estate.surrender_payout} gold; rechecked on surrender.`}`,
+                  message: `Give up ownership of ${estate.form.name}, its larder and upgrades (${estate.installed_upgrades.map((u) => u.name).join(', ') || 'none'}) to the realm and receive a basic mobile estate. ${donate ? 'Donation: no payout.' : `Up to ${estate.surrender_value} gold; the realm pays less if its treasury cannot cover it; rechecked on surrender.`}`,
                 })
               }
             >

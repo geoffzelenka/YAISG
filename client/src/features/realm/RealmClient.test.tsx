@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, within } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
@@ -104,7 +105,9 @@ let client: QueryClient
 function wrapper({ children }: PropsWithChildren) {
   return (
     <QueryClientProvider client={client}>
-      <ContentProvider>{children}</ContentProvider>
+      <MemoryRouter>
+        <ContentProvider>{children}</ContentProvider>
+      </MemoryRouter>
     </QueryClientProvider>
   )
 }
@@ -220,7 +223,7 @@ describe('realm client interactions', () => {
                 position: { x: 100, y: 100 },
                 gauge: 2.5,
               },
-              { realm_id: 'realm.two', name: 'Two', position: null },
+              { realm_id: 'realm.two', name: 'Two', position: null, gauge: 0 },
             ],
             edges: [
               {

@@ -980,6 +980,8 @@ async def test_kickoff_availability_reports_gates_without_payment(
 ) -> None:
     """Availability shares mutation gates and never consumes kickoff holdings."""
     from app.main import app
+    from app.models import RealmStore
+    from app.services.stores import derive_realm_lines
 
     client, factory, clock, headers = action_client
     project = app.state.content.project(PROJECT)
@@ -997,6 +999,34 @@ async def test_kickoff_availability_reports_gates_without_payment(
         hero = session.scalar(select(Character))
         assert hero is not None
         hero_id = hero.id
+        realm = session.get(RealmState, REALM)
+        assert realm is not None
+        node = app.state.content.development_node(realm.current_node_id)
+        node = node.model_copy(
+            update={
+                "upkeep": (
+                    TagUpkeep(selector=Selector(item="item.fake_sprig"), per_day=1),
+                )
+            }
+        )
+        monkeypatch.setattr(
+            app.state,
+            "content",
+            replace(
+                app.state.content,
+                _nodes_by_id=MappingProxyType(
+                    {**app.state.content._nodes_by_id, node.id: node}
+                ),
+            ),
+        )
+        session.add(
+            RealmStore(
+                realm_id=REALM, item_id="item.fake_sprig", quantity_milli=1000000
+            )
+        )
+        session.add(
+            Inventory(character_id=hero_id, item_id="item.fake_sprig", quantity=7)
+        )
         wallet = session.get(Currency, hero_id)
         assert wallet is not None
         wallet.gold = 10
@@ -1009,6 +1039,38 @@ async def test_kickoff_availability_reports_gates_without_payment(
         wallet = session.get(Currency, hero_id)
         assert wallet is not None and wallet.gold == gold
         assert session.scalar(select(RealmProjectRun)) is None
+        realm = session.get(RealmState, REALM)
+        assert realm is not None
+        line = derive_realm_lines(session, realm, app.state.content)[0]
+        for stock in session.scalars(
+            select(RealmStore).where(RealmStore.realm_id == REALM)
+        ):
+            if line.selector.matches(app.state.content.item(stock.item_id)):
+                stock.quantity_milli = 0
+        session.commit()
+        inventory_before = {
+            row.item_id: row.quantity
+            for row in session.scalars(
+                select(Inventory).where(Inventory.character_id == hero_id)
+            )
+        }
+        run_count_before = len(list(session.scalars(select(RealmProjectRun))))
+    short = await client.get(url, headers=headers)
+    assert short.json()[PROJECT]["code"] == "RESERVE_SHORT"
+    with factory() as session:
+        wallet = session.get(Currency, hero_id)
+        assert wallet is not None and wallet.gold == gold
+        assert {
+            row.item_id: row.quantity
+            for row in session.scalars(
+                select(Inventory).where(Inventory.character_id == hero_id)
+            )
+        } == inventory_before
+        assert len(list(session.scalars(select(RealmProjectRun)))) == run_count_before
+        for stock in session.scalars(
+            select(RealmStore).where(RealmStore.realm_id == REALM)
+        ):
+            stock.quantity_milli = 1000000
         wallet.gold = 0
         session.commit()
     unavailable = await client.get(url, headers=headers)

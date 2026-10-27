@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
@@ -47,6 +48,7 @@ const packs: Record<string, unknown> = {
       { id: 'form.camp', upgrade_slots: 3, transforms_to: ['form.next'] },
       {
         id: 'form.next',
+        transforms_to: [],
         name: 'Next Camp',
         upgrade_slots: 5,
         build_cost: {
@@ -111,7 +113,9 @@ const packs: Record<string, unknown> = {
 function wrapper({ children }: PropsWithChildren) {
   return (
     <QueryClientProvider client={new QueryClient()}>
-      <ContentProvider>{children}</ContentProvider>
+      <MemoryRouter>
+        <ContentProvider>{children}</ContentProvider>
+      </MemoryRouter>
     </QueryClientProvider>
   )
 }
@@ -139,6 +143,9 @@ describe('estate panel', () => {
                   : path === '/characters/me/inventory'
                     ? { items: [{ item_id: 'item.wood', quantity: 5 }] }
                     : {
+                        gauge: 0,
+                        larder: {},
+                        surrender_value: null,
                         id: 'estate',
                         form: {
                           id: 'form.camp',

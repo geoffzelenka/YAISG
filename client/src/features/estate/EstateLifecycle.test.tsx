@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   cleanup,
@@ -24,7 +25,7 @@ it('build confirmation lists the mobile estate upgrades before any payment', asy
             ? { character: { current_realm_id: 'home' } }
             : input.endsWith('/inventory')
               ? { items: [] }
-              : [],
+              : [{ id: 'sale', form: 'house', sale_price: 25 }],
         ),
       ),
     ),
@@ -33,6 +34,8 @@ it('build confirmation lists the mobile estate upgrades before any payment', asy
   const client = new QueryClient()
   const estate = {
     realm_id: 'home',
+    gauge: 0,
+    surrender_value: null,
     form: { id: 'tent', name: 'Mobile Tent', mobility: 'mobile' },
     installed_upgrades: [{ name: 'Roof' }, { name: 'Bell' }],
     larder: { wood: 7500 },
@@ -64,11 +67,21 @@ it('build confirmation lists the mobile estate upgrades before any payment', asy
   } as unknown as Content
   render(
     <QueryClientProvider client={client}>
-      <EstateLifecycle estate={estate} content={content} />
+      <MemoryRouter>
+        <EstateLifecycle estate={estate} content={content} />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   await screen.findByText(/Present at estate/)
   expect(screen.getByText('wood: 2.50 days of cover')).toBeInTheDocument()
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Buy House · 25 gold' }),
+  )
+  expect(screen.getByRole('dialog')).toHaveTextContent(
+    'Buy House for current price 25 gold',
+  )
+  expect(screen.getByRole('dialog')).not.toHaveTextContent('Buy house')
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   fireEvent.click(screen.getByRole('button', { name: 'Build House' }))
   const dialog = screen.getByRole('dialog')
   expect(dialog).toHaveTextContent('12 gold')
