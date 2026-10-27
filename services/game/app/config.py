@@ -21,3 +21,9 @@ CONTENT_DIR = (
     if _CONTENT_DIR is not None
     else Path(__file__).resolve().parents[3] / "content"
 )
+
+OPERATOR_AUTH_USER_IDS = frozenset(
+    value.strip()
+    for value in os.getenv("GAME_OPERATOR_AUTH_USER_IDS", "").split(",")
+    if value.strip()
+)

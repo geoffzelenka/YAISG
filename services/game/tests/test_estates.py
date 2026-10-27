@@ -1479,7 +1479,6 @@ async def test_ownership_flow_preconditions(
     derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-# Keep seeded player balances within PostgreSQL currency.gold's 32-bit range.
 @given(
     value=st.integers(min_value=1, max_value=10**8),
     treasury=st.integers(min_value=0, max_value=10**8),

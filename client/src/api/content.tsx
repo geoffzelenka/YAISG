@@ -218,6 +218,7 @@ type ContentPacks = {
       band_hysteresis_pct: number
     }
     warehouse_value_cap: number
+    coinage_multiple: number
     decay: { faltering_factor: number }
     transition: { duration_days: number }
     project: {

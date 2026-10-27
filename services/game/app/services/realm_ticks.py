@@ -14,14 +14,16 @@ from app.content.schemas import ActionInput, DecayStage, DevelopmentNode, Tag
 from app.engine.decay import advance_gauge, advance_shed, gauge_stage
 from app.engine.market import PRECISION, allocate_budgets, band_from_upkeep
 from app.engine.projects import erode_project
-from app.engine.realm_ticks import shares, take
+from app.engine.realm_ticks import coinage, consume_value, shares, take
 from app.engine.stores import (
     Demand,
     Line,
     derive_lines,
     due,
     line_key,
+    line_weight,
     membership,
+    mint_demands,
     project_demands,
     warehouse_cap,
 )
@@ -32,6 +34,7 @@ from app.models import (
     EstateLarder,
     EstateOwnershipHistory,
     EstateUpgrade,
+    GoldLedger,
     RealmContribution,
     RealmProjectRun,
     RealmState,
@@ -57,6 +60,7 @@ class RealmTickContext:
     """
 
     active_run: RealmProjectRun | None
+    ledger: list[GoldLedger] = field(default_factory=list)
     estates: list[Estate] = field(default_factory=list)
     stores: dict[str, int] = field(default_factory=dict)
     store_rows: dict[str, RealmStore] = field(default_factory=dict)
@@ -180,6 +184,7 @@ def persist_context(
         session.delete(tag)
     for upgrade in context.removed_upgrades:
         session.delete(upgrade)
+    session.add_all(context.ledger)
     session.add_all(context.replacements)
     session.add_all(context.replacement_histories)
     session.add_all(context.acquired_tags)
@@ -292,6 +297,23 @@ def step_4_realm_upkeep(
             context.realm_due[key] = context.realm_due.get(key, 0) + amount
             context.realm_unmet[key] = context.realm_unmet.get(key, 0) + amount - paid
 
+    for demand in mint_demands(context.tags):
+        key = line_key(demand.selector)
+        amount = due(
+            int(demand.daily_milli),
+            tick_index(now, content),
+            content.economy.tick.per_day,
+        )
+        consumed = consume_value(context.stores, demand.selector, amount, content)
+        context.realm_due[key] = context.realm_due.get(key, 0) + amount
+        context.realm_unmet[key] = context.realm_unmet.get(key, 0) + amount - consumed
+        gold = coinage(consumed, content.economy.coinage_multiple)
+        if gold:
+            realm.treasury += gold
+            context.ledger.append(
+                GoldLedger(cause="mint", amount=gold, realm_id=realm.id, at=now)
+            )
+
 
 def step_5_projects(
     context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
@@ -360,11 +382,16 @@ def step_7_caps(
             for i in context.stores
             if membership(content.item(i), context.lines) == line
         ]
-        excess = max(0, sum(context.stores[i] for i in items) - line.cap)
+        excess = max(
+            0,
+            sum(context.stores[i] * line_weight(content.item(i), line) for i in items)
+            - line.cap,
+        )
         for item_id in sorted(items, key=lambda i: (-context.stores[i], i)):
-            lost = min(excess, context.stores[item_id])
+            weight = line_weight(content.item(item_id), line)
+            lost = min((excess + weight - 1) // weight, context.stores[item_id])
             context.stores[item_id] -= lost
-            excess -= lost
+            excess = max(0, excess - lost * weight)
     for item_id in context.stores:
         if membership(content.item(item_id), context.lines) is None:
             context.stores[item_id] = min(
@@ -599,6 +626,7 @@ def step_10_lines(
         context.stores,
         content,
         transition_days(realm),
+        mint_demands(context.tags),
     )
     context.line_weights = {
         line.key: context.line_weights[line.key]
@@ -625,7 +653,16 @@ def step_10_lines(
             )
             realm.treasury_band = band_from_upkeep(
                 realm.treasury,
-                Decimal(upkeep_value),
+                Decimal(upkeep_value)
+                + sum(
+                    (
+                        Decimal(d.daily_milli.numerator)
+                        / Decimal(d.daily_milli.denominator)
+                        / 1000
+                        for d in mint_demands(context.tags)
+                    ),
+                    Decimal(0),
+                ),
                 realm.treasury_band,
                 content.economy.market,
             )

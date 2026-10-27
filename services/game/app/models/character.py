@@ -71,7 +71,7 @@ class Currency(Base):
     character_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
     )
-    gold: Mapped[int] = mapped_column(Integer, nullable=False)
+    gold: Mapped[int] = mapped_column(BigInteger, nullable=False)
     premium: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     __table_args__ = (
         CheckConstraint("gold >= 0", name="ck_currency_gold_nonnegative"),

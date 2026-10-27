@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.middleware.base import RequestResponseEndpoint
 
 from app.api.actions import router as actions_router
+from app.api.admin import router as admin_router
 from app.api.characters import router as characters_router
 from app.api.content import PUBLIC_CONTENT_PATHS
 from app.api.content import router as content_router
@@ -58,6 +59,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="YAISG Game", lifespan=lifespan)
 app.state.content = CONTENT
 app.middleware("http")(log_request)
+app.include_router(admin_router)
 app.include_router(content_router)
 app.include_router(players_router)
 app.include_router(characters_router)

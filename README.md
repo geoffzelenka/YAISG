@@ -154,6 +154,7 @@ Docker Compose applies both migration chains automatically before starting the A
 | Variable | Used by | Default |
 | --- | --- | --- |
 | `GAME_DATABASE_URL` | Game API | `sqlite:///./data/game.db` |
+| `GAME_OPERATOR_AUTH_USER_IDS` | Game API | Empty (comma-separated auth user UUIDs allowed to call `GET /admin/economy`) |
 | `AUTH_DATABASE_URL` | Auth API | `sqlite:///./data/auth.db` |
 | `CORS_ORIGINS` | Both APIs | `http://localhost:5173` |
 | `GIT_SHA` | Both APIs | `dev` |

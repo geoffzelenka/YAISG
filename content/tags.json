@@ -38,6 +38,16 @@
           "value": 2
         }
       ]
+    },
+    {
+      "id": "access.fake_mint",
+      "name": "Fake Mint",
+      "kind": "access",
+      "effects": {
+        "mint": {
+          "value_per_day": 120
+        }
+      }
     }
   ]
 }

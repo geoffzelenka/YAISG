@@ -296,6 +296,15 @@ def test_postgres_concurrent_world_creation_once(realm_session: Session) -> None
             seed.treasury for seed in CONTENT.world_seed.realms
         )
 
+        from app.models import GoldLedger
+
+        assert session.scalar(select(func.sum(GoldLedger.amount))) == sum(
+            seed.treasury for seed in CONTENT.world_seed.realms
+        )
+        assert session.scalar(select(func.count()).select_from(GoldLedger)) == len(
+            CONTENT.world_seed.realms
+        )
+
 
 @pytest.mark.parametrize(
     "case",

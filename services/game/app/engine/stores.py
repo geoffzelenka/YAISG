@@ -84,9 +84,20 @@ def project_demands(
     )
 
 
-def mint_demands() -> tuple[Demand, ...]:
-    """Prompt 18 supplies value-measured mint appetite here."""
-    return ()
+def mint_demands(tags: tuple[Tag, ...]) -> tuple[Demand, ...]:
+    """Return the largest active mint as one reference-value appetite."""
+    rate = max(
+        (t.effects.mint.value_per_day for t in tags if t.effects.mint), default=0
+    )
+    if not rate:
+        return ()
+    return (
+        Demand(
+            Selector.model_validate({"class": "bullion"}),
+            Fraction(str(rate)) * 1000,
+            True,
+        ),
+    )
 
 
 def derive_lines(

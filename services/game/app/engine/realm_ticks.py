@@ -47,3 +47,29 @@ def shares(owed: list[int], available: int) -> list[int]:
     for i in order[: available - sum(result)]:
         result[i] += 1
     return result
+
+
+def consume_value(
+    stock: dict[str, int], selector: Selector, amount: int, content: ContentIndex
+) -> int:
+    """Consume at most a reference-value milli-budget, cheapest goods first.
+
+    A remainder smaller than one milli-unit of the next good stays unmet rather
+    than overdrawing the tick's authored appetite.
+    """
+    consumed = 0
+    for item_id in sorted(stock, key=lambda i: (content.item(i).reference_price, i)):
+        item = content.item(item_id)
+        if not selector.matches(item):
+            continue
+        quantity = min(stock[item_id], (amount - consumed) // item.reference_price)
+        stock[item_id] -= quantity
+        consumed += quantity * item.reference_price
+    return consumed
+
+
+def coinage(consumed_value_milli: int, multiple: float) -> int:
+    """Floor this tick's minted gold using exact content-decimal arithmetic."""
+    from fractions import Fraction
+
+    return int(Fraction(consumed_value_milli, 1000) * Fraction(str(multiple)))

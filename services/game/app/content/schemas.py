@@ -189,6 +189,13 @@ class Item(ContentModel):
     stack_limit: int = Field(default=2_147_483_647, gt=0)
     tags: tuple[str, ...] = ()
 
+    @model_validator(mode="after")
+    def validate_bullion(self) -> "Item":
+        """Keep the bullion flag and selector class equivalent."""
+        if self.bullion != ("bullion" in self.classes):
+            raise ValueError("bullion flag must match membership in the bullion class")
+        return self
+
 
 class ItemsPack(ContentModel):
     """Top-level items content pack."""
@@ -655,6 +662,7 @@ class MarketConfig(ContentModel):
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
+    coinage_multiple: float = Field(default=1.2, ge=0, allow_inf_nan=False)
     reserve_days: float = Field(default=3, ge=0, allow_inf_nan=False)
     cap_days: float = Field(default=10, gt=0, allow_inf_nan=False)
     warehouse_value_cap: int = Field(gt=0)

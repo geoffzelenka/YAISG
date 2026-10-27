@@ -2,7 +2,6 @@
 
 from typing import Literal
 
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -61,15 +60,11 @@ def trade(
             raise api_error(409, "STORES_FULL", "The trade exceeds the line cap")
         maximum = quote(ctx, item_id, side, quantity).max_quantity
         if quantity > maximum:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": {
-                        "code": "UNFUNDED_DEMAND",
-                        "message": "The realm cannot fund the trade",
-                        "max_quantity": maximum,
-                    }
-                },
+            raise api_error(
+                409,
+                "UNFUNDED_DEMAND",
+                "The realm cannot fund the trade",
+                extra={"max_quantity": maximum},
             )
         if stack is None or stack.quantity < quantity:
             raise api_error(

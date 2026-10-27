@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
-from app.models import Estate, RealmState, RealmStore, WorldState
+from app.models import Estate, GoldLedger, RealmState, RealmStore, WorldState
 from app.services.stores import recompute_lines
 
 
@@ -49,6 +49,11 @@ def create_world(session: Session, content: ContentIndex, now: datetime) -> bool
             last_tick_at=now,
         )
         session.add(realm)
+        session.add(
+            GoldLedger(
+                cause="world_seed", amount=seed.treasury, realm_id=realm.id, at=now
+            )
+        )
         session.flush()
         session.add_all(
             RealmStore(

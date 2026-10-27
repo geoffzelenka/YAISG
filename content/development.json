@@ -34,7 +34,8 @@
       ],
       "cap_bonuses": [],
       "projects": [
-        "project.verdant_cardboard"
+        "project.verdant_cardboard",
+        "project.fake_mint"
       ],
       "actions": [
         "gathering.fake_sprigs",
