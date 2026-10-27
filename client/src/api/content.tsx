@@ -200,6 +200,12 @@ type ContentPacks = {
   economy: {
     decay: { faltering_factor: number }
     transition: { duration_days: number }
+    project: {
+      idle_grace_days: number
+      erosion_pct_per_day: number
+      fail_cooldown_hours: number
+    }
+    tick: { per_day: number; max_catchup: number }
   }
   skills: { skills: Skill[] }
   items: { items: Item[] }

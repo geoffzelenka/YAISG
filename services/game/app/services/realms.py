@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from enum import IntEnum
 from typing import Literal
 
 from sqlalchemy import select
@@ -25,7 +26,12 @@ def prepare_sqlite_write(session: Session) -> None:
     session.connection(execution_options={"sqlite_write_intent": True})
 
 
-def _lock_realm(session: Session, realm_id: str) -> RealmState | None:
+def _lock_realm(
+    session: Session,
+    realm_id: str,
+    now: datetime,
+    content: ContentIndex,
+) -> RealmState | None:
     statement = (
         select(RealmState)
         .where(RealmState.id == realm_id)
@@ -33,6 +39,30 @@ def _lock_realm(session: Session, realm_id: str) -> RealmState | None:
     )
     if session.get_bind().dialect.name != "sqlite":
         statement = statement.with_for_update()
+    state = session.scalar(statement)
+    if state is not None:
+        return state
+    try:
+        template = content.realm(realm_id)
+    except KeyError:
+        return None
+    # Before world seeding (Prompt 13), travel can reach untouched templates.
+    # The conflict-safe insert serializes concurrent first touches as well.
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    insert = sqlite_insert if session.get_bind().dialect.name == "sqlite" else pg_insert
+    session.execute(
+        insert(RealmState)
+        .values(
+            id=realm_id,
+            template_id=template.id,
+            isolated=template.isolated,
+            current_node_id=template.starting_node_id,
+            last_tick_at=now,
+        )
+        .on_conflict_do_nothing(index_elements=["id"])
+    )
     return session.scalar(statement)
 
 
@@ -132,10 +162,11 @@ def finalize_realms(
 ) -> dict[str, RealmState | None]:
     """Lock realm rows in stable order, then finalize every due transition."""
     states = {
-        realm_id: _lock_realm(session, realm_id) for realm_id in sorted(realm_ids)
+        realm_id: _lock_realm(session, realm_id, now, content)
+        for realm_id in sorted(realm_ids)
     }
     return {
-        realm_id: _finalize_locked_realm(session, state, now, content)
+        realm_id: resolve_realm(session, state, now, content)
         for realm_id, state in states.items()
     }
 
@@ -151,6 +182,101 @@ def finalize_realm(
     """Lazily and atomically complete a due realm-node transition."""
     if prepare_sqlite:
         prepare_sqlite_write(session)
-    return _finalize_locked_realm(
-        session, _lock_realm(session, realm_id), now, content or CONTENT
+    return resolve_realm(
+        session,
+        _lock_realm(session, realm_id, now, content or CONTENT),
+        now,
+        content or CONTENT,
     )
+
+
+def vote_close_event(session: Session, realm: RealmState) -> datetime | None:
+    """Prompt 19 supplies the next vote close time."""
+    return None
+
+
+def close_due_vote(
+    session: Session, realm: RealmState, due: datetime, content: ContentIndex
+) -> None:
+    """Prompt 19 closes the vote at its due time, possibly starting a transition."""
+
+
+class TimedEventKind(IntEnum):
+    """Stable tie order for simultaneous realm events."""
+
+    VOTE = 0
+    BUILD = 1
+    TRANSITION = 2
+
+
+def _finalize_timed_events(
+    session: Session,
+    realm: RealmState,
+    now: datetime,
+    content: ContentIndex,
+) -> None:
+    from app.services.projects import active_run
+
+    while True:
+        run = active_run(session, realm.id)
+        events: list[tuple[datetime, TimedEventKind]] = []
+        vote_due = vote_close_event(session, realm)
+        if vote_due is not None:
+            events.append((_as_utc(vote_due), TimedEventKind.VOTE))
+        if run is not None and run.build_completes_at is not None:
+            events.append((_as_utc(run.build_completes_at), TimedEventKind.BUILD))
+        if realm.pending_transition is not None:
+            events.append(
+                (
+                    _as_utc(
+                        datetime.fromisoformat(realm.pending_transition["completes_at"])
+                    ),
+                    TimedEventKind.TRANSITION,
+                )
+            )
+        if not events or min(events)[0] > now:
+            break
+        due, kind = min(events)
+        if kind == TimedEventKind.VOTE:
+            close_due_vote(session, realm, due, content)
+        elif kind == TimedEventKind.BUILD:
+            assert run is not None
+            push_realm_tag(
+                session, realm, content.project(run.project_id).grants_tag, due, run.id
+            )
+            run.status = "complete"
+        else:
+            _finalize_locked_realm(session, realm, due, content)
+        session.flush()
+
+
+def resolve_realm(
+    session: Session,
+    realm: RealmState | None,
+    now: datetime,
+    content: ContentIndex,
+) -> RealmState | None:
+    """Finalize exact timed events, then bounded whole ticks under a held lock.
+
+    The caller owns persistence and the transaction. Events are reconsidered
+    after each completion because a vote can schedule another due event.
+    """
+    from app.services.realm_ticks import TICK_STEPS
+
+    if realm is None:
+        return None
+    now = _as_utc(now)
+    _finalize_timed_events(session, realm, now, content)
+    interval = timedelta(days=1) / content.economy.tick.per_day
+    ticks = min(
+        (now - _as_utc(realm.last_tick_at)) // interval,
+        content.economy.tick.max_catchup,
+    )
+    for _ in range(max(0, ticks)):
+        tick_at = _as_utc(realm.last_tick_at) + interval
+        if not realm.isolated:
+            for step in TICK_STEPS:
+                step(session, realm, tick_at, content)
+        realm.last_tick_at = tick_at
+        session.flush()
+    return realm

@@ -16,7 +16,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 07 | `07-travel` | Map edges, journeys, the Travel skill | done | v08/07-travel | b6a2192 | Map edges with terrain/level/one-way; Dijkstra routing with exact tie-breaks; step-wise journeys (TravelResolver) with supplies via pay_selector and flat Travel XP; relocation removed; offline equals online. |
 | 08 | `08-client-skills-travel` | Client: skills, tiers, travel | done | v08/08-client-skills-travel | 87f63a7 | Skill panels with server tier/title, effective values and locked reasons; travel preview/start form with relocate mode; journey progress from server meta; resolver details in the reward feed without empty-journey toasts. |
 | 09 | `09-development-graph` | Nodes, tag stack, transitions | done | v08/09-development-graph | defeb6e | Development nodes, realm tag stack with persistent seq, timed transitions; old edges/projects/contributions removed |
-| 10 | `10-project-runs` | Project runs and resolve_realm | pending | — | — | — |
+| 10 | `10-project-runs` | Project runs and resolve_realm | ready for review | `v08/10-project-runs` | — | Project lifecycle, credits, exact timed events and bounded realm ticks |
 | 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | pending | — | — | — |
 | 12 | `12-estate-ownership` | Build, buy, surrender, valuation, larder | pending | — | — | — |
 | 13 | `13-stores-lines` | Stores, demand lines, world seed | pending | — | — | — |
