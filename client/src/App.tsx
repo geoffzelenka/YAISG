@@ -161,7 +161,7 @@ export function ProfilePanel({ profile }: { profile: CharacterProfile }) {
       {realm.data?.pending_transition && (
         <TransitionBanner
           realmId={realm.data.id}
-          toNodeId={realm.data.pending_transition.to_node_id}
+          toNodeId={realm.data.pending_transition.to_node}
           completesAt={realm.data.pending_transition.completes_at}
         />
       )}
@@ -175,7 +175,7 @@ export function ProfilePanel({ profile }: { profile: CharacterProfile }) {
         <div className="mt-5 rounded-lg border border-slate-700 bg-slate-900 p-4">
           <strong>
             {realm.data.node.name}
-            {currentNode ? ` · ${currentNode.archetype}` : ''}
+            {currentNode ? ` · ${currentNode.realm_type}` : ''}
           </strong>
           <p className="mt-1 text-sm text-slate-400">
             Active modifiers:{' '}

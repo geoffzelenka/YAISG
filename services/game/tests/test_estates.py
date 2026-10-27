@@ -12,7 +12,6 @@ from collections.abc import AsyncGenerator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import MappingProxyType
 from unittest.mock import AsyncMock
 
 import jwt
@@ -43,9 +42,6 @@ from app.models import (
     EstateUpgrade,
     Inventory,
     Player,
-    RealmContribution,
-    RealmEdgeProgress,
-    RealmProject,
     RealmState,
 )
 
@@ -567,94 +563,6 @@ async def test_map_is_public_and_returns_content_graph(
         assert "treasury" not in node
 
 
-async def test_contribution_clamps_consumes_and_completes_with_one_award(
-    estate_client: tuple[
-        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
-    ],
-) -> None:
-    """Contributions conserve inputs and completion awards its edge once."""
-    client, factory, headers, _ = estate_client
-    content = app.state.content
-    definition = content.project("project.verdant_cardboard")
-    multi_award = definition.model_copy(
-        update={"awards": (definition.awards[0], definition.awards[0])}
-    )
-    projects = tuple(
-        multi_award if project.id == definition.id else project
-        for project in content.projects
-    )
-    app.state.content = replace(
-        content,
-        projects=projects,
-        _projects_by_id=MappingProxyType({project.id: project for project in projects}),
-    )
-    character_id = _give(factory, "item.demo_crate", 150)
-    _give(factory, "item.cardboard_badge", 25)
-
-    crates = await client.post(
-        "/realms/realm.verdant_vale/projects/project.verdant_cardboard/contribute",
-        headers=headers,
-        json={"item_id": "item.demo_crate", "quantity": 150},
-    )
-    badges = await client.post(
-        "/realms/realm.verdant_vale/projects/project.verdant_cardboard/contribute",
-        headers=headers,
-        json={"item_id": "item.cardboard_badge", "quantity": 25},
-    )
-
-    assert crates.status_code == 200
-    assert crates.json()["accepted_quantity"] == 100
-    assert badges.status_code == 200
-    assert badges.json()["completed"] is True
-    with factory() as session:
-        crates_left = session.get(Inventory, (character_id, "item.demo_crate"))
-        assert crates_left is not None and crates_left.quantity == 50
-        assert session.get(Inventory, (character_id, "item.cardboard_badge")) is None
-        contributions = list(session.scalars(select(RealmContribution)))
-        assert sum(value.quantity for value in contributions) == 125
-        project = session.get(
-            RealmProject,
-            ("realm.verdant_vale", "project.verdant_cardboard"),
-        )
-        assert project is not None and project.status == "completed"
-        progress = session.get(
-            RealmEdgeProgress,
-            ("realm.verdant_vale", "edge.verdant_t1_t2"),
-        )
-        # The first award opened a transition, so the duplicate later award was
-        # skipped rather than escaping as INVALID_EDGE_AWARD.
-        assert progress is not None and progress.progress == 100
-
-
-async def test_contribution_rejects_pending_transition_without_consuming(
-    estate_client: tuple[
-        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
-    ],
-) -> None:
-    """Projects cannot complete or consume goods while their node is leaving."""
-    client, factory, headers, clock = estate_client
-    character_id = _give(factory, "item.demo_crate", 1)
-    with factory() as session:
-        state = session.get(RealmState, "realm.verdant_vale")
-        assert state is not None
-        state.transition_to_node_id = "node.verdant_t2"
-        state.transition_completes_at = clock["now"] + timedelta(minutes=5)
-        session.commit()
-
-    response = await client.post(
-        "/realms/realm.verdant_vale/projects/project.verdant_cardboard/contribute",
-        headers=headers,
-        json={"item_id": "item.demo_crate", "quantity": 1},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "REALM_TRANSITIONING"
-    with factory() as session:
-        stack = session.get(Inventory, (character_id, "item.demo_crate"))
-        assert stack is not None and stack.quantity == 1
-        assert session.scalar(select(func.count()).select_from(RealmContribution)) == 0
-
-
 def _wait_for_postgres_blocker(
     factory: sessionmaker[Session], blocked_pid: int, blocker_pid: int
 ) -> None:
@@ -685,7 +593,14 @@ async def test_get_realms_locks_in_id_order(
     with factory() as setup:
         for realm in content.realms:
             if setup.get(RealmState, realm.id) is None:
-                setup.add(RealmState(realm_id=realm.id, node_id=realm.starting_node_id))
+                setup.add(
+                    RealmState(
+                        id=realm.id,
+                        template_id=realm.id,
+                        last_tick_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        current_node_id=realm.starting_node_id,
+                    )
+                )
         setup.commit()
 
     started = threading.Event()
@@ -711,9 +626,7 @@ async def test_get_realms_locks_in_id_order(
         blocker_pid = blocker.execute(text("SELECT pg_backend_pid()")).scalar_one()
         assert (
             blocker.scalar(
-                select(RealmState)
-                .where(RealmState.realm_id == lower_id)
-                .with_for_update()
+                select(RealmState).where(RealmState.id == lower_id).with_for_update()
             )
             is not None
         )
@@ -728,7 +641,7 @@ async def test_get_realms_locks_in_id_order(
                 assert (
                     probe.scalar(
                         select(RealmState)
-                        .where(RealmState.realm_id == higher_id)
+                        .where(RealmState.id == higher_id)
                         .with_for_update(nowait=True)
                     )
                     is not None
@@ -783,3 +696,124 @@ async def test_upgrade_annotation_uses_estate_realm_active_tags(
     assert installed["inert_reason"] == (
         "realm requirements not met" if expected_status == "inert" else None
     )
+
+
+@pytest.mark.parametrize("isolation_source", ["template", "instance"])
+async def test_isolated_realms_absent_from_lists_and_map(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    isolation_source: str,
+) -> None:
+    """Both isolated templates and stored instances are excluded with their edges."""
+    client, factory, headers, _ = estate_client
+    isolated_id = "realm.verdant_vale"
+    if isolation_source == "template":
+        original = app.state.content
+        app.state.content = replace(
+            original,
+            realms=tuple(
+                r.model_copy(update={"isolated": True}) if r.id == isolated_id else r
+                for r in original.realms
+            ),
+        )
+    else:
+        with factory() as session:
+            state = session.get(RealmState, isolated_id)
+            assert state is not None
+            state.isolated = True
+            session.commit()
+    realms = await client.get("/realms", headers=headers)
+    graph = await client.get("/map")
+    assert realms.status_code == graph.status_code == 200
+    assert isolated_id not in {r["id"] for r in realms.json()}
+    assert isolated_id not in {n["realm_id"] for n in graph.json()["nodes"]}
+    assert all(isolated_id not in (e["a"], e["b"]) for e in graph.json()["edges"])
+
+
+async def test_realm_tag_stack_public_and_action_state(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Acquired tags feed public activation and the character's pure state."""
+    from app.models import RealmTag
+    from app.services.actions import load_character_state
+    from app.services.realms import push_realm_tag
+
+    client, factory, headers, clock = estate_client
+    with factory() as session:
+        character = session.scalar(select(Character))
+        state = session.get(RealmState, "realm.verdant_vale")
+        assert character is not None and state is not None
+        tag = push_realm_tag(session, state, "access.fake", clock["now"])
+        session.commit()
+        assert (
+            "access.fake"
+            in load_character_state(session, character.id).realm_stack_tags
+        )
+        seq, stamp = tag.seq, tag.node_id
+        assert session.get(RealmTag, (state.id, "access.fake")) is not None
+    response = await client.get("/realms/realm.verdant_vale", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tags"] == [{"tag_id": "access.fake", "seq": seq, "node_id": stamp}]
+    assert "access.fake" in data["active_tags"]
+    assert data["node"]["realm_type"] == "agrarian" and data["node"]["tier"] == 1
+    assert data["gauge"] == 0 and data["decay_stage"] == "fed"
+    assert "treasury" not in data
+
+
+@pytest.mark.parametrize(
+    "stage,expected_status,regressing",
+    [("fed", "active", False), ("faltering", "inert", False), ("fed", "inert", True)],
+)
+async def test_absent_owner_estate_uses_stored_realm_stack(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    stage: str,
+    expected_status: str,
+    regressing: bool,
+) -> None:
+    """An estate's acquired facilities remain its own while its owner visits."""
+    from app.services.realms import push_realm_tag, start_transition
+
+    client, factory, headers, clock = estate_client
+    original = app.state.content
+    upgrade = original.upgrade("upgrade.painted_sign")
+    app.state.content = original.with_overrides(
+        upgrades=(
+            upgrade.model_copy(
+                update={"requires_realm_tags": ("facility.fake_upgrade",)}
+            ),
+        )
+    )
+    with factory() as session:
+        character = session.scalar(select(Character))
+        estate = session.scalar(select(Estate))
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert character is not None and estate is not None and realm is not None
+        character.current_realm_id = "realm.ashen_reach"
+        realm.decay_stage = stage
+        push_realm_tag(session, realm, "facility.fake_upgrade", clock["now"])
+        session.add(
+            EstateUpgrade(
+                estate_id=estate.id,
+                slot_index=0,
+                upgrade_id=upgrade.id,
+                purchased_at=clock["now"],
+            )
+        )
+        if regressing:
+            start_transition(
+                realm,
+                "node.verdant_t0_stub",
+                "regression",
+                clock["now"] - timedelta(days=7),
+                original,
+            )
+        session.commit()
+    response = await client.get("/estates/me", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["installed_upgrades"][0]["status"] == expected_status

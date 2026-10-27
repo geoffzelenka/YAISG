@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
-import type { ItemQuantity, MapEdge, Modifier } from './content'
+import type { MapEdge, Modifier } from './content'
 import { gameRequest, readApiError } from './http'
 
 export type RealmDetail = {
@@ -9,18 +9,22 @@ export type RealmDetail = {
   node: {
     id: string
     name: string
+    realm_type: string
+    tier: number
     tags: string[]
     modifiers: Modifier[]
     cap_bonuses: { cap: string; value: number }[]
   }
-  pending_transition: { to_node_id: string; completes_at: string } | null
-  active_projects: {
-    project_id: string
-    name: string
-    targets: ItemQuantity[]
-    contribution_totals: Record<string, number>
-  }[]
-  outgoing_edges: { edge_id: string; progress: number; target: number }[]
+  pending_transition: {
+    to_node: string
+    cause: 'upgrade' | 'regression'
+    started_at: string
+    completes_at: string
+  } | null
+  tags: { tag_id: string; seq: number; node_id: string }[]
+  active_tags: string[]
+  decay_stage: string
+  gauge: number
 }
 
 export type RealmMap = {
@@ -35,12 +39,6 @@ export type RealmMap = {
     position: { x: number; y: number } | null
   }[]
   edges: MapEdge[]
-}
-
-export type ContributionResponse = {
-  accepted_quantity: number
-  project: RealmDetail['active_projects'][number]
-  completed: boolean
 }
 
 export class RealmApiError extends Error {
@@ -74,28 +72,5 @@ export function useRealmMap() {
   return useQuery({
     queryKey: ['map'],
     queryFn: () => request<RealmMap>('/map'),
-  })
-}
-
-export function useContribute(realmId: string, projectId: string) {
-  const client = useQueryClient()
-  return useMutation({
-    mutationFn: (input: { item_id: string; quantity: number }) =>
-      request<ContributionResponse>(
-        `/realms/${encodeURIComponent(realmId)}/projects/${encodeURIComponent(projectId)}/contribute`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(input),
-        },
-      ),
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['realms', realmId] }),
-        client.invalidateQueries({
-          queryKey: ['characters', 'me', 'inventory'],
-        }),
-      ])
-    },
   })
 }

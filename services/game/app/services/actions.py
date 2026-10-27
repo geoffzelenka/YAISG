@@ -25,6 +25,7 @@ from app.models import (
     RealmState,
     RewardLog,
 )
+from app.services.realms import finalize_realms, stack_tags
 
 
 @dataclass(frozen=True)
@@ -102,13 +103,14 @@ def _load_state(
         current_realm_id=character.current_realm_id,
         estate_realm_id=estate.realm_id,
         realm_node_id=(
-            realm_state.node_id
+            realm_state.current_node_id
             if realm_state
             else content.realm(character.current_realm_id).starting_node_id
         ),
         realm_stage=DecayStage(realm_state.decay_stage)
         if realm_state
         else DecayStage.FED,
+        realm_stack_tags=stack_tags(session, character.current_realm_id),
         estate_stage=DecayStage(estate.decay_stage),
         installed_upgrades=tuple(upgrades),
         cap_bonuses={},
@@ -189,12 +191,15 @@ def resolve_locked_character(
     character = session.get(Character, character_id)
     if character is None:
         raise RuntimeError(f"character {character_id} does not exist")
-    # Imported locally to keep the finalizers independent of the action adapter.
-    from app.services.realms import finalize_realms
-
     resolved_content = content or CONTENT
     realm_ids = set(additional_realm_ids or ())
     realm_ids.add(character.current_realm_id)
+    # Estate availability follows its own realm even while the owner is visiting.
+    estate_realm_id = session.scalar(
+        select(Estate.realm_id).where(Estate.id == character.home_estate_id)
+    )
+    if estate_realm_id is not None:
+        realm_ids.add(estate_realm_id)
     if record is not None:
         realm_ids.update(
             step["destination_realm_id"] for step in record.meta.get("route", [])
@@ -208,9 +213,13 @@ def resolve_locked_character(
     state = replace(
         _load_state(session, character_id, resolved_content),
         realm_states={
-            realm_id: (realm.node_id, DecayStage(realm.decay_stage))
+            realm_id: (
+                realm.current_node_id,
+                DecayStage(realm.decay_stage),
+                stack_tags(session, realm_id),
+            )
             if realm
-            else (resolved_content.realm(realm_id).starting_node_id, DecayStage.FED)
+            else (resolved_content.realm(realm_id).starting_node_id, DecayStage.FED, ())
             for realm_id, realm in realms.items()
         },
     )

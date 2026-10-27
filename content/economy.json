@@ -1,1 +1,8 @@
-{"decay": {"faltering_factor": 0.5}}
+{
+  "decay": {
+    "faltering_factor": 0.5
+  },
+  "transition": {
+    "duration_days": 7
+  }
+}

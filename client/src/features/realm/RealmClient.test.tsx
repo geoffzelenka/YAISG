@@ -1,12 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -14,7 +7,7 @@ import { ContentProvider } from '../../api/content'
 import type { CharacterProfile } from '../../api/characters'
 import { startActionClock, useActionClock } from '../actions/actionStore'
 import { MapPanel } from './MapPanel'
-import { ContributionForm, TransitionBanner } from './RealmPanel'
+import { TransitionBanner } from './RealmPanel'
 
 const contentBodies: Record<string, unknown> = {
   skills: { skills: [] },
@@ -42,20 +35,27 @@ const contentBodies: Record<string, unknown> = {
     nodes: [
       {
         id: 'node.two',
-        archetype: 'trade',
+        realm_type: 'trade',
         name: 'New Harbor',
         inherent_tags: [],
         actions: [],
         modifiers: [],
         cap_bonuses: [],
         projects: [],
+        tier: 1,
+        carried_tags: [],
+        upkeep: [],
+        upgrades: [],
+        regression: null,
       },
     ],
-    edges: [],
   },
   projects: { projects: [] },
   tags: { tags: [] },
-  economy: { decay: { faltering_factor: 0.5 } },
+  economy: {
+    decay: { faltering_factor: 0.5 },
+    transition: { duration_days: 7 },
+  },
   progression: {
     visit_profile: {
       time_mult: 1,
@@ -244,56 +244,5 @@ describe('realm client interactions', () => {
     const graph = screen.getByLabelText('Realm graph')
     expect(within(graph).queryByText('Two')).not.toBeInTheDocument()
     expect(within(graph).queryByTitle('land, 60s')).not.toBeInTheDocument()
-  })
-
-  it('clamps a contribution to held quantity and remaining target', async () => {
-    const fetchMock = vi.fn(
-      (input: string | URL | Request, init?: RequestInit) => {
-        const path = new URL(String(input), 'http://test').pathname
-        if (path === '/estates/me')
-          return Promise.resolve(
-            response({ form: { mobility: 'fixed' }, realm_id: 'realm.one' }),
-          )
-        if (path === '/content/manifest')
-          return Promise.resolve(
-            response({ version: 'contribution-test', packs: {} }),
-          )
-        if (path.startsWith('/content/'))
-          return Promise.resolve(
-            response(contentBodies[path.slice('/content/'.length)]),
-          )
-        if (path === '/characters/me/inventory')
-          return Promise.resolve(
-            response({ items: [{ item_id: 'item.wood', quantity: 8 }] }),
-          )
-        if (path.includes('/contribute'))
-          return Promise.resolve(
-            response({ accepted_quantity: 3, body: init?.body }),
-          )
-        return Promise.resolve(response({}))
-      },
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    render(
-      <ContributionForm
-        realmId="realm.one"
-        projectId="project.one"
-        targets={[{ item_id: 'item.wood', qty: 10 }]}
-        totals={{ 'item.wood': 7 }}
-      />,
-      { wrapper },
-    )
-    const quantity = await screen.findByLabelText('Quantity')
-    fireEvent.change(quantity, { target: { value: '99' } })
-    expect(quantity).toHaveValue(3)
-    fireEvent.click(screen.getByRole('button', { name: 'Contribute' }))
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/contribute'),
-        expect.objectContaining({
-          body: JSON.stringify({ item_id: 'item.wood', quantity: 3 }),
-        }),
-      ),
-    )
   })
 })

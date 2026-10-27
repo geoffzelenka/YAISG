@@ -9,6 +9,7 @@ nodes: this relaxation is conservative. See docs/v08/content-lint.md.
 
 import argparse
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from fractions import Fraction
 from itertools import combinations, product
@@ -17,7 +18,14 @@ from types import MappingProxyType
 
 from app.config import CONTENT_DIR
 from app.content.loader import ContentIndex, load_content
-from app.content.schemas import Action, DecayStage, Modifier, ModifierType, Skill
+from app.content.schemas import (
+    Action,
+    DecayStage,
+    DevelopmentNode,
+    Modifier,
+    ModifierType,
+    Skill,
+)
 from app.engine.core import (
     CharacterState,
     modifier_applies,
@@ -94,6 +102,22 @@ def _group_bound(
     return factors[0] * factors[1]
 
 
+def _possible_stacks(
+    node: DevelopmentNode, content: ContentIndex
+) -> Iterable[tuple[str, ...]]:
+    # A partial stack can be stronger than the completed stack when tags have maluses.
+    ids = tuple(
+        dict.fromkeys(
+            (
+                *node.carried_tags,
+                *(content.project(p).grants_tag for p in node.projects),
+            )
+        )
+    )
+    for count in range(len(ids) + 1):
+        yield from combinations(ids, count)
+
+
 def stack_bound(skill: Skill, content: ContentIndex) -> float:
     """Bound uncapped external XP × speed, using distinct upgrades within slots."""
     content = replace(
@@ -108,7 +132,12 @@ def stack_bound(skill: Skill, content: ContentIndex) -> float:
     candidates = product(
         content.development_nodes, content.estate_forms, stages, stages
     )
-    for node, form, realm_stage, estate_stage in candidates:
+    stacks = (
+        (node, form, realm_stage, estate_stage, stack)
+        for node, form, realm_stage, estate_stage in candidates
+        for stack in _possible_stacks(node, content)
+    )
+    for node, form, realm_stage, estate_stage, stack in stacks:
         state = CharacterState(
             {},
             {},
@@ -118,6 +147,7 @@ def stack_bound(skill: Skill, content: ContentIndex) -> float:
             node.id,
             realm_stage=realm_stage,
             estate_stage=estate_stage,
+            realm_stack_tags=stack,
         )
         realm = {tag.id for tag, _ in realm_active_tags(state, content)}
         upgrades = tuple(

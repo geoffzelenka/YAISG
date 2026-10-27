@@ -59,7 +59,9 @@ class CharacterState:
     gear_modifiers: tuple[Modifier, ...] = ()
     consumable_modifiers: tuple[Modifier, ...] = ()
     installed_upgrades: tuple[str, ...] = ()
-    realm_states: Mapping[str, tuple[str, DecayStage]] = field(default_factory=dict)
+    realm_states: Mapping[str, tuple[str, DecayStage, tuple[str, ...]]] = field(
+        default_factory=dict
+    )
     cap_bonuses: Mapping[CapType, float] = field(default_factory=dict)
 
 

@@ -34,10 +34,13 @@ it('displays the effective profile inventory cap instead of the content base', a
         },
         map: { edges: [], positions: {} },
         estate_forms: { forms: [], transformations: [] },
-        development: { nodes: [], edges: [] },
+        development: { nodes: [] },
         projects: { projects: [] },
         tags: { tags: [] },
-        economy: { decay: { faltering_factor: 0.5 } },
+        economy: {
+          decay: { faltering_factor: 0.5 },
+          transition: { duration_days: 7 },
+        },
         progression: {
           visit_profile: {
             time_mult: 1,

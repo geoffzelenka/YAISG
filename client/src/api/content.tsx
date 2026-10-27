@@ -77,6 +77,7 @@ export type Realm = {
   id: string
   name: string
   starting_node_id: string
+  isolated: boolean
 }
 export type EstateUpgrade = {
   id: string
@@ -126,25 +127,39 @@ export type DevelopmentNode = {
   id: string
   inherent_tags: string[]
   actions: string[]
-  archetype: string
+  realm_type: string
   name: string
   modifiers: Modifier[]
   cap_bonuses: { cap: keyof Caps; value: number }[]
   projects: string[]
-}
-export type DevelopmentEdge = {
-  id: string
-  from: string
-  to: string
-  progress_target: number
-  kind: 'development' | 'regression'
-  transition_ms?: number
+  carried_tags: string[]
+  upkeep: { selector: Selector; per_day: number }[]
+  upgrades: {
+    id: string
+    to_node: string
+    kind: 'tier_up' | 'morph'
+    required_tags: string[]
+    fee_gold: number
+  }[]
+  regression: { to_node: string } | null
+  reserve_days?: number | null
+  cap_days?: number | null
+  margin_pct?: number | null
 }
 export type Project = {
   id: string
   name: string
-  targets: ItemQuantity[]
-  awards: { edge_id: string; progress: number }[]
+  grants_tag: string
+  kickoff: {
+    gold: number
+    goods: Action['inputs']
+    who: 'residents' | 'anyone'
+  }
+  cost: Action['inputs']
+  build_seconds: number
+  realm_completion_days: number
+  requires_tags: string[]
+  repeatable: false
 }
 export type TravelProfile = {
   time_mult: number
@@ -182,7 +197,10 @@ export type Tag = {
 
 type ContentPacks = {
   tags: { tags: Tag[] }
-  economy: { decay: { faltering_factor: number } }
+  economy: {
+    decay: { faltering_factor: number }
+    transition: { duration_days: number }
+  }
   skills: { skills: Skill[] }
   items: { items: Item[] }
   realms: { realms: Realm[] }
@@ -196,7 +214,7 @@ type ContentPacks = {
     forms: EstateForm[]
     transformations: FormTransformation[]
   }
-  development: { nodes: DevelopmentNode[]; edges: DevelopmentEdge[] }
+  development: { nodes: DevelopmentNode[] }
   progression: {
     visit_profile: TravelProfile
     travel_xp_per_second: number

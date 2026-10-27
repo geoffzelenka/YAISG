@@ -63,20 +63,6 @@ def _unknown_map_realm(content_dir: Path) -> None:
     _write_json(path, value)
 
 
-def _award_regression_edge(content_dir: Path) -> None:
-    path = content_dir / "projects.json"
-    value = json.loads(path.read_text())
-    value["projects"][0]["awards"][0]["edge_id"] = "edge.verdant_regress"
-    _write_json(path, value)
-
-
-def _remove_development_transition(content_dir: Path) -> None:
-    path = content_dir / "development.json"
-    value = json.loads(path.read_text())
-    del value["edges"][0]["transition_ms"]
-    _write_json(path, value)
-
-
 def _unknown_transformation_form(content_dir: Path) -> None:
     path = content_dir / "estate_forms.json"
     value = json.loads(path.read_text())
@@ -119,8 +105,6 @@ def test_placeholder_content_loads() -> None:
         _remove_cap,
         _duplicate_map_edge,
         _unknown_map_realm,
-        _award_regression_edge,
-        _remove_development_transition,
         _unknown_transformation_form,
         _unknown_starting_node,
     ],
@@ -131,8 +115,6 @@ def test_placeholder_content_loads() -> None:
         "missing-cap",
         "duplicate-map-edge",
         "unknown-map-realm",
-        "regression-award",
-        "missing-transition",
         "unknown-form",
         "unknown-starting-node",
     ],

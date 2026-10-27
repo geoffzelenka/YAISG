@@ -153,8 +153,8 @@ def arrival_state(
     state: CharacterState, destination: str, mode: str, content: ContentIndex
 ) -> CharacterState:
     """Move presence and switch realm sources before pricing the following step."""
-    node, stage = state.realm_states.get(
-        destination, (content.realm(destination).starting_node_id, DecayStage.FED)
+    node, stage, stack = state.realm_states.get(
+        destination, (content.realm(destination).starting_node_id, DecayStage.FED, ())
     )
     return replace(
         state,
@@ -162,7 +162,7 @@ def arrival_state(
         estate_realm_id=destination if mode == "relocate" else state.estate_realm_id,
         realm_node_id=node,
         realm_stage=stage,
-        realm_stack_tags=(),
+        realm_stack_tags=stack,
     )
 
 

@@ -1,6 +1,60 @@
 {
   "projects": [
-    {"id": "project.verdant_cardboard", "name": "Cardboard Canopy Prototype", "targets": [{"item_id": "item.demo_crate", "qty": 100}, {"item_id": "item.cardboard_badge", "qty": 25}], "awards": [{"edge_id": "edge.verdant_t1_t2", "progress": 100}]},
-    {"id": "project.ashen_placeholder", "name": "Placeholder Furnace Facade", "targets": [{"item_id": "item.prototype_widget", "qty": 75}, {"item_id": "item.placeholder_token", "qty": 30}], "awards": [{"edge_id": "edge.ashen_t1_t2", "progress": 100}]}
+    {
+      "id": "project.verdant_cardboard",
+      "name": "Cardboard Canopy Prototype",
+      "grants_tag": "bonus.fake",
+      "cost": [
+        {
+          "selector": {
+            "item": "item.demo_crate"
+          },
+          "quantity": 100
+        },
+        {
+          "selector": {
+            "item": "item.cardboard_badge"
+          },
+          "quantity": 25
+        }
+      ],
+      "kickoff": {
+        "gold": 0,
+        "goods": [],
+        "who": "anyone"
+      },
+      "build_seconds": 60,
+      "realm_completion_days": 1,
+      "requires_tags": [],
+      "repeatable": false
+    },
+    {
+      "id": "project.ashen_placeholder",
+      "name": "Placeholder Furnace Facade",
+      "grants_tag": "facility.fake_node",
+      "cost": [
+        {
+          "selector": {
+            "item": "item.prototype_widget"
+          },
+          "quantity": 75
+        },
+        {
+          "selector": {
+            "item": "item.placeholder_token"
+          },
+          "quantity": 30
+        }
+      ],
+      "kickoff": {
+        "gold": 0,
+        "goods": [],
+        "who": "anyone"
+      },
+      "build_seconds": 60,
+      "realm_completion_days": 1,
+      "requires_tags": [],
+      "repeatable": false
+    }
   ]
 }

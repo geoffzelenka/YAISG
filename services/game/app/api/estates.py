@@ -26,6 +26,7 @@ from app.engine.tags import tags_present
 from app.errors import api_error
 from app.models import Character, Estate, EstateUpgrade, Inventory, RealmState
 from app.services.actions import load_character_state, resolve_character
+from app.services.realms import stack_tags
 
 router = APIRouter(prefix="/estates", tags=["estates"])
 audit_logger = logging.getLogger("yaisg.audit")
@@ -128,13 +129,11 @@ def _estate_response(
     estate_realm_state = replace(
         state,
         current_realm_id=estate.realm_id,
-        realm_node_id=realm.node_id
+        realm_node_id=realm.current_node_id
         if realm
         else content.realm(estate.realm_id).starting_node_id,
         realm_stage=DecayStage(realm.decay_stage) if realm else DecayStage.FED,
-        realm_stack_tags=state.realm_stack_tags
-        if estate.realm_id == state.current_realm_id
-        else (),
+        realm_stack_tags=stack_tags(session, estate.realm_id),
     )
     realm_tags = {tag.id for tag, _ in realm_active_tags(estate_realm_state, content)}
     form = content.estate_form(estate.form_id)
