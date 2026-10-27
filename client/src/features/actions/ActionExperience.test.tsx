@@ -1,9 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { type Rewards } from '../../api/actions'
+import { type ActionFeedResponse, type Rewards } from '../../api/actions'
 import { ContentProvider } from '../../api/content'
 import { ActionExperience, WelcomeBack } from './ActionExperience'
 import { shouldShowWelcomeBack } from './rewardPresentation'
@@ -20,6 +27,7 @@ const rewards: Rewards = {
 
 describe('welcome-back summary', () => {
   afterEach(() => {
+    cleanup()
     vi.useRealTimers()
     vi.unstubAllGlobals()
   })
@@ -47,6 +55,85 @@ describe('welcome-back summary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(closed).toBe(true)
   })
+
+  it('ignores zero-edge travel polls in toasts and the reward feed', async () => {
+    const feed: ActionFeedResponse = {
+      ...emptyActionResponse,
+      active: activeFixture,
+      since_last: {
+        ...emptyActionResponse.since_last,
+        details: {
+          resolutions: [
+            {
+              edges_completed: [],
+              supplies_used: {},
+              xp: 0,
+              current_realm_id: 'realm.verdant_vale',
+              level_ups: {},
+              stop_reason: null,
+            },
+          ],
+        },
+      },
+    }
+    mockFeed(feed)
+    render(<ActionExperience />, { wrapper: actionWrapper })
+    await screen.findByText('Journey step 1 of 1 · Current edge: road')
+    expect(
+      screen.getByRole('button', { name: 'Rewards (0)' }),
+    ).toBeInTheDocument()
+    expect(document.querySelector('[aria-live="polite"]')).toBeEmptyDOMElement()
+    fireEvent.click(screen.getByRole('button', { name: 'Rewards (0)' }))
+    expect(screen.getByText('No rewards received yet.')).toBeInTheDocument()
+    expect(screen.queryByText('Action ended.')).not.toBeInTheDocument()
+  })
+
+  it('omits shared envelope fields from a uniform-cycle toast', async () => {
+    mockFeed({
+      ...emptyActionResponse,
+      active: { ...activeFixture, meta: {} },
+      since_last: {
+        ...emptyActionResponse.since_last,
+        cycles_completed: 1,
+        xp_gained: { gathering: 10 },
+        level_ups: { gathering: [2] },
+        details: {
+          resolutions: [{ level_ups: { gathering: [2] }, stop_reason: null }],
+        },
+      },
+    })
+    render(<ActionExperience />, { wrapper: actionWrapper })
+    await screen.findByRole('button', { name: 'Rewards (1)' })
+    const toast = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(
+      within(toast).getByText(/gathering reached level 2/),
+    ).toBeInTheDocument()
+    expect(toast).not.toHaveTextContent('stop reason')
+    expect(toast).not.toHaveTextContent('level ups')
+    expect(toast).not.toHaveTextContent('Action ended.')
+  })
+
+  it.each([false, true])(
+    'only uses the ended fallback when active is null: %s',
+    async (ended) => {
+      mockFeed({
+        ...emptyActionResponse,
+        active: ended ? null : activeFixture,
+        since_last: {
+          ...emptyActionResponse.since_last,
+          details: { resolutions: [{ encounter: 'Ongoing encounter' }] },
+        },
+      })
+      render(<ActionExperience />, { wrapper: actionWrapper })
+      await screen.findByRole('button', { name: 'Rewards (1)' })
+      const toast = document.querySelector(
+        '[aria-live="polite"]',
+      ) as HTMLElement
+      await waitFor(() => expect(toast).toHaveTextContent('Ongoing encounter'))
+      if (ended) expect(toast).toHaveTextContent('Action ended.')
+      else expect(toast).not.toHaveTextContent('Action ended.')
+    },
+  )
 
   it('keeps polling after a failed request and prevents overlapping polls', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -128,5 +215,25 @@ function actionWrapper({ children }: PropsWithChildren) {
     <QueryClientProvider client={client}>
       <ContentProvider>{children}</ContentProvider>
     </QueryClientProvider>
+  )
+}
+
+const activeFixture = {
+  action_id: 'journey',
+  cycle_ms: 60000,
+  started_at: new Date().toISOString(),
+  last_resolved_at: new Date().toISOString(),
+  meta: { route: [{ edge_id: 'road' }], step_index: 0, remaining_ms: 50000 },
+}
+
+function mockFeed(feed: ActionFeedResponse) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: string | URL | Request) => {
+      const path = new URL(String(input), 'http://test').pathname
+      return Promise.resolve(
+        jsonResponse(path === '/actions/poll' ? feed : contentBodies[path]),
+      )
+    }),
   )
 }

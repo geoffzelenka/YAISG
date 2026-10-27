@@ -136,14 +136,13 @@ function Recipe({ title, values }: { title: string; values: string[] }) {
 
 function formatBlocker(value: string): string {
   const reasons: Record<string, string> = {
-    INSUFFICIENT_LEVEL: 'insufficient level',
+    INSUFFICIENT_LEVEL: 'Skill level too low',
     NOT_OFFERED_HERE: 'Not offered in this realm',
     MISSING_FACILITY: 'Required facility is unavailable',
     MISSING_REALM_TAG: 'Required realm feature is unavailable',
     MISSING_SKILL_LEVEL: 'Required skill level has not been reached',
     MISSING_TOOL: 'Required tool is not equipped',
     MISSING_INPUTS: 'Not enough supplies',
-    TRAVEL_DESTINATION_REQUIRED: 'Choose a destination on the map',
   }
   return reasons[value] ?? value.toLowerCase().replaceAll('_', ' ')
 }

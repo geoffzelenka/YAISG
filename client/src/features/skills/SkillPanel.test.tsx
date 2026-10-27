@@ -195,7 +195,7 @@ describe('skill panel', () => {
     expect(screen.getAllByRole('button', { name: 'Start' })[0]).toBeEnabled()
     expect(
       screen.getByText(
-        /Locked: insufficient level, Not offered in this realm, Required facility is unavailable, Required realm feature is unavailable, Required skill level has not been reached, Required tool is not equipped, Not enough supplies/,
+        /Locked: Skill level too low, Not offered in this realm, Required facility is unavailable, Required realm feature is unavailable, Required skill level has not been reached, Required tool is not equipped, Not enough supplies/,
       ),
     ).toBeInTheDocument()
     expect(await screen.findByLabelText('Skill tier')).toHaveTextContent(

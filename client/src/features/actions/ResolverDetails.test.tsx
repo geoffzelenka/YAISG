@@ -38,19 +38,39 @@ it('shows welcome-back travel summary and supplies, preserving unknown details',
               edges_completed: ['road', 'bridge'],
               current_realm_id: 'b',
               supplies_used: { ration: 4 },
+              xp: 12,
+              level_ups: {},
+              stop_reason: null,
+              weather: 'Clear skies',
             },
             { encounter: { outcome: 'survived' } },
           ],
         },
       }}
+      names={{
+        itemNames: new Map(),
+        skillNames: new Map(),
+        realmNames: new Map([['b', 'Test Harbor']]),
+      }}
       onClose={() => {}}
     />,
   )
   expect(screen.getByRole('dialog')).toHaveTextContent(
-    'Travel: 2 edges completed · Current realm: b',
+    'Travel: 2 edges completed · Current realm: Test Harbor',
   )
   expect(screen.getByText('4 ration consumed')).toBeInTheDocument()
   expect(screen.getByText('survived')).toBeInTheDocument()
+  expect(screen.getByText('Clear skies')).toBeInTheDocument()
+  for (const label of [
+    'supplies used',
+    'xp',
+    'level ups',
+    'stop reason',
+    'current realm id',
+    'edges completed',
+  ]) {
+    expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument()
+  }
 })
 it('renders generic reward details in resolution order', () => {
   const { container } = render(

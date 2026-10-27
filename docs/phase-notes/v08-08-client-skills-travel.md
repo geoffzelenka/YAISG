@@ -1,5 +1,19 @@
 ## Built
 
+- Round 1 review: ignore travel progress-only resolutions when creating feed
+  entries/toasts; retain rewards, stops, completed edges and unknown resolver
+  content. Hide shared level-up/stop envelope fields and duplicate travel XP/
+  supply fields. Only show the ended fallback for an ended action. Travel
+  summaries resolve realm names from content, preserving unknown payloads.
+- Round 1 review: capitalized the insufficient-level explanation, removed its
+  unreachable travel requirement mapping, and compute the current journey step
+  once when scheduling the next poll.
+- Added fetch-mocked regression cases `ignores zero-edge travel polls in toasts
+  and the reward feed`, `omits shared envelope fields from a uniform-cycle
+  toast`, and `only uses the ended fallback when active is null: %s` (active/idle).
+  Expanded the welcome-back detail test for realm names, unknown travel fields
+  and omitted envelope/duplicate fields.
+
 - Skill panels display server levels, tier badges/titles and XP to next, including
   maximum level. Added the Travel sidebar entry and map link. Travel uses the
   route preview rather than the placeholder uniform action figures (07 hand-off).

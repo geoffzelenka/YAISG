@@ -17,12 +17,14 @@ import {
 } from './actionStore'
 import { JourneyProgress, ResolverDetails } from './ResolverDetails'
 import { journeyStep } from './journey'
+import { hasResolverContent } from './resolverPresentation'
 import { shouldShowWelcomeBack } from './rewardPresentation'
 
 type FeedEntry = {
   id: number
   rewards: Rewards
   reason: string | null
+  ended: boolean
   showToast: boolean
   toastUntil: number
 }
@@ -32,7 +34,10 @@ function hasAuthoritativeChanges(response: ActionFeedResponse): boolean {
   return (
     rewards.cycles_completed > 0 ||
     Object.keys(rewards.items_gained).length > 0 ||
-    Object.keys(rewards.items_consumed).length > 0
+    Object.keys(rewards.items_consumed).length > 0 ||
+    Object.keys(rewards.xp_gained).length > 0 ||
+    Object.keys(rewards.overflowed_items).length > 0 ||
+    Object.keys(rewards.level_ups).length > 0
   )
 }
 
@@ -60,8 +65,9 @@ export function ActionExperience() {
       if (isWelcomeBack) setWelcome(next.since_last)
       if (
         hasAuthoritativeChanges(next) ||
-        Object.keys(next.since_last.details ?? {}).length > 0 ||
-        next.stop_reason !== null
+        hasResolverContent(next.since_last.details) ||
+        next.stop_reason !== null ||
+        next.since_last.stop_reason !== null
       ) {
         setFeed((current) =>
           [
@@ -69,7 +75,11 @@ export function ActionExperience() {
             {
               id: (nextFeedId.current += 1),
               rewards: next.since_last,
-              reason: next.stop_reason,
+              reason: next.stop_reason ?? next.since_last.stop_reason,
+              ended:
+                next.active === null ||
+                next.stop_reason !== null ||
+                next.since_last.stop_reason !== null,
               showToast: !isWelcomeBack,
               toastUntil: Date.now() + 5_000,
             },
@@ -100,16 +110,17 @@ export function ActionExperience() {
     let lastActive: ActionFeedResponse['active'] | undefined
     const schedule = () => {
       if (cancelled) return
+      const step = lastActive ? journeyStep(lastActive) : null
       timeout = setTimeout(
         () => void poll(),
         lastActive
           ? nextCycleDelay(
               Date.now(),
-              journeyStep(lastActive)
+              step
                 ? new Date(
                     Date.parse(lastActive.last_resolved_at) -
                       lastActive.cycle_ms +
-                      (journeyStep(lastActive)?.remaining ?? 0),
+                      step.remaining,
                   ).toISOString()
                 : lastActive.started_at,
               lastActive.cycle_ms,
@@ -195,7 +206,13 @@ export function ActionExperience() {
           content.content.skills.skills.map((skill) => [skill.id, skill.name]),
         )
       : new Map<string, string>()
-  const displayNames = { itemNames, skillNames }
+  const realmNames =
+    content.status === 'ready'
+      ? new Map(
+          content.content.realms.realms.map((realm) => [realm.id, realm.name]),
+        )
+      : new Map<string, string>()
+  const displayNames = { itemNames, skillNames, realmNames }
 
   return (
     <>
@@ -279,11 +296,21 @@ export function ActionExperience() {
 type DisplayNames = {
   itemNames: Map<string, string>
   skillNames: Map<string, string>
+  realmNames?: Map<string, string>
 }
 
 function RewardList({ entries }: { entries: FeedEntry[] }) {
   const content = useContent()
   const names: DisplayNames = {
+    realmNames:
+      content.status === 'ready'
+        ? new Map(
+            content.content.realms.realms.map((realm) => [
+              realm.id,
+              realm.name,
+            ]),
+          )
+        : new Map<string, string>(),
     itemNames:
       content.status === 'ready'
         ? new Map(
@@ -325,8 +352,11 @@ function RewardSummary({
   const text = summarize(entry.rewards, names)
   return (
     <div className="rounded border border-slate-700 bg-slate-950 p-3 text-sm">
-      {text || 'Action ended.'}
-      <ResolverDetails details={entry.rewards.details} />
+      {text || (entry.ended ? 'Action ended.' : '')}
+      <ResolverDetails
+        details={entry.rewards.details}
+        realmNames={names.realmNames}
+      />
       {entry.reason && (
         <p className="text-amber-300">
           Stopped: {entry.reason.replaceAll('_', ' ')}
@@ -386,7 +416,10 @@ export function WelcomeBack({
           Welcome back
         </h2>
         <p className="mt-2">{rewards.cycles_completed} cycles completed.</p>
-        <ResolverDetails details={rewards.details} />
+        <ResolverDetails
+          details={rewards.details}
+          realmNames={names.realmNames}
+        />
         <dl className="mt-4 space-y-2">
           {Object.entries(rewards.items_consumed).map(([id, qty]) => (
             <div key={id}>

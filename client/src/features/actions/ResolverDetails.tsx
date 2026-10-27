@@ -1,5 +1,9 @@
 import type { ActiveAction } from '../../api/actions'
 
+import {
+  resolutionPresentation,
+  resolverResolutions,
+} from './resolverPresentation'
 import { isRecord, journeyStep } from './journey'
 
 export function JourneyProgress({ active }: { active: ActiveAction }) {
@@ -43,26 +47,27 @@ function DetailValue({ value }: { value: unknown }) {
 
 export function ResolverDetails({
   details,
+  realmNames = new Map<string, string>(),
 }: {
   details?: Record<string, unknown>
+  realmNames?: Map<string, string>
 }) {
-  if (!details || !Object.keys(details).length) return null
-  const resolutions = Array.isArray(details.resolutions)
-    ? details.resolutions
-    : [details]
   return (
     <div>
-      {resolutions.map((value: unknown, index) => (
-        <div key={index}>
-          {isRecord(value) && Array.isArray(value.edges_completed) && (
-            <p>
-              Travel: {value.edges_completed.length} edges completed · Current
-              realm: {String(value.current_realm_id ?? '')}
-            </p>
-          )}
-          <DetailValue value={value} />
-        </div>
-      ))}
+      {resolverResolutions(details).map((value, index) => {
+        const { travel, extra } = resolutionPresentation(value)
+        return (
+          <div key={index}>
+            {travel && travel.edges > 0 && (
+              <p>
+                Travel: {travel.edges} edges completed · Current realm:{' '}
+                {realmNames.get(travel.realmId) ?? travel.realmId}
+              </p>
+            )}
+            {Object.keys(extra).length > 0 && <DetailValue value={extra} />}
+          </div>
+        )
+      })}
     </div>
   )
 }
