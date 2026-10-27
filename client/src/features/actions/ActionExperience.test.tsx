@@ -56,7 +56,7 @@ describe('welcome-back summary', () => {
       'fetch',
       vi.fn((input: string | URL | Request) => {
         const path = new URL(String(input), 'http://test').pathname
-        if (path === '/characters/me/action') {
+        if (path === '/actions/poll') {
           actionCalls += 1
           if (actionCalls === 1) {
             return new Promise<Response>((resolve) => {

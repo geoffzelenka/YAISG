@@ -33,8 +33,8 @@ class Character(Base):
     name_normalized: Mapped[str] = mapped_column(
         String(20), unique=True, nullable=False
     )
-    realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    # Cache of the residence-defining home estate's realm (§7.5).
+    current_realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Residence is derived from this estate, independently of current presence.
     home_estate_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

@@ -216,6 +216,7 @@ async def start_action(
     )
 
 
+@router.get("/actions/poll", response_model=ActionFeedResponse)
 @router.get("/characters/me/action", response_model=ActionFeedResponse)
 async def get_action(
     request: Request,
@@ -245,6 +246,7 @@ async def get_action(
     )
 
 
+@router.post("/actions/stop", response_model=ActionFeedResponse)
 @router.delete("/characters/me/action", response_model=ActionFeedResponse)
 async def stop_action(
     request: Request,

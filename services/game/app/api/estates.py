@@ -124,13 +124,13 @@ def _estate_response(
     realm = session.get(RealmState, estate.realm_id)
     estate_realm_state = replace(
         state,
-        realm_id=estate.realm_id,
+        current_realm_id=estate.realm_id,
         realm_node_id=realm.node_id
         if realm
         else content.realm(estate.realm_id).starting_node_id,
         realm_stage=DecayStage(realm.decay_stage) if realm else DecayStage.FED,
         realm_stack_tags=state.realm_stack_tags
-        if estate.realm_id == state.realm_id
+        if estate.realm_id == state.current_realm_id
         else (),
     )
     realm_tags = {tag.id for tag, _ in realm_active_tags(estate_realm_state, content)}
@@ -224,7 +224,7 @@ async def get_estate(
     character = _character(session, player.id)
     content = _content(request)
     estate = finalize_relocation(session, character, now, prepare_sqlite=True)
-    finalize_realm(session, character.realm_id, now, content)
+    finalize_realm(session, character.current_realm_id, now, content)
     response = _estate_response(session, content, character, estate)
     session.commit()
     return response

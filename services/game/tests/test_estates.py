@@ -276,7 +276,7 @@ async def test_relocation_preview_finalizes_due_arrival_before_pricing(
         assert estate is not None and character is not None
         assert estate.status == "active"
         assert estate.realm_id == "realm.ashen_reach"
-        assert character.realm_id == "realm.ashen_reach"
+        assert character.current_realm_id == "realm.ashen_reach"
 
 
 async def test_upgrade_changes_subsequent_action_resolution(
@@ -734,13 +734,15 @@ async def test_delayed_relocation_charges_and_arrives_lazily(
     assert moved.json()["relocating_to_realm_id"] == "realm.ashen_reach"
     with factory() as session:
         assert session.get(Currency, character_id).gold == 75  # type: ignore[union-attr]
-        assert session.get(Character, character_id).realm_id == "realm.verdant_vale"  # type: ignore[union-attr]
+        character = session.get(Character, character_id)
+        assert character is not None
+        assert character.current_realm_id == "realm.verdant_vale"
     clock["now"] += timedelta(minutes=1)
 
     arrived = await client.get("/characters/me", headers=headers)
 
     assert arrived.status_code == 200
-    assert arrived.json()["character"]["realm_id"] == "realm.ashen_reach"
+    assert arrived.json()["character"]["current_realm_id"] == "realm.ashen_reach"
     with factory() as session:
         estate = session.scalar(select(Estate))
         assert estate is not None
@@ -779,7 +781,7 @@ async def test_instant_relocation_and_unreachable_rollback(
         currency = session.scalar(select(Currency))
         estate = session.scalar(select(Estate))
         assert character is not None and currency is not None and estate is not None
-        character.realm_id = "realm.verdant_vale"
+        character.current_realm_id = "realm.verdant_vale"
         estate.realm_id = "realm.verdant_vale"
         gold_before = currency.gold
         session.commit()
@@ -912,7 +914,7 @@ async def test_upgrade_annotation_uses_estate_realm_active_tags(
         character = session.scalar(select(Character))
         realm = session.get(RealmState, "realm.verdant_vale")
         assert estate is not None and character is not None and realm is not None
-        character.realm_id = "realm.ashen_reach"
+        character.current_realm_id = "realm.ashen_reach"
         realm.decay_stage = stage
         session.add(
             EstateUpgrade(

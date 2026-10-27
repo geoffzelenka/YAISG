@@ -1,5 +1,7 @@
 """Response models shared by game API modules."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.content.loader import ContentIndex
@@ -18,6 +20,7 @@ class RewardsResponse(BaseModel):
     overflowed_items: dict[str, int]
     level_ups: dict[str, tuple[int, ...]]
     stop_reason: str | None
+    details: dict[str, Any]
 
 
 def rewards_response(result: ResolveResult) -> RewardsResponse:
@@ -30,6 +33,7 @@ def rewards_response(result: ResolveResult) -> RewardsResponse:
         overflowed_items=dict(result.overflowed_items),
         level_ups=dict(result.level_ups),
         stop_reason=result.stop_reason,
+        details=dict(result.details),
     )
 
 

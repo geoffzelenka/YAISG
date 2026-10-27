@@ -28,9 +28,7 @@ from app.engine import (
     OK,
     ActiveAction,
     CharacterState,
-    CycleRewards,
     ErrorCode,
-    RandomSource,
     StopReason,
     can_start,
     effective_cycle_time,
@@ -311,24 +309,16 @@ def test_overflow_precedes_input_exhaustion_in_same_cycle(
     assert active is None
 
 
-class LevelSensitiveRewards:
-    """Test strategy demonstrating mid-batch state recomputation."""
-
-    def rewards(
-        self,
-        action: Action,
-        state: CharacterState,
-        content: ContentIndex,
-        rng: RandomSource,
-    ) -> CycleRewards:
-        """Give 57 XP at level one and 20 XP after leveling."""
-        del action, content, rng
-        reward = 57 if state.skill_levels["gathering"] == 1 else 20
-        return CycleRewards(reward, ())
-
-
-def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> None:
-    """Each cycle strategy sees levels produced by the preceding cycle."""
+def test_level_up_changes_subsequent_cycle_resolution(
+    content: ContentIndex, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Effective XP is recomputed using the level produced by preceding cycles."""
+    monkeypatch.setattr(
+        "app.engine.core.effective_xp",
+        lambda action, state, content: (
+            57 if state.skill_levels["gathering"] == 1 else 20
+        ),
+    )
     action = content.action("gathering.fake_sprigs").model_copy(
         update={"base_cycle_ms": 1_000, "outputs": ()}
     )
@@ -339,7 +329,6 @@ def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> 
         custom,
         START + timedelta(milliseconds=2_727),
         FixedRng(),
-        reward_strategy=LevelSensitiveRewards(),
     )
     assert result.cycles_completed == 3
     assert result.xp_gained == {"gathering": 97}
@@ -686,7 +675,7 @@ def test_vision_groups_cap_floor_and_scope(content: ContentIndex) -> None:
     assert report.xp_bonus_uncapped == pytest.approx(45.2)
     assert report.xp_bonus_capped == pytest.approx(45)
     assert report.xp_per_cycle == 14
-    away = replace(state, realm_id="away", estate_realm_id="home")
+    away = replace(state, current_realm_id="away", estate_realm_id="home")
     assert bonus_total(ModifierType.XP_PCT, action, away, custom) == pytest.approx(1.32)
     malus = modifier.model_copy(update={"value": -1000})
     state = replace(make_state(), gear_modifiers=(malus, malus))

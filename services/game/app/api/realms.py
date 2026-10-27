@@ -455,7 +455,7 @@ async def relocate(
     completes_at = None
     if cost.time_ms == 0:
         estate.realm_id = body.realm_id
-        character.realm_id = body.realm_id
+        character.current_realm_id = body.realm_id
     else:
         completes_at = now + timedelta(milliseconds=cost.time_ms)
         estate.status = "relocating"

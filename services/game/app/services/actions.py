@@ -47,7 +47,7 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _lock_active_action(
+def _lock_character_and_load_action(
     session: Session, character_id: uuid.UUID
 ) -> ActiveActionRecord | None:
     """Acquire the per-character serialization lock before loading state."""
@@ -58,20 +58,19 @@ def _lock_active_action(
         if session.in_transaction():
             session.commit()
         session.connection(execution_options={"sqlite_write_intent": True})
-    statement = select(ActiveActionRecord).where(
-        ActiveActionRecord.character_id == character_id
+    # The parent exists even before the first action. Always lock it first so
+    # starts, polls, stops and realm/estate operations serialize consistently.
+    session.scalar(
+        select(Character)
+        .where(Character.id == character_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
-    if dialect != "sqlite":
-        statement = statement.with_for_update()
-    record = session.scalar(statement)
-    if record is None and dialect != "sqlite":
-        # A first start has no action row to lock, so serialize on its stable
-        # parent and re-check for an action created by the prior lock holder.
-        session.scalar(
-            select(Character.id).where(Character.id == character_id).with_for_update()
+    return session.scalar(
+        select(ActiveActionRecord).where(
+            ActiveActionRecord.character_id == character_id
         )
-        record = session.scalar(statement)
-    return record
+    )
 
 
 def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
@@ -91,19 +90,19 @@ def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
     upgrades = session.scalars(
         select(EstateUpgrade.upgrade_id).where(EstateUpgrade.estate_id == estate.id)
     )
-    realm_state = session.get(RealmState, character.realm_id)
+    realm_state = session.get(RealmState, character.current_realm_id)
     return CharacterState(
         skills_xp={skill.skill_id: skill.xp for skill in skills},
         skill_levels={skill.skill_id: skill.level for skill in skills},
         inventory={stack.item_id: stack.quantity for stack in inventory},
         gold=currency.gold,
         estate_form_id=estate.form_id,
-        realm_id=character.realm_id,
+        current_realm_id=character.current_realm_id,
         estate_realm_id=estate.realm_id,
         realm_node_id=(
             realm_state.node_id
             if realm_state
-            else CONTENT.realm(character.realm_id).starting_node_id
+            else CONTENT.realm(character.current_realm_id).starting_node_id
         ),
         realm_stage=DecayStage(realm_state.decay_stage)
         if realm_state
@@ -157,7 +156,7 @@ def resolve_character(
     additional_realm_ids: set[str] | None = None,
 ) -> Resolution:
     """Resolve and persist one character inside the caller's transaction."""
-    record = _lock_active_action(session, character_id)
+    record = _lock_character_and_load_action(session, character_id)
     character = session.get(Character, character_id)
     if character is None:
         raise RuntimeError(f"character {character_id} does not exist")
@@ -167,7 +166,7 @@ def resolve_character(
     finalize_relocation(session, character, now)
     resolved_content = content or CONTENT
     realm_ids = set(additional_realm_ids or ())
-    realm_ids.add(character.realm_id)
+    realm_ids.add(character.current_realm_id)
     finalize_realms(session, realm_ids, now, resolved_content)
     if record is None:
         return Resolution(None, empty_result())
@@ -176,6 +175,7 @@ def resolve_character(
         action_id=record.action_id,
         started_at=as_utc(record.started_at),
         last_resolved_at=as_utc(record.last_resolved_at),
+        meta=dict(record.meta),
     )
     new_state, new_active, result = resolve(
         state,
@@ -189,9 +189,17 @@ def resolve_character(
         session.delete(record)
         remaining = None
     else:
+        record.action_id = new_active.action_id
+        record.started_at = new_active.started_at
         record.last_resolved_at = new_active.last_resolved_at
+        record.meta = dict(new_active.meta)
         remaining = record
-    if result.cycles_completed > 0 or result.stop_reason == StopReason.REQUIREMENT_LOST:
+    if (
+        result.cycles_completed > 0
+        or result.stop_reason == StopReason.REQUIREMENT_LOST
+        or result.elapsed_ms > 0
+        or bool(result.details.keys() - {"level_ups", "stop_reason"})
+    ):
         session.add(
             RewardLog(
                 character_id=character_id,
@@ -203,13 +211,7 @@ def resolve_character(
                     "consumed": dict(result.items_consumed),
                     "overflowed": dict(result.overflowed_items),
                 },
-                details={
-                    "level_ups": {
-                        skill: list(levels)
-                        for skill, levels in result.level_ups.items()
-                    },
-                    "stop_reason": result.stop_reason,
-                },
+                details=dict(result.details),
                 resolved_at=now,
             )
         )
@@ -238,7 +240,9 @@ def claim_rewards(
     overflowed: defaultdict[str, int] = defaultdict(int)
     level_ups: defaultdict[str, list[int]] = defaultdict(list)
     stop_reason = None
+    details: list[dict[str, object]] = []
     for log in logs:
+        details.append(dict(log.details))
         for skill_id, amount in log.xp.items():
             xp[skill_id] += amount
         for item_id, amount in log.items.get("consumed", {}).items():
@@ -261,6 +265,7 @@ def claim_rewards(
         overflowed_items=dict(overflowed),
         level_ups={skill: tuple(levels) for skill, levels in level_ups.items()},
         stop_reason=stop_reason,
+        details={"resolutions": details} if details else {},
     )
 
 

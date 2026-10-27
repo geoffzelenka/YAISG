@@ -177,7 +177,7 @@ def finalize_relocation(
         and _as_utc(estate.relocation_completes_at) <= now
     ):
         estate.realm_id = estate.relocating_to_realm_id
-        character.realm_id = estate.realm_id
+        character.current_realm_id = estate.realm_id
         estate.relocating_to_realm_id = None
         estate.relocation_completes_at = None
         estate.status = "active"

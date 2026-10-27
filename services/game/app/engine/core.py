@@ -10,7 +10,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Protocol
+from types import MappingProxyType
+from typing import Any, Protocol
 
 from app.content.loader import ContentIndex
 from app.content.schemas import (
@@ -54,7 +55,7 @@ class CharacterState:
     gold: int
     estate_form_id: str
     realm_node_id: str
-    realm_id: str = ""
+    current_realm_id: str = ""
     estate_realm_id: str = ""
     realm_stage: DecayStage = DecayStage.FED
     estate_stage: DecayStage = DecayStage.FED
@@ -72,6 +73,7 @@ class ActiveAction:
     action_id: str
     started_at: datetime
     last_resolved_at: datetime
+    meta: Mapping[str, Any] = field(default_factory=dict)
 
 
 class StopReason(StrEnum):
@@ -94,6 +96,10 @@ class ResolveResult:
     overflowed_items: Mapping[str, int]
     level_ups: Mapping[str, tuple[int, ...]]
     stop_reason: StopReason | None
+    state: CharacterState | None = None
+    active: ActiveAction | None = None
+    elapsed_ms: int = 0
+    details: Mapping[str, Any] = field(default_factory=dict)
 
 
 class ErrorCode(StrEnum):
@@ -134,17 +140,43 @@ class CycleRewards:
     drops: tuple[tuple[str, int], ...]
 
 
-class CycleRewardStrategy(Protocol):
-    """Swappable per-cycle reward behavior, including future combat."""
+@dataclass(frozen=True)
+class ResolveContext:
+    """Content, initial bonuses, caps and action state for a clipped budget."""
 
-    def rewards(
+    content: ContentIndex
+    active: ActiveAction
+    caps: Caps
+    modifier_groups: tuple[tuple[Modifier, ...], ...]
+
+
+class ActionResolver(Protocol):
+    """Pure action-specific simulation over an already clipped time budget."""
+
+    def resolve(
         self,
-        action: Action,
         state: CharacterState,
-        content: ContentIndex,
+        action: Action,
+        ctx: ResolveContext,
+        budget_ms: int,
         rng: RandomSource,
-    ) -> CycleRewards:
-        """Return rewards for one completed cycle."""
+    ) -> ResolveResult:
+        """Return changed state, rewards, consumed time and action progress."""
+
+
+def home_realm(character: CharacterState) -> str:
+    """Return the realm where the character owns their estate."""
+    return character.estate_realm_id
+
+
+def is_resident(character: CharacterState, realm: str) -> bool:
+    """Return whether the character's estate is located in this realm."""
+    return home_realm(character) == realm
+
+
+def is_present(character: CharacterState, realm: str) -> bool:
+    """Return whether the character is currently in this realm."""
+    return character.current_realm_id == realm
 
 
 def realm_active_tags(
@@ -179,7 +211,7 @@ def _realm_tags(state: CharacterState, content: ContentIndex) -> set[str]:
 def _estate_sources(
     state: CharacterState, content: ContentIndex
 ) -> tuple[EstateForm | EstateUpgrade, ...]:
-    if state.estate_realm_id != state.realm_id:
+    if not is_present(state, home_realm(state)):
         return ()
     realm = _realm_tags(state, content)
     form = content.estate_form(state.estate_form_id)
@@ -328,20 +360,6 @@ def effective_drops(
 
 class StandardCycleRewards:
     """Standard skilling XP and random drop-table rewards."""
-
-    def rewards(
-        self,
-        action: Action,
-        state: CharacterState,
-        content: ContentIndex,
-        rng: RandomSource,
-    ) -> CycleRewards:
-        """Roll each drop independently and return this cycle's rewards."""
-        return self.rewards_from_values(
-            effective_xp(action, state, content),
-            effective_drops(action, state, content),
-            rng,
-        )
 
     def rewards_from_values(
         self, xp: int, drops: Sequence[Drop], rng: RandomSource
@@ -525,34 +543,15 @@ def _milliseconds(delta: timedelta) -> int:
     return delta.days * 86_400_000 + delta.seconds * 1_000 + delta.microseconds // 1_000
 
 
-def resolve(
+def _resolve_uniform(
     state: CharacterState,
-    active: ActiveAction,
-    content: ContentIndex,
-    now: datetime,
+    action: Action,
+    ctx: ResolveContext,
+    available_ms: int,
     rng: RandomSource,
-    *,
-    reward_strategy: CycleRewardStrategy = STANDARD_REWARDS,
-) -> tuple[CharacterState, ActiveAction | None, ResolveResult]:
-    """Resolve every eligible full cycle, preserving any partial remainder."""
-    action = content.action(active.action_id)
-    requirement_lost = any(
-        code != ErrorCode.MISSING_INPUTS
-        for code in unmet_requirements(action, state, content)
-    )
-    if now < active.last_resolved_at:
-        # A server clock can move backwards slightly during correction. Treat
-        # that interval as no elapsed time rather than failing a routine read.
-        reason = StopReason.REQUIREMENT_LOST if requirement_lost else None
-        return (
-            state,
-            None if requirement_lost else active,
-            ResolveResult(0, {}, {}, {}, {}, {}, reason),
-        )
-    caps = resolve_caps(state, content)
-    cap_ms = int(caps.offline_hours * 3_600_000)
-    elapsed_ms = _milliseconds(now - active.last_resolved_at)
-    available_ms = min(elapsed_ms, cap_ms)
+) -> ResolveResult:
+    """Resolve full uniform cycles, recomputing values at level changes."""
+    content, active, caps = ctx.content, ctx.active, ctx.caps
     inventory = {item_id: qty for item_id, qty in state.inventory.items() if qty > 0}
     xp = dict(state.skills_xp)
     levels = dict(state.skill_levels)
@@ -575,9 +574,8 @@ def resolve(
         current_level = levels.get(action.skill_id, 1)
         if current_level != effective_level:
             cycle_ms = effective_cycle_time(action, current_state, content)
-            if reward_strategy is STANDARD_REWARDS:
-                standard_xp = effective_xp(action, current_state, content)
-                standard_drops = effective_drops(action, current_state, content)
+            standard_xp = effective_xp(action, current_state, content)
+            standard_drops = effective_drops(action, current_state, content)
             effective_level = current_level
         if resolved_ms + cycle_ms > available_ms:
             break
@@ -591,12 +589,7 @@ def resolve(
             if inventory[item_id] == 0:
                 del inventory[item_id]
 
-        if reward_strategy is STANDARD_REWARDS:
-            rewards = STANDARD_REWARDS.rewards_from_values(
-                standard_xp, standard_drops, rng
-            )
-        else:
-            rewards = reward_strategy.rewards(action, current_state, content, rng)
+        rewards = STANDARD_REWARDS.rewards_from_values(standard_xp, standard_drops, rng)
         skill_xp = xp.get(action.skill_id, 0) + rewards.xp
         previous_level = levels.get(action.skill_id, 1)
         next_level = level_for_xp(skill_xp, content.xp_curve.levels)
@@ -631,13 +624,18 @@ def resolve(
             stop_reason = StopReason.INPUTS_EXHAUSTED
             break
 
-    if stop_reason is None and cycles > 0 and elapsed_ms > cap_ms:
-        stop_reason = StopReason.OFFLINE_CAP
-    if requirement_lost:
-        stop_reason = StopReason.REQUIREMENT_LOST
     new_state = replace(state, skills_xp=xp, skill_levels=levels, inventory=inventory)
     xp_delta = xp.get(action.skill_id, 0) - state.skills_xp.get(action.skill_id, 0)
-    result = ResolveResult(
+    new_active = (
+        None
+        if stop_reason is not None
+        else replace(
+            active,
+            last_resolved_at=active.last_resolved_at
+            + timedelta(milliseconds=resolved_ms),
+        )
+    )
+    return ResolveResult(
         cycles_completed=cycles,
         xp_gained={action.skill_id: xp_delta} if xp_delta else {},
         items_consumed=dict(consumed),
@@ -645,11 +643,93 @@ def resolve(
         overflowed_items=dict(overflowed),
         level_ups={skill: tuple(values) for skill, values in level_ups.items()},
         stop_reason=stop_reason,
+        state=new_state,
+        active=new_active,
+        elapsed_ms=resolved_ms,
     )
-    if stop_reason is not None:
-        return new_state, None, result
-    new_active = replace(
-        active,
-        last_resolved_at=active.last_resolved_at + timedelta(milliseconds=resolved_ms),
+
+
+class UniformResolver:
+    """The shipped uniform cycle algorithm behind the resolver protocol."""
+
+    def resolve(
+        self,
+        state: CharacterState,
+        action: Action,
+        ctx: ResolveContext,
+        budget_ms: int,
+        rng: RandomSource,
+    ) -> ResolveResult:
+        """Consume whole cycles without spending the partial remainder."""
+        return _resolve_uniform(state, action, ctx, budget_ms, rng)
+
+
+ACTION_RESOLVERS: Mapping[str, ActionResolver] = MappingProxyType(
+    {"uniform": UniformResolver()}
+)
+
+
+def resolve(
+    state: CharacterState,
+    active: ActiveAction,
+    content: ContentIndex,
+    now: datetime,
+    rng: RandomSource,
+    *,
+    resolvers: Mapping[str, ActionResolver] = ACTION_RESOLVERS,
+) -> tuple[CharacterState, ActiveAction | None, ResolveResult]:
+    """Clip elapsed time, dispatch by content resolver, and apply shared stops."""
+    action = content.action(active.action_id)
+    requirement_lost = any(
+        code != ErrorCode.MISSING_INPUTS
+        for code in unmet_requirements(action, state, content)
     )
-    return new_state, new_active, result
+    if now < active.last_resolved_at:
+        reason = StopReason.REQUIREMENT_LOST if requirement_lost else None
+        next_active = None if requirement_lost else active
+        return (
+            state,
+            next_active,
+            ResolveResult(
+                0,
+                {},
+                {},
+                {},
+                {},
+                {},
+                reason,
+                state=state,
+                active=next_active,
+                details={"level_ups": {}, "stop_reason": reason},
+            ),
+        )
+    caps = resolve_caps(state, content)
+    cap_ms = int(caps.offline_hours * 3_600_000)
+    elapsed_ms = _milliseconds(now - active.last_resolved_at)
+    ctx = ResolveContext(content, active, caps, modifier_groups(state, content))
+    if action.resolver is None:
+        raise ValueError(f"action {action.id!r} has no resolver")
+    result = resolvers[action.resolver].resolve(
+        state, action, ctx, min(elapsed_ms, cap_ms), rng
+    )
+    if result.state is None:
+        raise ValueError(f"resolver {action.resolver!r} returned no character state")
+    new_state = result.state
+    reason = result.stop_reason
+    if reason is None and result.cycles_completed > 0 and elapsed_ms > cap_ms:
+        reason = StopReason.OFFLINE_CAP
+    if requirement_lost:
+        reason = StopReason.REQUIREMENT_LOST
+    result = replace(
+        result,
+        stop_reason=reason,
+        active=None if reason else result.active,
+        details={
+            **result.details,
+            "level_ups": {
+                skill: list(levels) for skill, levels in result.level_ups.items()
+            },
+            "stop_reason": reason,
+        },
+    )
+    return new_state, result.active, result

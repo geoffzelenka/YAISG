@@ -74,7 +74,7 @@ it('displays the effective profile inventory cap instead of the content base', a
                   character: {
                     id: 'c',
                     name: 'Hero',
-                    realm_id: 'realm.one',
+                    current_realm_id: 'realm.one',
                     created_at: '',
                   },
                   skills: [],

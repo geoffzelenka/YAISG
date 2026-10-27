@@ -48,7 +48,7 @@ class CharacterSummary(BaseModel):
 
     id: uuid.UUID
     name: str
-    realm_id: str
+    current_realm_id: str
     created_at: datetime
 
 
@@ -184,7 +184,7 @@ async def create_character(
         player_id=player.id,
         name=name,
         name_normalized=name.casefold(),
-        realm_id=body.realm_id,
+        current_realm_id=body.realm_id,
         home_estate_id=estate_id,
         created_at=now,
     )
@@ -240,8 +240,8 @@ def _profile(
     estate = session.get(Estate, character.home_estate_id)
     if currency is None or estate is None:
         raise RuntimeError(f"character {character.id} has incomplete profile state")
-    realm = content.realm(character.realm_id)
-    realm_state = session.get(RealmState, character.realm_id)
+    realm = content.realm(character.current_realm_id)
+    realm_state = session.get(RealmState, character.current_realm_id)
     node = content.development_node(
         realm_state.node_id if realm_state else realm.starting_node_id
     )
