@@ -27,7 +27,9 @@ it('displays the effective profile inventory cap instead of the content base', a
         caps: {
           offline_hours: 12,
           inventory_slots: 30,
-          market_listings: 5,
+          order_slots: 5,
+          key_listings: 2,
+          belt_slots: 2,
           estate_upgrade_slots: 2,
         },
         map: { edges: [], positions: {} },
@@ -67,7 +69,9 @@ it('displays the effective profile inventory cap instead of the content base', a
                   caps: {
                     offline_hours: { base: 12, effective: 14 },
                     inventory_slots: { base: 30, effective: 42 },
-                    market_listings: { base: 5, effective: 5 },
+                    order_slots: { base: 5, effective: 5 },
+                    key_listings: { base: 2, effective: 2 },
+                    belt_slots: { base: 2, effective: 2 },
                     estate_upgrade_slots: { base: 2, effective: 2 },
                   },
                 }

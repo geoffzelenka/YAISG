@@ -20,21 +20,54 @@ export type Modifier = {
   value: number
   skill_id?: string | null
 }
+export type Selector =
+  | { item: string; class?: never; tier?: never }
+  | { class: string; tier?: number; item?: never }
 export type Action = {
   id: string
   name: string
   skill_id: string
-  level_required: number
-  cycle_ms: number
-  inputs: ItemQuantity[]
+  unlock_level: number
+  tier: number
+  base_cycle_ms: number
+  inputs: { selector: Selector; quantity: number }[]
   xp: number
-  drops: { item_id: string; qty: [number, number]; chance: number }[]
-  realm_tags: string[]
+  outputs: {
+    item_id: string
+    quantity_min: number
+    quantity_max: number
+    chance: number
+    off_tier: boolean
+  }[]
+  requires: {
+    facility?: string | null
+    realm_tags: string[]
+    skill_levels: Record<string, number>
+    tool_class?: string | null
+  }
+  resolver: 'uniform' | 'combat' | 'travel'
+  off_curve: string | null
 }
-export type Skill = { id: string; name: string; actions: Action[] }
+export type Skill = {
+  id: string
+  name: string
+  category:
+    | 'gathering'
+    | 'refining'
+    | 'manufacturing'
+    | 'combat'
+    | 'exploration'
+    | 'travel'
+  actions: Action[]
+}
 export type Item = {
   id: string
   name: string
+  tier: number
+  classes: string[]
+  reference_price: number
+  bullion: boolean
+  spoilage_pct_per_day: number
   stack_limit: number
   tags: string[]
 }
@@ -52,7 +85,9 @@ export type EstateUpgrade = {
     cap:
       | 'offline_hours'
       | 'inventory_slots'
-      | 'market_listings'
+      | 'order_slots'
+      | 'key_listings'
+      | 'belt_slots'
       | 'estate_upgrade_slots'
     value: number
   }[]
@@ -61,7 +96,9 @@ export type EstateUpgrade = {
 export type Caps = {
   offline_hours: number
   inventory_slots: number
-  market_listings: number
+  order_slots: number
+  key_listings: number
+  belt_slots: number
   estate_upgrade_slots: number
 }
 

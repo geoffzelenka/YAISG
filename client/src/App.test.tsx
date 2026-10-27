@@ -31,7 +31,9 @@ it('shows Maximum level when XP to next is null', () => {
     caps: {
       offline_hours: { base: 12, effective: 12 },
       inventory_slots: { base: 30, effective: 30 },
-      market_listings: { base: 5, effective: 5 },
+      order_slots: { base: 5, effective: 5 },
+      key_listings: { base: 2, effective: 2 },
+      belt_slots: { base: 2, effective: 2 },
       estate_upgrade_slots: { base: 2, effective: 2 },
     },
   }

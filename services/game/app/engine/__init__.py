@@ -21,6 +21,7 @@ from app.engine.core import (
     resolve,
     resolve_caps,
 )
+from app.engine.selectors import Shortfall, pay_selector
 
 __all__ = [
     "OK",
@@ -37,6 +38,8 @@ __all__ = [
     "can_start",
     "effective_cycle_time",
     "effective_drops",
+    "pay_selector",
+    "Shortfall",
     "effective_xp",
     "path_cost",
     "relocation_cost",

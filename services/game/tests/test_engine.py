@@ -188,7 +188,7 @@ def test_offline_cap_does_not_end_action_when_no_cycle_fits(
 ) -> None:
     """A cycle longer than the offline budget remains pending with no progress."""
     action = content.action("gathering.fake_sprigs").model_copy(
-        update={"cycle_ms": 14 * 3_600_000}
+        update={"base_cycle_ms": 14 * 3_600_000}
     )
     _, active, result = resolve(
         make_state(),
@@ -325,7 +325,7 @@ class LevelSensitiveRewards:
 def test_level_up_changes_subsequent_cycle_resolution(content: ContentIndex) -> None:
     """Each cycle strategy sees levels produced by the preceding cycle."""
     action = content.action("gathering.fake_sprigs").model_copy(
-        update={"cycle_ms": 1_000, "drops": ()}
+        update={"base_cycle_ms": 1_000, "outputs": ()}
     )
     custom = with_action(content, action)
     state, _, result = resolve(
@@ -497,3 +497,123 @@ def test_can_start_checks_boundaries(
 ) -> None:
     """Start validation returns stable results in documented priority order."""
     assert can_start(action_id, state, content) == expected
+
+
+@pytest.mark.parametrize(
+    ("quantity", "expected"),
+    [
+        (2, {"item.fake_sprig": 2}),
+        (5, {"item.fake_sprig": 3, "item.worthless_button": 2}),
+        (8, None),
+    ],
+)
+def test_pay_selector_atomic_cheapest_first(
+    content: ContentIndex, quantity: int, expected: dict[str, int] | None
+) -> None:
+    """Payment spans stacks by price and never returns a partial withdrawal."""
+    from app.content.schemas import Selector
+    from app.engine.selectors import Shortfall, pay_selector
+
+    holding = {"item.fake_sprig": 3, "item.worthless_button": 4}
+    result = pay_selector(
+        holding, Selector.model_validate({"class": "fake_plant"}), quantity, content
+    )
+    assert result == (Shortfall(1) if expected is None else expected)
+    assert holding == {"item.fake_sprig": 3, "item.worthless_button": 4}
+
+
+def test_pay_selector_tie_and_item_selector(content: ContentIndex) -> None:
+    """Equal prices use id order, and item selectors never substitute goods."""
+    from app.content.schemas import Selector
+    from app.engine.selectors import pay_selector
+
+    custom = content.with_overrides(
+        items=(
+            content.item("item.worthless_button").model_copy(
+                update={"reference_price": 1}
+            ),
+        )
+    )
+    holding = {"item.worthless_button": 3, "item.fake_sprig": 3}
+    assert pay_selector(
+        holding, Selector.model_validate({"class": "fake_plant", "tier": 1}), 4, custom
+    ) == {"item.fake_sprig": 3, "item.worthless_button": 1}
+    assert pay_selector(holding, Selector(item="item.worthless_button"), 2, custom) == {
+        "item.worthless_button": 2
+    }
+
+
+@given(cheap=st.integers(0, 30), expensive=st.integers(0, 30))
+def test_class_recipe_batch_conservation(
+    content: ContentIndex, cheap: int, expensive: int
+) -> None:
+    """Batches exhaust the cheaper stack first and conserve all paid goods."""
+    initial = {"item.fake_sprig": cheap, "item.worthless_button": expensive}
+    state, _, result = resolve(
+        make_state(inventory=initial),
+        make_active("refining.fake_plank"),
+        content,
+        START + timedelta(milliseconds=200_000),
+        FixedRng(),
+    )
+    paid = ((cheap + expensive) // 2) * 2
+    assert result.cycles_completed == paid // 2
+    assert result.items_consumed.get("item.fake_sprig", 0) == min(cheap, paid)
+    assert result.items_consumed.get("item.worthless_button", 0) == max(0, paid - cheap)
+    for item_id, quantity in initial.items():
+        assert (
+            state.inventory.get(item_id, 0) + result.items_consumed.get(item_id, 0)
+            == quantity
+        )
+    assert state.inventory.get("item.fake_plank", 0) == paid // 2
+    expected = OK if cheap + expensive >= 2 else ErrorCode.MISSING_INPUTS
+    assert (
+        can_start("refining.fake_plank", make_state(inventory=initial), content)
+        == expected
+    )
+
+
+def test_overlapping_inputs_cannot_double_spend(content: ContentIndex) -> None:
+    """Start and resolve plan overlapping selectors against the same remainder."""
+    from app.content.schemas import ActionInput, Selector
+
+    action = content.action("refining.fake_plank")
+    custom = content.with_overrides(
+        actions=(
+            action.model_copy(
+                update={
+                    "inputs": (
+                        *action.inputs,
+                        ActionInput(
+                            selector=Selector(item="item.fake_sprig"), quantity=1
+                        ),
+                    )
+                }
+            ),
+        )
+    )
+    initial = make_state(inventory={"item.fake_sprig": 2})
+    assert can_start(action.id, initial, custom) == ErrorCode.MISSING_INPUTS
+    state, _, result = resolve(
+        initial,
+        make_active(action.id),
+        custom,
+        START + timedelta(seconds=5),
+        FixedRng(),
+    )
+    assert state.inventory == initial.inventory
+    assert result.cycles_completed == 0
+    assert result.items_consumed == {}
+
+
+def test_omitted_requirements_do_not_block_start(content: ContentIndex) -> None:
+    """An optional empty requirement block does not invent a realm restriction."""
+    from app.content.schemas import Requirements
+
+    action = content.action("gathering.fake_sprigs").model_copy(
+        update={"requires": Requirements()}
+    )
+    assert (
+        can_start(action.id, make_state(), content.with_overrides(actions=(action,)))
+        == OK
+    )

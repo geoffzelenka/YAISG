@@ -1,14 +1,131 @@
 {
   "items": [
-    {"id": "item.fake_sprig", "name": "Fake Sprig", "tags": ["gathered", "plant"]},
-    {"id": "item.mock_ore", "name": "Mock Ore", "tags": ["gathered", "ore"]},
-    {"id": "item.test_crystal", "name": "Test Crystal", "tags": ["gathered", "crystal"]},
-    {"id": "item.fake_plank", "name": "Fake Plank", "tags": ["refined", "wood"]},
-    {"id": "item.mock_ingot", "name": "Mock Ingot", "tags": ["refined", "metal"]},
-    {"id": "item.demo_crate", "name": "Demo Crate", "tags": ["crafted"]},
-    {"id": "item.prototype_widget", "name": "Prototype Widget", "tags": ["crafted"]},
-    {"id": "item.worthless_button", "name": "Worthless Button", "stack_limit": 999999, "tags": ["junk", "currency-adjacent"]},
-    {"id": "item.placeholder_token", "name": "Placeholder Token", "tags": ["project"]},
-    {"id": "item.cardboard_badge", "name": "Cardboard Badge", "tags": ["project"]}
+    {
+      "id": "item.fake_sprig",
+      "name": "Fake Sprig",
+      "tags": [
+        "gathered",
+        "plant"
+      ],
+      "tier": 1,
+      "classes": [
+        "fake_plant"
+      ],
+      "reference_price": 1
+    },
+    {
+      "id": "item.mock_ore",
+      "name": "Mock Ore",
+      "tags": [
+        "gathered",
+        "ore"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 2
+    },
+    {
+      "id": "item.test_crystal",
+      "name": "Test Crystal",
+      "tags": [
+        "gathered",
+        "crystal"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 3
+    },
+    {
+      "id": "item.fake_plank",
+      "name": "Fake Plank",
+      "tags": [
+        "refined",
+        "wood"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 4
+    },
+    {
+      "id": "item.mock_ingot",
+      "name": "Mock Ingot",
+      "tags": [
+        "refined",
+        "metal"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 5
+    },
+    {
+      "id": "item.demo_crate",
+      "name": "Demo Crate",
+      "tags": [
+        "crafted"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 6
+    },
+    {
+      "id": "item.prototype_widget",
+      "name": "Prototype Widget",
+      "tags": [
+        "crafted"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 7
+    },
+    {
+      "id": "item.worthless_button",
+      "name": "Worthless Button",
+      "stack_limit": 999999,
+      "tags": [
+        "junk",
+        "currency-adjacent"
+      ],
+      "tier": 1,
+      "classes": [
+        "fake_plant"
+      ],
+      "reference_price": 8
+    },
+    {
+      "id": "item.placeholder_token",
+      "name": "Placeholder Token",
+      "tags": [
+        "project"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 9
+    },
+    {
+      "id": "item.cardboard_badge",
+      "name": "Cardboard Badge",
+      "tags": [
+        "project"
+      ],
+      "tier": 1,
+      "classes": [
+        "placeholder"
+      ],
+      "reference_price": 10
+    }
   ]
 }

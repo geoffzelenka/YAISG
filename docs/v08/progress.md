@@ -8,7 +8,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 |---|---|---|---|---|---|---|
 | 00 | `00-preflight` | Baseline alignment audit | done | v08/00-preflight | 6069863 | Baseline audited (94 OK / 6 DRIFT / 1 MISSING / 1 PARTIAL, no BLOCKER); FIX-HERE: GET /realms now locks realms in id order, PostgreSQL regression test; codebase map written. |
 | 01 | `01-foundation` | Schema reset, XP curve, levels to 100, tiers, zero gold | done | v08/01-foundation | 2693109 | Single v08_0000_baseline migration; make db-reset; checked-in XP curve (sum 10,000,000) to level 100 with cached thresholds; progression pack with tiers; zero starting gold. |
-| 02 | `02-content-model` | Goods, actions, selectors, categories, caps | pending | — | — | — |
+| 02 | `02-content-model` | Goods, actions, selectors, categories, caps | ready for review | `v08/02-content-model` | — | v0.8 goods/actions, deterministic selector payment, categories and caps |
 | 03 | `03-bonus-model` | Source groups, multiplication, XP cap, proficiency, taper | pending | — | — | — |
 | 04 | `04-content-lint` | XP-rate content lint | pending | — | — | — |
 | 05 | `05-tags` | Tags, action requirements, availability report | pending | — | — | — |

@@ -196,7 +196,7 @@ def _load_model[ModelT: BaseModel](
 ) -> ModelT:
     path = directory / f"{pack}.json"
     try:
-        return model.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        return model.model_validate_json(path.read_text(encoding="utf-8"), strict=True)
     except FileNotFoundError as error:
         raise ContentError(f"required content pack is missing: {path}") from error
     except (json.JSONDecodeError, ValidationError) as error:
@@ -235,6 +235,7 @@ def _validate(
     edges: dict[str, DevelopmentEdge],
     projects: dict[str, Project],
     xp_curve: XpCurve,
+    progression: ProgressionPack,
 ) -> None:
     item_ids = set(items)
     tags = {tag for node in nodes.values() for tag in node.tags}
@@ -243,18 +244,35 @@ def _validate(
             raise ContentError(
                 f"unknown skill_id {action.skill_id!r} in action {action.id}"
             )
-        _require_items(
-            (v.item_id for v in action.inputs),
-            item_ids,
-            f"action {action.id} inputs",
-        )
-        _require_items(
-            (v.item_id for v in action.drops),
-            item_ids,
-            f"action {action.id} drops",
-        )
-        if set(action.realm_tags) - tags - {"*"}:
-            raise ContentError(f"unknown realm tags in action {action.id}")
+        from app.engine.levels import tier_for_level
+
+        if action.tier != tier_for_level(
+            action.unlock_level, progression.tier_thresholds
+        ):
+            raise ContentError(f"action {action.id} tier differs from unlock level")
+        for entry in action.inputs:
+            matches = [item for item in items.values() if entry.selector.matches(item)]
+            if not matches:
+                raise ContentError(f"selector matches no item in action {action.id}")
+            if any(item.tier > action.tier for item in matches):
+                raise ContentError(f"higher-tier input in action {action.id}")
+        _require_items((v.item_id for v in action.outputs), item_ids, action.id)
+        if any(
+            items[v.item_id].tier != action.tier and not v.off_tier
+            for v in action.outputs
+        ):
+            raise ContentError(f"output tier differs in action {action.id}")
+        required = action.requires
+        if set(required.realm_tags) - tags - {"*"} or (
+            required.facility is not None and required.facility not in tags
+        ):
+            raise ContentError(f"unknown requirement tag in action {action.id}")
+        if set(required.skill_levels) - set(skills):
+            raise ContentError(f"unknown required skill in action {action.id}")
+        if required.tool_class is not None and not any(
+            required.tool_class in item.classes for item in items.values()
+        ):
+            raise ContentError(f"unknown tool class in action {action.id}")
     for realm in realms.values():
         if realm.starting_node_id not in nodes:
             raise ContentError(
@@ -377,6 +395,7 @@ def load_content(content_dir: Path) -> ContentIndex:
         edges,
         projects,
         xp_curve,
+        progression,
     )
     canonical = {
         name: model.model_dump(mode="json", by_alias=True)

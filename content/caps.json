@@ -1,1 +1,8 @@
-{"offline_hours": 12, "inventory_slots": 30, "market_listings": 5, "estate_upgrade_slots": 2}
+{
+  "offline_hours": 12,
+  "inventory_slots": 30,
+  "order_slots": 5,
+  "estate_upgrade_slots": 2,
+  "key_listings": 2,
+  "belt_slots": 2
+}

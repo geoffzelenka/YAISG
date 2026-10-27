@@ -2,6 +2,7 @@
 
 from enum import StrEnum
 from itertools import accumulate
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -10,6 +11,7 @@ from pydantic import (
     PrivateAttr,
     RootModel,
     StrictInt,
+    model_serializer,
     model_validator,
 )
 
@@ -17,7 +19,7 @@ from pydantic import (
 class ContentModel(BaseModel):
     """Base class that rejects unknown content fields and prevents mutation."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 class ModifierType(StrEnum):
@@ -34,7 +36,9 @@ class CapType(StrEnum):
 
     OFFLINE_HOURS = "offline_hours"
     INVENTORY_SLOTS = "inventory_slots"
-    MARKET_LISTINGS = "market_listings"
+    ORDER_SLOTS = "order_slots"
+    KEY_LISTINGS = "key_listings"
+    BELT_SLOTS = "belt_slots"
     ESTATE_UPGRADE_SLOTS = "estate_upgrade_slots"
 
 
@@ -45,19 +49,78 @@ class ItemQuantity(ContentModel):
     qty: int = Field(gt=0)
 
 
+class Selector(ContentModel):
+    """Exactly one item or class, optionally restricted to a tier."""
+
+    item: str | None = Field(default=None, min_length=1)
+    class_: str | None = Field(default=None, alias="class", min_length=1)
+    tier: int | None = Field(default=None, ge=1, le=5)
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "Selector":
+        """Reject mixed and empty selectors."""
+        if (self.item is None) == (self.class_ is None):
+            raise ValueError("selector requires exactly one item or class")
+        if self.item is not None and self.tier is not None:
+            raise ValueError("item selector forbids tier")
+        return self
+
+    @model_serializer
+    def serialize_selector(self) -> dict[str, str | int]:
+        """Publish only the keys belonging to the selected shape."""
+        if self.item is not None:
+            return {"item": self.item}
+        result: dict[str, str | int] = {"class": self.class_ or ""}
+        if self.tier is not None:
+            result["tier"] = self.tier
+        return result
+
+    def matches(self, item: "Item") -> bool:
+        """Return whether an item belongs to this selector."""
+        if self.item is not None:
+            return self.item == item.id
+        return self.class_ in item.classes and (
+            self.tier is None or self.tier == item.tier
+        )
+
+
+class ActionInput(ContentModel):
+    """A selector quantity consumed each cycle."""
+
+    selector: Selector
+    quantity: int = Field(gt=0)
+
+
 class Drop(ContentModel):
-    """A possible item reward from an action."""
+    """A possible output from an action."""
 
     item_id: str = Field(min_length=1)
-    qty: tuple[int, int]
+    quantity_min: int = Field(gt=0)
+    quantity_max: int = Field(gt=0)
     chance: float = Field(ge=0, le=1)
+    off_tier: bool = False
 
     @model_validator(mode="after")
     def validate_quantity_range(self) -> "Drop":
-        """Require a positive, ascending inclusive quantity range."""
-        minimum, maximum = self.qty
-        if minimum <= 0 or maximum < minimum:
-            raise ValueError("drop qty must be a positive [min, max] range")
+        """Require an ascending inclusive quantity range."""
+        if self.quantity_max < self.quantity_min:
+            raise ValueError("output quantity range must ascend")
+        return self
+
+
+class Requirements(ContentModel):
+    """References established here and enforced by the tags phase."""
+
+    facility: str | None = None
+    realm_tags: tuple[str, ...] = ()
+    skill_levels: dict[str, int] = Field(default_factory=dict)
+    tool_class: str | None = None
+
+    @model_validator(mode="after")
+    def validate_levels(self) -> "Requirements":
+        """Reject invalid cross-skill levels."""
+        if any(level < 1 or level > 100 for level in self.skill_levels.values()):
+            raise ValueError("required skill levels must be between 1 and 100")
         return self
 
 
@@ -67,12 +130,15 @@ class Action(ContentModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     skill_id: str = Field(min_length=1)
-    level_required: int = Field(ge=1, le=100)
-    cycle_ms: int = Field(gt=0)
-    inputs: tuple[ItemQuantity, ...] = ()
+    tier: int = Field(ge=1, le=5)
+    unlock_level: int = Field(ge=1, le=100)
+    base_cycle_ms: int = Field(gt=0)
+    inputs: tuple[ActionInput, ...] = ()
+    outputs: tuple[Drop, ...] = ()
     xp: int = Field(gt=0)
-    drops: tuple[Drop, ...] = ()
-    realm_tags: tuple[str, ...] = ()
+    requires: Requirements = Requirements()
+    resolver: Literal["uniform", "combat", "travel"] | None = None
+    off_curve: str | None = None
 
 
 class Skill(ContentModel):
@@ -80,7 +146,24 @@ class Skill(ContentModel):
 
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
+    category: Literal[
+        "gathering", "refining", "manufacturing", "combat", "exploration", "travel"
+    ]
     actions: tuple[Action, ...] = ()
+
+    @model_validator(mode="after")
+    def default_resolvers(self) -> "Skill":
+        """Materialize the category's resolver when omitted."""
+        resolver = self.category if self.category in {"combat", "travel"} else "uniform"
+        object.__setattr__(
+            self,
+            "actions",
+            tuple(
+                a.model_copy(update={"resolver": resolver}) if a.resolver is None else a
+                for a in self.actions
+            ),
+        )
+        return self
 
 
 class SkillsPack(ContentModel):
@@ -94,6 +177,11 @@ class Item(ContentModel):
 
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
+    tier: int = Field(ge=1, le=5)
+    classes: tuple[str, ...]
+    reference_price: int = Field(gt=0)
+    bullion: bool = False
+    spoilage_pct_per_day: float = Field(default=0, ge=0, le=100)
     stack_limit: int = Field(default=2_147_483_647, gt=0)
     tags: tuple[str, ...] = ()
 
@@ -314,7 +402,9 @@ class CapsConfig(ContentModel):
 
     offline_hours: float = Field(gt=0)
     inventory_slots: int = Field(gt=0)
-    market_listings: int = Field(gt=0)
+    order_slots: int = Field(gt=0)
+    key_listings: int = Field(gt=0)
+    belt_slots: int = Field(gt=0)
     estate_upgrade_slots: int = Field(gt=0)
 
 

@@ -15,6 +15,7 @@ from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.engine import ErrorCode, ResolveResult, can_start, effective_cycle_time
+from app.engine.core import input_payment
 from app.errors import api_error
 from app.models import ActiveActionRecord, Character
 from app.services.actions import (
@@ -64,7 +65,7 @@ class AvailableAction(BaseModel):
 
     action_id: str
     name: str
-    level_required: int
+    unlock_level: int
     cycle_ms: int
     startable: bool
     blocked_by: list[str]
@@ -146,21 +147,20 @@ async def available_actions(
     for skill in content.skills:
         actions: list[AvailableAction] = []
         for action in skill.actions:
-            if not _realm_matches(action.realm_tags, realm_tags):
+            if action.requires.realm_tags and not _realm_matches(
+                action.requires.realm_tags, realm_tags
+            ):
                 continue
             blocked: list[str] = []
-            if state.skill_levels.get(action.skill_id, 1) < action.level_required:
+            if state.skill_levels.get(action.skill_id, 1) < action.unlock_level:
                 blocked.append(ErrorCode.INSUFFICIENT_LEVEL.value)
-            if any(
-                state.inventory.get(entry.item_id, 0) < entry.qty
-                for entry in action.inputs
-            ):
+            if input_payment(state.inventory, action, content) is None:
                 blocked.append(ErrorCode.MISSING_INPUTS.value)
             actions.append(
                 AvailableAction(
                     action_id=action.id,
                     name=action.name,
-                    level_required=action.level_required,
+                    unlock_level=action.unlock_level,
                     cycle_ms=effective_cycle_time(action, state, content),
                     startable=not blocked,
                     blocked_by=blocked,

@@ -22,7 +22,7 @@ def _write_json(path: Path, value: Any) -> None:
 def _change_unknown_item(content_dir: Path) -> None:
     path = content_dir / "skills.json"
     value = json.loads(path.read_text())
-    value["skills"][0]["actions"][0]["drops"][0]["item_id"] = "item.missing"
+    value["skills"][0]["actions"][0]["outputs"][0]["item_id"] = "item.missing"
     _write_json(path, value)
 
 
@@ -95,9 +95,9 @@ def test_placeholder_content_loads() -> None:
     """The checked-in pack exercises required lookups and dependency content."""
     content = load_content(CONTENT_DIR)
 
-    assert len(content.skills) == 4
+    assert len(content.skills) == 11
     assert len(content.actions_for_skill("gathering")) == 3
-    assert content.action("crafting.demo_crate").inputs[0].item_id == (
+    assert content.action("manufacturing.demo_crate").inputs[0].selector.item == (
         "item.fake_plank"
     )
     assert content.item("item.prototype_widget").name == "Prototype Widget"
@@ -310,3 +310,114 @@ def test_xp_thresholds_are_cached_and_curve_is_frozen() -> None:
     assert curve.levels is curve.levels
     with pytest.raises(ValidationError, match="frozen"):
         curve.root = curve.root
+
+
+@pytest.mark.parametrize(
+    ("defect", "message"),
+    [
+        ("tier", "tier differs from unlock level"),
+        ("output", "output tier differs"),
+        ("input", "higher-tier input"),
+        ("empty", "selector matches no item"),
+        ("category", "Input should be"),
+        ("facility", "unknown requirement tag"),
+        ("skill", "unknown required skill"),
+        ("tool", "unknown tool class"),
+        ("coercion", "valid integer"),
+    ],
+)
+def test_content_model_validation(tmp_path: Path, defect: str, message: str) -> None:
+    """Reject invalid tiers, references, categories, and coerced scalar types."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "skills.json"
+    skills = json.loads(path.read_text())
+    action = skills["skills"][1]["actions"][0]
+    if defect == "tier":
+        action["tier"] = 2
+    elif defect in {"input", "output"}:
+        items_path = directory / "items.json"
+        items = json.loads(items_path.read_text())
+        if defect == "input":
+            action["inputs"][0]["selector"] = {"class": "fake_plant"}
+            skills["skills"][0]["actions"][0]["outputs"][0]["off_tier"] = True
+        index = 0 if defect == "input" else 3
+        items["items"][index]["tier"] = 2
+        _write_json(items_path, items)
+    elif defect == "empty":
+        action["inputs"][0]["selector"] = {"class": "missing"}
+    elif defect == "category":
+        skills["skills"][0]["category"] = "missing"
+    elif defect == "coercion":
+        action["tier"] = "1"
+    else:
+        field = {"facility": "facility", "skill": "skill_levels", "tool": "tool_class"}[
+            defect
+        ]
+        action["requires"][field] = {"missing": 1} if defect == "skill" else "missing"
+    _write_json(path, skills)
+    with pytest.raises(ContentError, match=message):
+        load_content(directory)
+
+
+def test_off_tier_output_and_resolver_defaults(tmp_path: Path) -> None:
+    """Explicit by-products permit other tiers and category sets default resolver."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "skills.json"
+    skills = json.loads(path.read_text())
+    action = skills["skills"][0]["actions"][0]
+    action["outputs"][0]["off_tier"] = True
+    _write_json(path, skills)
+    path = directory / "items.json"
+    items = json.loads(path.read_text())
+    items["items"][0]["tier"] = 2
+    # Keep class selectors from matching this deliberately higher-tier by-product.
+    items["items"][0]["classes"] = ["byproduct"]
+    _write_json(path, items)
+    content = load_content(directory)
+    assert content.action(action["id"]).resolver == "uniform"
+
+
+@pytest.mark.parametrize(
+    "value", [{}, {"item": "x", "class": "x"}, {"item": "x", "tier": 1}]
+)
+def test_selector_rejects_invalid_shapes(value: dict[str, object]) -> None:
+    """Selectors cannot be empty, mixed, or attach tiers to exact items."""
+    from pydantic import ValidationError
+
+    from app.content.schemas import Selector
+
+    with pytest.raises(ValidationError):
+        Selector.model_validate(value)
+
+
+@pytest.mark.parametrize(
+    ("category", "resolver"),
+    [("gathering", "uniform"), ("combat", "combat"), ("travel", "travel")],
+)
+def test_category_defaults_resolver(category: str, resolver: str) -> None:
+    """Resolver defaults are part of the published action definition."""
+    from app.content.schemas import Skill
+
+    skill = Skill.model_validate_json(
+        json.dumps(
+            {
+                "id": "test",
+                "name": "Test",
+                "category": category,
+                "actions": [
+                    {
+                        "id": "test.action",
+                        "name": "Test",
+                        "skill_id": "test",
+                        "tier": 1,
+                        "unlock_level": 1,
+                        "base_cycle_ms": 1,
+                        "xp": 1,
+                    }
+                ],
+            }
+        )
+    )
+    assert skill.actions[0].resolver == resolver
