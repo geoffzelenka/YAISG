@@ -28,12 +28,13 @@ cycle-speed factor. Each group adds matching skill/category/all modifiers and
 uses the engine's `max(min_factor, 1 + sum / 100)` separately for XP and speed.
 Their product is maximized jointly over each group's alternatives:
 
-- Realm: each development node's modifiers.
+- Realm: each development node's modifiers and active inherent-tag modifiers.
 - Estate: each form with every subset of distinct, non-inert upgrades that fits
-  the global plus form plus node plus selected-upgrade slot cap. Upgrade tag
-  matching accepts empty, wildcard or any matching tag. Empty tags follow
-  §7.4; the current engine instead treats them as inert. Including these
-  upgrades deliberately preserves a conservative upper bound.
+  effective slot cap, including tag cap bonuses. Form and upgrade emissions
+  and direct modifiers use the runtime all-of requires_realm_tags checks; an
+  empty requirement is unrestricted. Candidates cover both distinct stage
+  behaviors (Fed and Faltering), since weakening a malus can raise a bound.
+  Estate emissions stay in E while realm emissions stay in R.
 - Gear and consumables: identity factors until their content schemas exist.
 - Proficiency: excluded, as required by §7.3.
 
@@ -47,8 +48,8 @@ warns even if the runtime XP cap would absorb some of the excess.
 
 Subset enumeration is exponential in the number of eligible upgrades; current
 placeholder packs are small. Larger packs may require a bounded optimization
-that preserves the conservative guarantee. Prompts 05/09 must extend candidates
-with tags offered on each node; 11/12 must adapt form/slot eligibility; 26 and
+that preserves the conservative guarantee. Prompt 09 must extend candidates
+with possible project tag stacks; 11/12 must adapt form/slot eligibility; 26 and
 27 must add gear slot combinations and simultaneous consumable effects to their
 own groups. Prompt 28 owns combat checks. No unavailable schemas are guessed by
 this lint.

@@ -111,6 +111,7 @@ def test_stack_warning_excludes_proficiency_and_xp_cap() -> None:
     skill = _ladder(100, 1.015969)
     node = content.development_nodes[0].model_copy(
         update={
+            "inherent_tags": (),
             "modifiers": (
                 Modifier(type=ModifierType.XP_PCT, value=100, skill_id=skill.id),
             ),
@@ -136,7 +137,7 @@ def test_stack_respects_slots_scope_and_inert_upgrades() -> None:
     content = load_content(CONTENT_DIR)
     skill = _ladder(100, 1.015969)
     node = content.development_nodes[0].model_copy(
-        update={"modifiers": (), "cap_bonuses": (), "tags": ()}
+        update={"modifiers": (), "cap_bonuses": (), "inherent_tags": ()}
     )
     form = content.estate_forms[0].model_copy(update={"modifiers": (), "base_caps": {}})
     upgrade = EstateUpgrade(
@@ -149,7 +150,9 @@ def test_stack_respects_slots_scope_and_inert_upgrades() -> None:
             Modifier(type=ModifierType.XP_PCT, value=1000, skill_id="other"),
         ),
     )
-    inert = upgrade.model_copy(update={"id": "inert", "realm_tags": ("missing",)})
+    inert = upgrade.model_copy(
+        update={"id": "inert", "requires_realm_tags": ("missing",)}
+    )
     upgrades = (upgrade, upgrade.model_copy(update={"id": "second"}), inert)
     content = replace(
         content,
@@ -246,6 +249,7 @@ def test_stack_maximizes_joint_factors_and_keeps_groups_separate() -> None:
     skill = _ladder(100, 1.015969)
     node = content.development_nodes[0].model_copy(
         update={
+            "inherent_tags": (),
             "modifiers": (Modifier(type=ModifierType.XP_PCT, value=20),),
             "cap_bonuses": (),
         }

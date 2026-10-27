@@ -112,7 +112,7 @@ function CharacterCreation() {
                   return (
                     <>
                       <p className="mt-2 text-sm text-slate-400">
-                        Tags: {node?.tags.join(', ') || 'none'}
+                        Tags: {node?.inherent_tags.join(', ') || 'none'}
                       </p>
                       <ul className="mt-2 text-sm text-slate-300">
                         {node?.modifiers.map((modifier, index) => (

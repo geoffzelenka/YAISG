@@ -4,19 +4,24 @@
       "id": "node.verdant_t0_stub",
       "archetype": "agrarian",
       "name": "Verdant Stub",
-      "tags": [],
       "modifiers": [],
       "cap_bonuses": [],
       "upkeep_profile": [],
-      "projects": []
+      "projects": [],
+      "actions": [
+        "gathering.fake_sprigs",
+        "gathering.mock_ore",
+        "gathering.test_crystal"
+      ],
+      "inherent_tags": [
+        "access.fake",
+        "bonus.fake"
+      ]
     },
     {
       "id": "node.verdant_t1",
       "archetype": "agrarian",
       "name": "Verdant Vale",
-      "tags": [
-        "verdant"
-      ],
       "modifiers": [
         {
           "type": "cycle_speed_pct",
@@ -28,15 +33,21 @@
       "upkeep_profile": [],
       "projects": [
         "project.verdant_cardboard"
+      ],
+      "actions": [
+        "gathering.fake_sprigs",
+        "gathering.mock_ore",
+        "gathering.test_crystal"
+      ],
+      "inherent_tags": [
+        "verdant",
+        "facility.fake_node"
       ]
     },
     {
       "id": "node.verdant_t2",
       "archetype": "agrarian",
       "name": "Verdant Vale II",
-      "tags": [
-        "verdant"
-      ],
       "modifiers": [
         {
           "type": "cycle_speed_pct",
@@ -51,25 +62,35 @@
       ],
       "cap_bonuses": [],
       "upkeep_profile": [],
-      "projects": []
+      "projects": [],
+      "actions": [
+        "gathering.fake_sprigs",
+        "gathering.mock_ore",
+        "gathering.test_crystal"
+      ],
+      "inherent_tags": [
+        "verdant"
+      ]
     },
     {
       "id": "node.ashen_t0_stub",
       "archetype": "industrial",
       "name": "Ashen Stub",
-      "tags": [],
       "modifiers": [],
       "cap_bonuses": [],
       "upkeep_profile": [],
-      "projects": []
+      "projects": [],
+      "actions": [
+        "gathering.fake_sprigs",
+        "gathering.mock_ore",
+        "gathering.test_crystal"
+      ],
+      "inherent_tags": []
     },
     {
       "id": "node.ashen_t1",
       "archetype": "industrial",
       "name": "Ashen Reach",
-      "tags": [
-        "ashen"
-      ],
       "modifiers": [
         {
           "type": "cycle_speed_pct",
@@ -81,15 +102,20 @@
       "upkeep_profile": [],
       "projects": [
         "project.ashen_placeholder"
+      ],
+      "actions": [
+        "gathering.fake_sprigs",
+        "gathering.mock_ore",
+        "gathering.test_crystal"
+      ],
+      "inherent_tags": [
+        "ashen"
       ]
     },
     {
       "id": "node.ashen_t2",
       "archetype": "industrial",
       "name": "Ashen Reach II",
-      "tags": [
-        "ashen"
-      ],
       "modifiers": [
         {
           "type": "cycle_speed_pct",
@@ -104,7 +130,15 @@
       ],
       "cap_bonuses": [],
       "upkeep_profile": [],
-      "projects": []
+      "projects": [],
+      "actions": [
+        "gathering.fake_sprigs",
+        "gathering.mock_ore",
+        "gathering.test_crystal"
+      ],
+      "inherent_tags": [
+        "ashen"
+      ]
     }
   ],
   "edges": [

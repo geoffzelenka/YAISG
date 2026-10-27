@@ -66,9 +66,7 @@
           "tier": 1,
           "base_cycle_ms": 8000,
           "requires": {
-            "realm_tags": [
-              "*"
-            ]
+            "realm_tags": []
           },
           "outputs": [
             {
@@ -104,9 +102,7 @@
           "tier": 1,
           "base_cycle_ms": 4500,
           "requires": {
-            "realm_tags": [
-              "*"
-            ]
+            "realm_tags": []
           },
           "outputs": [
             {
@@ -140,9 +136,7 @@
           "tier": 1,
           "base_cycle_ms": 6500,
           "requires": {
-            "realm_tags": [
-              "*"
-            ]
+            "realm_tags": []
           },
           "outputs": [
             {
@@ -177,9 +171,7 @@
           "tier": 1,
           "base_cycle_ms": 6000,
           "requires": {
-            "realm_tags": [
-              "*"
-            ]
+            "realm_tags": []
           },
           "outputs": [
             {
@@ -213,9 +205,7 @@
           "tier": 1,
           "base_cycle_ms": 9000,
           "requires": {
-            "realm_tags": [
-              "*"
-            ]
+            "realm_tags": []
           },
           "outputs": [
             {

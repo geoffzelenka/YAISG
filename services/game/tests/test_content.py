@@ -102,7 +102,10 @@ def test_placeholder_content_loads() -> None:
     )
     assert content.item("item.prototype_widget").name == "Prototype Widget"
     assert content.realm("realm.verdant_vale").starting_node_id == "node.verdant_t1"
-    assert content.development_node("node.verdant_t1").tags == ("verdant",)
+    assert content.development_node("node.verdant_t1").inherent_tags == (
+        "verdant",
+        "facility.fake_node",
+    )
     assert content.upgrade("upgrade.alarm_clock").cap_bonuses[0].value == 2
     assert len(content.xp_curve.levels) == 100
 
@@ -249,6 +252,8 @@ def test_only_known_content_routes_are_public() -> None:
         "development",
         "projects",
         "progression",
+        "tags",
+        "economy",
     }
     assert missing.status_code == 401
     assert missing.json()["error"]["code"] == "UNAUTHORIZED"

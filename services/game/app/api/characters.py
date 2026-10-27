@@ -15,7 +15,7 @@ from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import CapType, Modifier
-from app.engine import CharacterState, resolve_caps
+from app.engine import resolve_caps
 from app.engine.core import modifier_groups
 from app.engine.levels import level_for_xp, tier_for_level, xp_progress
 from app.errors import api_error
@@ -29,7 +29,7 @@ from app.models import (
     Inventory,
     RealmState,
 )
-from app.services.actions import resolve_character
+from app.services.actions import load_character_state, resolve_character
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 _VALID_NAME = re.compile(r"^[A-Za-z0-9 ]{3,20}$")
@@ -298,17 +298,7 @@ def _profile(
             .order_by(EstateUpgrade.slot_index)
         )
     )
-    state = CharacterState(
-        skills_xp={skill.id: skill.xp for skill in skills},
-        skill_levels={skill.id: skill.level for skill in skills},
-        inventory={},
-        gold=currency.gold,
-        estate_form_id=estate.form_id,
-        realm_id=character.realm_id,
-        estate_realm_id=estate.realm_id,
-        realm_node_id=node.id,
-        installed_upgrades=tuple(upgrade.upgrade_id for upgrade in upgrades),
-    )
+    state = load_character_state(session, character.id)
     resolved = resolve_caps(state, content)
     active_modifiers = [
         modifier for group in modifier_groups(state, content) for modifier in group
@@ -333,7 +323,7 @@ def _profile(
         realm=RealmSummary(
             id=realm.id,
             name=realm.name,
-            tags=node.tags,
+            tags=node.inherent_tags,
             active_modifiers=tuple(active_modifiers),
         ),
         estate=EstateSummary(

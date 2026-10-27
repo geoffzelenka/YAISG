@@ -17,6 +17,8 @@ const manifest = {
     development: 'h',
     projects: 'i',
     progression: 'j',
+    tags: 'k',
+    economy: 'l',
   },
 }
 const packBodies = {
@@ -36,6 +38,8 @@ const packBodies = {
   estate_forms: { forms: [], transformations: [], relocation_classes: {} },
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
+  tags: { tags: [] },
+  economy: { decay: { faltering_factor: 0.5 } },
   progression: {
     lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,
@@ -93,7 +97,7 @@ describe('content cache', () => {
     const { result } = renderHook(() => useContent(), { wrapper })
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
-    expect(fetchMock).toHaveBeenCalledTimes(11)
+    expect(fetchMock).toHaveBeenCalledTimes(13)
     expect(result.current.content?.version).toBe(manifest.version)
     expect(localStorage.getItem('yaisg:content:manifest')).toContain(
       manifest.version,
@@ -135,7 +139,7 @@ describe('content cache', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
     expect(result.current.content?.version).toBe(manifest.version)
-    expect(fetchMock).toHaveBeenCalledTimes(11)
+    expect(fetchMock).toHaveBeenCalledTimes(13)
   })
 
   it('prunes stale content versions without touching unrelated storage', async () => {

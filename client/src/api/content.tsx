@@ -91,7 +91,8 @@ export type EstateUpgrade = {
       | 'estate_upgrade_slots'
     value: number
   }[]
-  realm_tags: string[]
+  requires_realm_tags: string[]
+  tags: string[]
 }
 export type Caps = {
   offline_hours: number
@@ -105,6 +106,8 @@ export type Caps = {
 export type EstateForm = {
   id: string
   name: string
+  tags: string[]
+  requires_realm_tags: string[]
   specialty_tags: string[]
   relocation_class: string
   base_caps: Partial<Caps>
@@ -117,9 +120,10 @@ export type FormTransformation = {
 }
 export type DevelopmentNode = {
   id: string
+  inherent_tags: string[]
+  actions: string[]
   archetype: string
   name: string
-  tags: string[]
   modifiers: Modifier[]
   cap_bonuses: { cap: keyof Caps; value: number }[]
   projects: string[]
@@ -143,7 +147,25 @@ export type MapEdge = {
   cost: { gold: number; items: ItemQuantity[]; time_ms: number }
 }
 
+export type Tag = {
+  id: string
+  name: string
+  kind: 'facility' | 'bonus' | 'malus' | 'access'
+  modifiers: Modifier[]
+  cap_bonuses: Partial<Caps>
+  upkeep: { selector: Selector; per_day: number }[]
+  effects: {
+    market_access: boolean
+    caravan_access: boolean
+    mint: { value_per_day: number } | null
+    edge_loss_reduction_pct: number
+    reserve_days_delta: number
+  }
+}
+
 type ContentPacks = {
+  tags: { tags: Tag[] }
+  economy: { decay: { faltering_factor: number } }
   skills: { skills: Skill[] }
   items: { items: Item[] }
   realms: { realms: Realm[] }
@@ -189,6 +211,8 @@ const PACKS: PackName[] = [
   'development',
   'projects',
   'progression',
+  'tags',
+  'economy',
 ]
 const MANIFEST_KEY = 'yaisg:content:manifest'
 const PACK_KEY_PREFIX = 'yaisg:content:'

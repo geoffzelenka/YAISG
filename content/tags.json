@@ -1,0 +1,43 @@
+{
+  "tags": [
+    {
+      "id": "verdant",
+      "name": "verdant (Fake)",
+      "kind": "access"
+    },
+    {
+      "id": "ashen",
+      "name": "ashen (Fake)",
+      "kind": "access"
+    },
+    {
+      "id": "facility.fake_node",
+      "name": "facility.fake_node (Fake)",
+      "kind": "facility"
+    },
+    {
+      "id": "facility.fake_upgrade",
+      "name": "facility.fake_upgrade (Fake)",
+      "kind": "facility"
+    },
+    {
+      "id": "access.fake",
+      "name": "access.fake (Fake)",
+      "kind": "access",
+      "effects": {
+        "market_access": true
+      }
+    },
+    {
+      "id": "bonus.fake",
+      "name": "bonus.fake (Fake)",
+      "kind": "bonus",
+      "modifiers": [
+        {
+          "type": "xp_pct",
+          "value": 2
+        }
+      ]
+    }
+  ]
+}

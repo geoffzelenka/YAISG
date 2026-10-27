@@ -36,6 +36,8 @@ it('displays the effective profile inventory cap instead of the content base', a
         estate_forms: { forms: [], transformations: [] },
         development: { nodes: [], edges: [] },
         projects: { projects: [] },
+        tags: { tags: [] },
+        economy: { decay: { faltering_factor: 0.5 } },
         progression: {
           lint: { g: 1.015969, tolerance_pct: 15 },
           min_factor: 0.25,

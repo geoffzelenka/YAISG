@@ -79,6 +79,10 @@ class Estate(Base):
 
     __tablename__ = "estates"
 
+    decay_stage: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="fed", server_default="fed"
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     owner_character_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("characters.id", ondelete="SET NULL"), nullable=True
@@ -116,6 +120,10 @@ class RealmState(Base):
     """Current development identity for a realm."""
 
     __tablename__ = "realm_state"
+
+    decay_stage: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="fed", server_default="fed"
+    )
     realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     node_id: Mapped[str] = mapped_column(String(128), nullable=False)
     transition_to_node_id: Mapped[str | None] = mapped_column(String(128))
@@ -239,5 +247,5 @@ class RewardLog(Base):
         DateTime(timezone=True), nullable=True
     )
     __table_args__ = (
-        CheckConstraint("cycles > 0", name="ck_reward_log_cycles_positive"),
+        CheckConstraint("cycles >= 0", name="ck_reward_log_cycles_nonnegative"),
     )
