@@ -630,12 +630,35 @@ class EstateConfig(ContentModel):
     sale_markup_pct: int = Field(default=15, gt=0)
 
 
+class MarketConfig(ContentModel):
+    """Scarcity curve, margin and public treasury health boundaries."""
+
+    f: float = Field(default=0.33, gt=0, allow_inf_nan=False)
+    c: float = Field(default=2.1, gt=0, allow_inf_nan=False)
+    k: int = Field(default=3, ge=1)
+    m: float = Field(default=0.25, ge=0, allow_inf_nan=False)
+    band_days: tuple[float, float, float, float] = (1, 3, 7, 14)
+    band_hysteresis_pct: float = Field(default=10, ge=0, lt=100, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def valid_curve(self) -> "MarketConfig":
+        """Reject inverted scarcity and unordered health boundaries."""
+        if self.c < self.f:
+            raise ValueError("market c must be at least f")
+        if not all(0 < n < float("inf") for n in self.band_days) or any(
+            a >= b for a, b in zip(self.band_days, self.band_days[1:], strict=False)
+        ):
+            raise ValueError("market band_days must be positive and increasing")
+        return self
+
+
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
     reserve_days: float = Field(default=3, ge=0, allow_inf_nan=False)
     cap_days: float = Field(default=10, gt=0, allow_inf_nan=False)
     warehouse_value_cap: int = Field(gt=0)
+    market: MarketConfig = MarketConfig()
     decay: DecayConfig
     gauge: GaugeConfig = GaugeConfig()
     shed: ShedConfig = ShedConfig()

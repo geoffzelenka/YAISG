@@ -681,6 +681,7 @@ def test_strained_has_no_realm_tick_effect() -> None:
             gauge=gauge,
             decay_stage=stage,
             shed_progress=0,
+            treasury=0,
             isolated=False,
         )
         e = Estate(

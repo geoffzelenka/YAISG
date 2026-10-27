@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Literal, cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
@@ -440,3 +440,57 @@ async def get_realm_estates(
     ]
     session.commit()
     return result
+
+
+@router.get("/realms/{realm_id}/market")
+async def get_market(
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+    player: CurrentPlayer,
+) -> dict[str, object]:
+    """Inspect any realm market from any location."""
+    from app.services.market import market_view
+
+    content = _content(request)
+    realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    if realm is None:
+        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    recompute_lines(session, realm, content)
+    session.flush()
+    result = market_view(session, realm, content)
+    session.commit()
+    return result
+
+
+@router.get("/realms/{realm_id}/market/quote")
+async def get_market_quote(
+    realm_id: str,
+    item_id: str,
+    side: Literal["buy", "sell"],
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+    player: CurrentPlayer,
+    quantity: int = Query(gt=0),
+) -> dict[str, int]:
+    """Return an integrated quote and the currently executable maximum."""
+    from app.engine.market import quote
+    from app.services.market import market_contexts
+
+    content = _content(request)
+    realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    if realm is None:
+        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    recompute_lines(session, realm, content)
+    session.flush()
+    contexts = market_contexts(session, realm, content)
+    if item_id not in contexts:
+        raise api_error(404, "UNKNOWN_ITEM", "The item does not exist")
+    line, ctx = contexts[item_id]
+    if side == "sell" and line is None:
+        raise api_error(400, "NO_DEMAND", "The realm has no demand for this item")
+    result = quote(ctx, item_id, side, quantity)
+    session.commit()
+    return {"gold": result.gold, "max_quantity": result.max_quantity}
