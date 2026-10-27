@@ -46,7 +46,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 "Database not migrated; run alembic upgrade head / make db-reset"
             )
         raise
-    yield
+    from app.services.scheduler import start_scheduler
+
+    scheduler = start_scheduler(SessionLocal, application.state.content)
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
 
 
 app = FastAPI(title="YAISG Game", lifespan=lifespan)

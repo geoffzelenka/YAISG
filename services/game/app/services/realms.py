@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
-from app.models import RealmState, RealmTag
+from app.models import RealmProjectRun, RealmState, RealmTag
 
 
 def as_utc(value: datetime) -> datetime:
@@ -80,10 +80,24 @@ def push_realm_tag(
     project_run_id: uuid.UUID | None = None,
 ) -> RealmTag:
     """Push a tag under the caller's realm lock, never reusing a removed seq."""
-    if session.get(RealmTag, (realm.id, tag_id)) is not None:
+    existing = {tag_id} if session.get(RealmTag, (realm.id, tag_id)) else set()
+    tag = build_realm_tag(realm, tag_id, existing, now, project_run_id)
+    session.add(tag)
+    return tag
+
+
+def build_realm_tag(
+    realm: RealmState,
+    tag_id: str,
+    existing: set[str],
+    now: datetime,
+    project_run_id: uuid.UUID | None = None,
+) -> RealmTag:
+    """Build a stack entry from loaded state, rejecting duplicate acquisitions."""
+    if tag_id in existing:
         raise ValueError(f"realm {realm.id!r} already holds tag {tag_id!r}")
     realm.tag_seq += 1
-    tag = RealmTag(
+    return RealmTag(
         realm_id=realm.id,
         tag_id=tag_id,
         seq=realm.tag_seq,
@@ -91,8 +105,6 @@ def push_realm_tag(
         acquired_at=now,
         project_run_id=project_run_id,
     )
-    session.add(tag)
-    return tag
 
 
 def start_transition(
@@ -209,7 +221,7 @@ def _finalize_timed_events(
     realm: RealmState,
     now: datetime,
     content: ContentIndex,
-) -> None:
+) -> RealmProjectRun | None:
     from app.services.projects import active_run
 
     while True:
@@ -230,7 +242,7 @@ def _finalize_timed_events(
                 )
             )
         if not events or min(events)[0] > now:
-            break
+            return run
         due, kind = min(events)
         if kind == TimedEventKind.VOTE:
             close_due_vote(session, realm, due, content)
@@ -256,23 +268,32 @@ def resolve_realm(
     The caller owns persistence and the transaction. Events are reconsidered
     after each completion because a vote can schedule another due event.
     """
-    from app.services.projects import active_run
-    from app.services.realm_ticks import TICK_STEPS, RealmTickContext
+    from app.services.realm_ticks import (
+        TICK_STEPS,
+        complete_tick_build,
+        load_context,
+        persist_context,
+    )
 
     if realm is None:
         return None
     now = as_utc(now)
-    _finalize_timed_events(session, realm, now, content)
+    run = _finalize_timed_events(session, realm, now, content)
     interval = timedelta(days=1) / content.economy.tick.per_day
     ticks = min(
         (now - as_utc(realm.last_tick_at)) // interval,
         content.economy.tick.max_catchup,
     )
-    context = RealmTickContext(active_run=active_run(session, realm.id))
+    if ticks <= 0:
+        return realm
+    context = load_context(session, realm, run, content)
     for _ in range(max(0, ticks)):
         tick_at = as_utc(realm.last_tick_at) + interval
+        complete_tick_build(context, realm, tick_at, content)
         for step in TICK_STEPS:
             step(context, realm, tick_at, content)
         realm.last_tick_at = tick_at
+    complete_tick_build(context, realm, now, content)
+    persist_context(session, realm, context)
     session.flush()
     return realm
