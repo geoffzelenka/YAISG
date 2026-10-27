@@ -6,4 +6,4 @@ from app.content.loader import load_content
 CONTENT = load_content(CONTENT_DIR)
 
 # Warm the immutable map table at process boot.
-_CARAVAN_ROUTES = CONTENT.caravan_routes
+CONTENT.caravan_routes  # noqa: B018 - accessing the cached property warms it.

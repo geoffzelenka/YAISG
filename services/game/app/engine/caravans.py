@@ -84,7 +84,12 @@ def candidate(
     Exhaustive selection preserves the largest-q requirement even around
     rounding discontinuities where a binary feasibility search is invalid.
     """
+    if retained <= 0 or need <= 0:
+        return None
+    # floor(q * retained) <= whole need iff q * retained < whole need + 1.
+    delivery_limit = ceil(Fraction(need // (buyer.w * 1000) + 1) / retained) - 1
     maximum = min(
+        delivery_limit,
         seller.available,
         int((seller.stock - seller.reserve) / seller.w),
         capacity // seller.reference_price,

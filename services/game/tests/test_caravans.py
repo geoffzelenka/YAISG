@@ -5,23 +5,46 @@ from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal as D
 from fractions import Fraction
+from math import floor
+from threading import Barrier
 from types import MappingProxyType
+from unittest.mock import patch
 
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import event, select
+from sqlalchemy.engine import Connection, ExecutionContext
+from sqlalchemy.orm import Session, sessionmaker
 from test_realms import CONTENT, NOW
 from test_realms import realm_session as realm_session
 
 from app.content.loader import ContentIndex
-from app.content.schemas import CaravanConfig, MapPack, Selector, TagUpkeep
+from app.content.schemas import (
+    CaravanConfig,
+    MapPack,
+    ProductionItem,
+    Selector,
+    TagUpkeep,
+)
 from app.engine.caravans import Route, candidate, remoteness, survival
-from app.engine.market import QuoteContext
-from app.models import RealmLine, RealmShipment, RealmState, RealmStore, WorldState
-from app.services.caravans import run_caravan_pass
+from app.engine.market import QuoteContext, total
+from app.engine.stores import Line, line_key
+from app.models import (
+    Estate,
+    GoldLedger,
+    RealmLine,
+    RealmShipment,
+    RealmState,
+    RealmStore,
+    WorldState,
+)
+from app.services.caravans import _draw_value, run_caravan_pass
+from app.services.market import market_contexts
 from app.services.realm_ticks import load_context, step_0_arrivals
+from app.services.realms import as_utc, finalize_realm, resolve_realm
+from app.services.scheduler import run_realm_ticks
+from app.services.stores import recompute_lines
 
 BUYER = "realm.verdant_vale"
 SELLER = "realm.ashen_reach"
@@ -60,12 +83,13 @@ def seed(session: Session) -> ContentIndex:
     buyer = session.get(RealmState, BUYER)
     assert buyer
     buyer.treasury = 10000
+    buyer.last_tick_at = NOW + timedelta(days=1)
     session.add(
         RealmState(
             id=SELLER,
             template_id=SELLER,
             current_node_id="node.ashen_t1",
-            last_tick_at=NOW,
+            last_tick_at=NOW + timedelta(days=1),
         )
     )
     session.add(
@@ -78,6 +102,16 @@ def seed(session: Session) -> ContentIndex:
 
 def test_nothing_bought_twice_in_transit_and_arrivals(realm_session: Session) -> None:
     content = seed(realm_session)
+    content = replace(
+        content,
+        economy=content.economy.model_copy(
+            update={
+                "caravan": content.economy.caravan.model_copy(
+                    update={"time_mult": 1000}
+                )
+            }
+        ),
+    )
     now = NOW + timedelta(days=1)
     assert run_caravan_pass(realm_session, content, now)
     rows = list(realm_session.scalars(select(RealmShipment)))
@@ -94,8 +128,8 @@ def test_nothing_bought_twice_in_transit_and_arrivals(realm_session: Session) ->
     context = load_context(realm_session, buyer, None, content)
     step_0_arrivals(context, buyer, now, content)
     assert context.stores.get(ITEM, 0) == 0
-    step_0_arrivals(context, buyer, now + timedelta(hours=1), content)
-    step_0_arrivals(context, buyer, now + timedelta(hours=1), content)
+    step_0_arrivals(context, buyer, now + timedelta(hours=17), content)
+    step_0_arrivals(context, buyer, now + timedelta(hours=17), content)
     assert context.stores[ITEM] == 10000
     assert shipment.status == "arrived"
 
@@ -141,8 +175,9 @@ def test_loss_capacity_and_conservation(capacity: int, reduction: int) -> None:
     choice = candidate(seller, buyer, 10000, capacity, route, retained, CaravanConfig())
     if choice:
         assert choice.sent * seller.reference_price <= capacity
-        assert choice.delivered == int(choice.sent * retained)
-        assert choice.sent == choice.delivered + (choice.sent - choice.delivered)
+        assert choice.delivered == floor(
+            choice.sent * (1 - Fraction(20, 100) * (1 - Fraction(reduction, 100)))
+        )
         assert choice.goods + choice.fee <= buyer.treasury
 
 
@@ -171,8 +206,6 @@ def test_gold_goods_conserved_and_fee_burn(realm_session: Session) -> None:
         ),
     )
     assert run_caravan_pass(realm_session, content, NOW + timedelta(days=1))
-    from app.models import GoldLedger
-
     shipment = realm_session.scalar(select(RealmShipment))
     assert shipment
     gold = sum(realm_session.scalars(select(RealmState.treasury)))
@@ -192,8 +225,6 @@ def test_two_postgres_schedulers_claim_one_pass(realm_session: Session) -> None:
         pytest.skip("PostgreSQL row-lock concurrency")
     content = seed(realm_session)
     engine = realm_session.get_bind()
-    from threading import Barrier
-
     barrier = Barrier(2)
 
     def run() -> bool:
@@ -225,13 +256,13 @@ def test_isolated_and_without_access_never_trade(
 
 def test_equal_ask_nearer_seller_wins(realm_session: Session) -> None:
     content = seed(realm_session)
-    third = "realm.fake_far"
+    third = "realm.aaa_far"
     realm_session.add(
         RealmState(
             id=third,
             template_id=third,
             current_node_id="node.ashen_t1",
-            last_tick_at=NOW,
+            last_tick_at=NOW + timedelta(days=1),
         )
     )
     realm_session.add(RealmStore(realm_id=third, item_id=ITEM, quantity_milli=100000))
@@ -242,6 +273,31 @@ def test_equal_ask_nearer_seller_wins(realm_session: Session) -> None:
         content,
         map=content.map.model_copy(update={"edges": (*content.map.edges, edge)}),
     )
+    for realm_id in (BUYER, SELLER, third):
+        realm = realm_session.get(RealmState, realm_id)
+        assert realm
+        recompute_lines(realm_session, realm, content)
+    realm_session.flush()
+    buyer = realm_session.get(RealmState, BUYER)
+    assert buyer
+    bid = market_contexts(realm_session, buyer, content)[ITEM][1]
+    choices = []
+    for realm_id in (SELLER, third):
+        seller = realm_session.get(RealmState, realm_id)
+        assert seller
+        ask = market_contexts(realm_session, seller, content)[ITEM][1]
+        route = content.caravan_routes[realm_id, BUYER]
+        choice = candidate(
+            ask, bid, 10000, 1000, route, Fraction(1), content.economy.caravan
+        )
+        assert choice
+        choices.append(choice)
+    assert third < SELLER
+    assert choices[0].unit_cost == choices[1].unit_cost
+    assert (
+        content.caravan_routes[SELLER, BUYER].hours
+        < content.caravan_routes[third, BUYER].hours
+    )
     assert run_caravan_pass(realm_session, content, NOW + timedelta(days=1))
     shipment = realm_session.scalar(select(RealmShipment))
     assert shipment and shipment.from_realm_id == SELLER
@@ -249,10 +305,6 @@ def test_equal_ask_nearer_seller_wins(realm_session: Session) -> None:
 
 def test_random_passes_conserve_goods_and_gold(realm_session: Session) -> None:
     """Random road losses and burn settings account for every dispatched unit."""
-    from hypothesis import settings
-
-    from app.models import GoldLedger
-
     content = seed(realm_session)
 
     @settings(max_examples=20, deadline=None)
@@ -304,8 +356,6 @@ def test_multiedge_loss_and_capped_adjoining_road_tags() -> None:
 
 
 def test_arrival_on_first_due_tick(realm_session: Session) -> None:
-    from app.services.realms import resolve_realm
-
     content = seed(realm_session)
     now = NOW + timedelta(days=1)
     buyer = realm_session.get(RealmState, BUYER)
@@ -324,3 +374,277 @@ def test_arrival_on_first_due_tick(realm_session: Session) -> None:
     assert stock and stock.quantity_milli == 9584
     line = realm_session.scalar(select(RealmLine).where(RealmLine.realm_id == BUYER))
     assert line and line.in_transit == 0
+
+
+def test_scheduled_job_dispatches_due_pass_once(realm_session: Session) -> None:
+    """The real job dispatches and advances the cursor on either database."""
+    content = seed(realm_session)
+    factory = sessionmaker(bind=realm_session.get_bind())
+    now = NOW + timedelta(days=1, minutes=5)
+    assert run_realm_ticks(factory, content, now)
+    realm_session.expire_all()
+    shipment = realm_session.scalar(select(RealmShipment))
+    world = realm_session.get(WorldState, 1)
+    assert shipment and world
+    assert as_utc(world.last_caravan_pass) == NOW + timedelta(days=1)
+    shipment_id = shipment.id
+    realm_session.commit()
+    assert run_realm_ticks(factory, content, now)
+    realm_session.expire_all()
+    assert list(realm_session.scalars(select(RealmShipment.id))) == [shipment_id]
+    assert as_utc(world.last_caravan_pass) == NOW + timedelta(days=1)
+
+
+def test_hungriest_buyer_gets_shared_seller_capacity(realm_session: Session) -> None:
+    content = seed(realm_session)
+    hungry_id = "realm.zzz_hungry"
+    realm_session.add(
+        RealmState(
+            id=hungry_id,
+            template_id=hungry_id,
+            current_node_id="node.verdant_t1",
+            last_tick_at=NOW + timedelta(days=1),
+            treasury=10000,
+            gauge=2,
+        )
+    )
+    edge = content.map.edges[0].model_copy(
+        update={"id": "hungry", "a": SELLER, "b": hungry_id}
+    )
+    content = replace(
+        content,
+        map=content.map.model_copy(update={"edges": (*content.map.edges, edge)}),
+        economy=content.economy.model_copy(
+            update={
+                "caravan": content.economy.caravan.model_copy(
+                    update={"capacity_value_per_pass": 10}
+                )
+            }
+        ),
+    )
+    assert run_caravan_pass(realm_session, content, NOW + timedelta(days=1))
+    shipments = list(realm_session.scalars(select(RealmShipment)))
+    assert len(shipments) == 1
+    assert shipments[0].to_realm_id == hungry_id
+    assert shipments[0].quantity_sent == 10
+
+
+def test_largest_reference_draw_gets_single_capacity_allowance(
+    realm_session: Session,
+) -> None:
+    content = seed(realm_session)
+    ore = "item.mock_ore"
+    nodes = tuple(
+        n.model_copy(
+            update={
+                "upkeep": (
+                    TagUpkeep(selector=Selector(item=ITEM), per_day=10),
+                    TagUpkeep(selector=Selector(item=ore), per_day=6),
+                )
+            }
+        )
+        for n in content.development_nodes
+    )
+    content = replace(
+        content,
+        development_nodes=nodes,
+        _nodes_by_id=MappingProxyType({n.id: n for n in nodes}),
+        economy=content.economy.model_copy(
+            update={
+                "caravan": content.economy.caravan.model_copy(
+                    update={"capacity_value_per_pass": 2}
+                )
+            }
+        ),
+    )
+    realm_session.add(RealmStore(realm_id=SELLER, item_id=ore, quantity_milli=100000))
+    assert run_caravan_pass(realm_session, content, NOW + timedelta(days=1))
+    shipments = list(realm_session.scalars(select(RealmShipment)))
+    assert len(shipments) == 1
+    assert shipments[0].item_id == ore
+    assert shipments[0].quantity_sent == 1
+
+
+def test_draw_value_uses_actual_members_and_empty_default() -> None:
+    """Authored item ordering and more-specific lines cannot change draw value."""
+    expensive = CONTENT.item(ITEM).model_copy(update={"reference_price": 10})
+    content = CONTENT.with_overrides(items=(expensive,))
+    selector = Selector.model_validate({"class": "fake_plant"})
+    line = Line(line_key(selector), selector, 1000, 0, 10000, 0, False)
+    button = "item.worthless_button"
+    assert (
+        _draw_value(line, (line,), content)
+        == CONTENT.item(button).reference_price * 1000
+    )
+    selector = Selector(item=button)
+    specific = Line(line_key(selector), selector, 1000, 0, 10000, 0, False)
+    assert _draw_value(line, (line, specific), content) == 10000
+    empty = replace(line, selector=Selector(item="item.missing"))
+    assert _draw_value(empty, (empty,), content) == 0
+    assert _draw_value(replace(empty, value_measured=True), (empty,), content) == 1000
+
+
+@pytest.mark.parametrize("scheduler_failure", [False, True])
+def test_pass_resolves_stale_seller_before_selection(
+    realm_session: Session, scheduler_failure: bool
+) -> None:
+    """Even a failed first scheduler attempt cannot leave stale sale inventory."""
+    content = seed(realm_session)
+    now = NOW + timedelta(days=1)
+    seller = realm_session.get(RealmState, SELLER)
+    stock = realm_session.get(RealmStore, (SELLER, ITEM))
+    assert seller and stock
+    seller.last_tick_at = now - timedelta(hours=1)
+    stock.quantity_milli = 9000
+    form = content.estate_form("form.fake_workshop").model_copy(
+        update={
+            "upkeep": (),
+            "production": (ProductionItem(item_id=ITEM, per_day=2400),),
+        }
+    )
+    content = replace(
+        content, _forms_by_id=MappingProxyType({**content._forms_by_id, form.id: form})
+    )
+    realm_session.add(Estate(realm_id=SELLER, form_id=form.id))
+    realm_session.commit()
+    if scheduler_failure:
+
+        def fail_seller(
+            session: Session, realm_id: str, at: object, data: ContentIndex
+        ) -> RealmState | None:
+            if realm_id == SELLER:
+                raise RuntimeError("Simulated first scheduler attempt failure")
+            return finalize_realm(session, realm_id, now, data)
+
+        with patch("app.services.scheduler.finalize_realm", side_effect=fail_seller):
+            assert run_realm_ticks(
+                sessionmaker(bind=realm_session.get_bind()), content, now
+            )
+        realm_session.expire_all()
+    else:
+        assert run_caravan_pass(realm_session, content, now)
+    assert as_utc(seller.last_tick_at) == now
+    shipment = realm_session.scalar(select(RealmShipment))
+    assert shipment and shipment.quantity_sent == 10
+    assert stock.quantity_milli == 90000
+
+
+def test_pass_not_due_only_reads_cursor(realm_session: Session) -> None:
+    """A skipped pass neither locks nor resolves realms."""
+    content = seed(realm_session)
+    statements: list[str] = []
+
+    def record(
+        connection: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: ExecutionContext,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    engine = realm_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        assert not run_caravan_pass(realm_session, content, NOW + timedelta(hours=1))
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    queries = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    assert len(queries) == 1
+    assert "world_state.last_caravan_pass" in queries[0]
+    assert "FOR UPDATE" not in queries[0].upper()
+
+
+@pytest.mark.parametrize("reduction", [0, 100])
+def test_isolated_route_endpoint_tags_reduce_loss(
+    realm_session: Session, reduction: int
+) -> None:
+    content = seed(realm_session)
+    isolated_id = "realm.isolated_road"
+    road = content.tags[0].model_copy(
+        update={
+            "id": "access.isolated_road",
+            "effects": content.tags[0].effects.model_copy(
+                update={"edge_loss_reduction_pct": reduction}
+            ),
+        }
+    )
+    node = content.development_node("node.verdant_t0_stub").model_copy(
+        update={"inherent_tags": (road.id,), "upkeep": ()}
+    )
+    realm_session.add(
+        RealmState(
+            id=isolated_id,
+            template_id=BUYER,
+            isolated=True,
+            current_node_id=node.id,
+            last_tick_at=NOW + timedelta(days=1),
+        )
+    )
+    first = content.map.edges[0].model_copy(
+        update={
+            "id": "first",
+            "a": SELLER,
+            "b": isolated_id,
+            "base_time_s": 60,
+            "base_loss_pct": 20,
+        }
+    )
+    second = first.model_copy(update={"id": "second", "a": isolated_id, "b": BUYER})
+    content = replace(
+        content,
+        tags=(*content.tags, road),
+        _nodes_by_id=MappingProxyType({**content._nodes_by_id, node.id: node}),
+        map=content.map.model_copy(update={"edges": (first, second)}),
+    )
+    assert run_caravan_pass(realm_session, content, NOW + timedelta(days=1))
+    shipment = realm_session.scalar(select(RealmShipment))
+    assert shipment
+    assert shipment.from_realm_id == SELLER and shipment.to_realm_id == BUYER
+    assert shipment.quantity_sent == (17 if reduction == 0 else 10)
+    assert shipment.quantity_arriving == 10
+
+
+@given(
+    retained_pct=st.integers(1, 100),
+    need=st.integers(0, 30000),
+    capacity=st.integers(1, 1000),
+)
+def test_delivery_clamp_preserves_largest_feasible_candidate(
+    retained_pct: int, need: int, capacity: int
+) -> None:
+    """Compare the optimized bound against an exhaustive physical-range search."""
+    seller, buyer = contexts()
+    retained = Fraction(retained_pct, 100)
+    route = Route(Fraction(1), ())
+    settings = CaravanConfig()
+    expected = None
+    for sent in range(1, min(90, capacity // 10) + 1):
+        delivered = floor(sent * retained)
+        goods = total(seller, "buy", sent)
+        fee = (sent + 9) // 10  # 10 reference gold * 1 percent/hour, ceil.
+        if (
+            delivered > 0
+            and delivered * 1000 <= need
+            and goods + fee <= min(buyer.treasury, total(buyer, "sell", delivered))
+        ):
+            expected = (sent, delivered, goods, fee)
+    result = candidate(seller, buyer, need, capacity, route, retained, settings)
+    actual = (
+        (result.sent, result.delivered, result.goods, result.fee) if result else None
+    )
+    assert actual == expected
+
+
+def test_remoteness_prefers_cheaper_two_hop_path() -> None:
+    direct = CONTENT.map.edges[0].model_copy(update={"base_time_s": 3600})
+    first = direct.model_copy(
+        update={"id": "first", "b": "realm.middle", "base_time_s": 600}
+    )
+    second = direct.model_copy(
+        update={"id": "second", "a": "realm.middle", "base_time_s": 1200}
+    )
+    routes = remoteness(MapPack(edges=(direct, first, second), positions={}))
+    assert routes[direct.a, direct.b].hours == Fraction(1, 2)
+    assert tuple(e.id for e in routes[direct.a, direct.b].edges) == ("first", "second")

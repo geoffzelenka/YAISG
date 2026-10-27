@@ -40,7 +40,7 @@
   service's unconditional write-intent option changed its otherwise accepted
   BEGIN into PostgreSQL-invalid BEGIN IMMEDIATE. Configuration now ignores
   non-SQLite engines, the begin listener independently checks its connection
-  dialect, and caravan write intent is requested only for SQLite. Fixtures
+  dialect. These guards remain unchanged in review round 1. Fixtures
   remain unchanged so they continue exercising this production boundary.
 - Added test_transaction_configuration_on_selected_database (ordinary and
   write-intent transactions, honoring TEST_DATABASE_URL) and
@@ -49,11 +49,46 @@
   cases failed on BEGIN IMMEDIATE before the fix and pass after it. Focused
   database/caravan/scheduler tests pass: 34 passed, two dialect-specific skips.
 
+- Review round 1: an unlocked cursor check skips passes that are not due;
+  due passes take sorted realm locks (including isolated map endpoints), then
+  the world lock and re-check the cursor with refreshed ORM state. Each locked
+  realm is resolved with the standard lazy resolver before selection, including
+  retrying a realm whose earlier scheduled attempt failed. The initial cursor
+  read uses an ordinary transaction; no SQLite writer intent is taken for a
+  pass that is not due. The PostgreSQL/SQLite database guards are unchanged.
+- Road reductions now use all actual map endpoint realm ids, including isolated
+  endpoints; isolated realms remain excluded from buyers and sellers. Published
+  realm_holders replaces the private helper import. Scheduled-pass and test
+  imports moved to module scope; boot warms the cached property directly.
+- Candidate search additionally bounds q by
+  ceil((floor(need / (weight * 1000)) + 1) / retained) - 1, preserving the strict
+  upper boundary implied by floor(q * retained). A property compares every
+  selected result against an exhaustive physical-range reference search.
+- Added test_scheduled_job_dispatches_due_pass_once,
+  test_hungriest_buyer_gets_shared_seller_capacity,
+  test_largest_reference_draw_gets_single_capacity_allowance,
+  test_draw_value_uses_actual_members_and_empty_default,
+  test_pass_resolves_stale_seller_before_selection (direct and failed scheduler),
+  test_pass_not_due_only_reads_cursor,
+  test_isolated_route_endpoint_tags_reduce_loss (with/without roads),
+  test_delivery_clamp_preserves_largest_feasible_candidate (Hypothesis), and
+  test_remoteness_prefers_cheaper_two_hop_path. Database fixtures honor
+  TEST_DATABASE_URL, so scheduled integration covers PostgreSQL advisory locks.
+- Strengthened test_equal_ask_nearer_seller_wins with a far seller id sorting
+  before the nearer seller and an exact candidate unit-cost tie. Removing the
+  hours key fails that test. Reversing buyer order or line order independently
+  fails the respective new contention test. Removed the loss tautology and
+  assert delivery against the tagged floor formula. Selection fixtures start
+  from current realm snapshots; the in-transit test now uses a journey longer
+  than the next pass so it tests duplicate buying separately from consumption.
+- Existing exact catch-up statement assertions are unchanged: freshness resolves
+  are outside the catch-up loop, with no new tick queries or altered budgets.
+
 - Validation: SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passes (auth 15,
-  game 561 with 18 database-specific skips, client 41). Lint, formatting,
+  game 572 with 18 database-specific skips, client 41). Lint, formatting,
   strict typing, client build, scripts and content lint pass. A disposable
   SQLite make db-reset, subsequent upgrade to head, alembic check and world
-  creation pass. git diff --check is clean.
+  creation passed during initial implementation; this round changes no schema.
 
 ## Removed
 
@@ -76,6 +111,11 @@
 - §16.3: search quantities downward rather than bisecting feasibility: integer
   delivery and fee rounding can make the buyer-integral constraint nonmonotonic.
   Authored capacity bounds this straightforward exact search.
+- §16.3: ordinary selector-line draw value uses the minimum reference price of
+  items actually assigned to the line after specificity rules. A line with no
+  assigned items has value zero; value-measured draw already is reference value
+  and keeps weight one. This is independent of content item ordering and avoids
+  StopIteration on empty membership.
 
 ## Deviations
 

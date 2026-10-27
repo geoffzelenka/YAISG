@@ -3,60 +3,79 @@
 from datetime import datetime, timedelta
 from fractions import Fraction
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.engine.caravans import Candidate, Route, candidate, survival
-from app.engine.stores import Line
+from app.engine.stores import Line, membership
 from app.models import GoldLedger, RealmShipment, RealmState, RealmStore, WorldState
 from app.services.market import market_contexts
-from app.services.realms import as_utc
-from app.services.stores import _realm_holders, recompute_lines
+from app.services.realms import as_utc, resolve_realm
+from app.services.stores import realm_holders, recompute_lines
 
 
 def run_caravan_pass(session: Session, content: ContentIndex, now: datetime) -> bool:
-    """Claim one current pass, locking all shared realms in id order.
+    """Claim a current pass, locking shared realms and map endpoints in id order.
 
     Realm locks precede the singleton lock, so realm-first request handlers
     retain the global lock order. The cursor and dispatches commit together.
     """
-    if session.get_bind().dialect.name == "sqlite" and not session.in_transaction():
-        session.connection(execution_options={"sqlite_write_intent": True})
-    realms = list(
-        session.scalars(
-            select(RealmState)
-            .where(RealmState.isolated.is_(False))
-            .order_by(RealmState.id)
-            .with_for_update()
-        )
-    )
-    world = session.scalar(
-        select(WorldState).where(WorldState.id == 1).with_for_update()
-    )
-    if world is None:
-        return False
     interval = (
         timedelta(days=1)
         / content.economy.tick.per_day
         * content.economy.caravan.pass_every_ticks
     )
-    if as_utc(now) < as_utc(world.last_caravan_pass) + interval:
+    previous = session.scalar(
+        select(WorldState.last_caravan_pass).where(WorldState.id == 1)
+    )
+    if previous is None or as_utc(now) < as_utc(previous) + interval:
         return False
+    endpoints = {
+        endpoint for edge in content.map.edges for endpoint in (edge.a, edge.b)
+    }
+    realms = list(
+        session.scalars(
+            select(RealmState)
+            .where(or_(RealmState.isolated.is_(False), RealmState.id.in_(endpoints)))
+            .order_by(RealmState.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    world = session.scalar(
+        select(WorldState)
+        .where(WorldState.id == 1)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if world is None or as_utc(now) < as_utc(world.last_caravan_pass) + interval:
+        return False
+    for realm in realms:
+        resolve_realm(session, realm, now, content)
     # Anchor to the seed cadence, skipping all missed passes.
     world.last_caravan_pass = (
         as_utc(world.seeded_at)
         + ((as_utc(now) - as_utc(world.seeded_at)) // interval) * interval
     )
+    _balance(session, realms, content, now)
+    session.flush()
+    return True
+
+
+def _balance(
+    session: Session, realms: list[RealmState], content: ContentIndex, now: datetime
+) -> None:
+    """Select against resolved holdings and active endpoint road effects."""
     reductions = {}
     eligible = []
     for realm in realms:
-        _, tags = _realm_holders(session, realm, content)
-        reductions[realm.template_id] = sum(
+        _, tags = realm_holders(session, realm, content)
+        reductions[realm.id] = sum(
             (Fraction(str(t.effects.edge_loss_reduction_pct)) for t in tags),
             Fraction(0),
         )
-        if any(t.effects.caravan_access for t in tags):
+        if not realm.isolated and any(t.effects.caravan_access for t in tags):
             eligible.append(realm)
     capacity = dict.fromkeys(
         (r.id for r in eligible), content.economy.caravan.capacity_value_per_pass
@@ -68,25 +87,30 @@ def run_caravan_pass(session: Session, content: ContentIndex, now: datetime) -> 
         lines = {line.key: line for line, _ in contexts.values() if line is not None}
 
         for line in sorted(
-            lines.values(), key=lambda line: (-_draw_value(line, content), line.key)
+            lines.values(),
+            key=lambda line: (
+                -_draw_value(line, tuple(lines.values()), content),
+                line.key,
+            ),
         ):
             _buy_line(
                 session, buyer, line.key, eligible, capacity, reductions, content, now
             )
     for realm in eligible:
         recompute_lines(session, realm, content)
-    session.flush()
-    return True
 
 
-def _draw_value(line: Line, content: ContentIndex) -> int:
+def _draw_value(line: Line, lines: tuple[Line, ...], content: ContentIndex) -> int:
     value = (
         1
         if line.value_measured
-        else next(
-            item.reference_price
-            for item in content.items
-            if line.selector.matches(item)
+        else min(
+            (
+                item.reference_price
+                for item in content.items
+                if membership(item, lines) == line
+            ),
+            default=0,
         )
     )
     return line.draw_per_day * value
