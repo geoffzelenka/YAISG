@@ -39,12 +39,15 @@
   test_postgres_concurrent_ballot_mutations,
   test_passed_vote_raises_reserves,
   test_snapshot_includes_unresolved_decay_replacement,
-  test_call_gates_leave_wallet_untouched, and
+  test_call_gates_leave_wallet_untouched,
   test_late_resolution_closes_and_finalizes_at_due_times, and
   test_vote_cannot_replace_pending_decay_transition.
-- Validation: SQLite make ci passes: auth 15, game 487 with 17 database-specific
-  skips, client 41. Lint, formatting, strict typing, migration/reset/schema
-  checks, client build and content lint pass; git diff --check is clean.
+- Verification fix 1: resident test fixtures now use 20-character UUID hex
+  prefixes for name and name_normalized, respecting PostgreSQL VARCHAR(20)
+  without changing the schema.
+- Re-ran SQLite PATH=$PWD/.venv/bin:$PATH make ci after the fixture fix: auth 15,
+  game 487 with 17 database-specific skips, client 41. Lint, formatting, strict
+  typing, migration/reset/schema checks, client build and content lint pass.
 
 ## Removed
 

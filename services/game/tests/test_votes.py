@@ -47,8 +47,8 @@ def _resident(session: Session) -> Character:
     session.flush()
     hero = Character(
         player_id=player.id,
-        name=str(player.id),
-        name_normalized=str(player.id),
+        name=player.id.hex[:20],
+        name_normalized=player.id.hex[:20],
         current_realm_id=REALM,
         home_estate_id=uuid.uuid4(),
         created_at=NOW,
