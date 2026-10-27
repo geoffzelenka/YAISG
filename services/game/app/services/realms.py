@@ -1,19 +1,15 @@
-"""Transactional realm-development finalizers."""
+"""Transactional realm locks, tag acquisition, and lazy transitions."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
-from app.models import RealmEdgeProgress, RealmProject, RealmState
-
-
-class InvalidEdgeAwardError(RuntimeError):
-    """Raised when an internal caller tries to award an unavailable edge."""
-
-    code = "INVALID_EDGE_AWARD"
+from app.models import RealmState, RealmTag
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -30,10 +26,71 @@ def prepare_sqlite_write(session: Session) -> None:
 
 
 def _lock_realm(session: Session, realm_id: str) -> RealmState | None:
-    statement = select(RealmState).where(RealmState.realm_id == realm_id)
+    statement = (
+        select(RealmState)
+        .where(RealmState.id == realm_id)
+        .execution_options(populate_existing=True)
+    )
     if session.get_bind().dialect.name != "sqlite":
         statement = statement.with_for_update()
     return session.scalar(statement)
+
+
+def stack_tags(session: Session, realm_id: str) -> tuple[str, ...]:
+    """Load the project stack in acquisition order."""
+    return tuple(
+        session.scalars(
+            select(RealmTag.tag_id)
+            .where(RealmTag.realm_id == realm_id)
+            .order_by(RealmTag.seq)
+        )
+    )
+
+
+def push_realm_tag(
+    session: Session,
+    realm: RealmState,
+    tag_id: str,
+    now: datetime,
+    project_run_id: uuid.UUID | None = None,
+) -> RealmTag:
+    """Push a tag under the caller's realm lock, never reusing a removed seq."""
+    if session.get(RealmTag, (realm.id, tag_id)) is not None:
+        raise ValueError(f"realm {realm.id!r} already holds tag {tag_id!r}")
+    realm.tag_seq += 1
+    tag = RealmTag(
+        realm_id=realm.id,
+        tag_id=tag_id,
+        seq=realm.tag_seq,
+        node_id=realm.current_node_id,
+        acquired_at=now,
+        project_run_id=project_run_id,
+    )
+    session.add(tag)
+    return tag
+
+
+def start_transition(
+    realm: RealmState,
+    to_node: str,
+    cause: Literal["upgrade", "regression"],
+    now: datetime,
+    content: ContentIndex = CONTENT,
+) -> None:
+    """Start one transition under the caller's realm lock."""
+    if realm.pending_transition is not None:
+        raise ValueError(f"realm {realm.id!r} is already transitioning")
+    if cause not in ("upgrade", "regression"):
+        raise ValueError(f"unknown transition cause {cause!r}")
+    content.development_node(to_node)
+    realm.pending_transition = {
+        "to_node": to_node,
+        "cause": cause,
+        "started_at": now.isoformat(),
+        "completes_at": (
+            now + timedelta(days=content.economy.transition.duration_days)
+        ).isoformat(),
+    }
 
 
 def _finalize_locked_realm(
@@ -43,37 +100,27 @@ def _finalize_locked_realm(
     content: ContentIndex,
 ) -> RealmState | None:
     """Apply a due transition to an already-locked realm row."""
-    if (
-        state is None
-        or state.transition_to_node_id is None
-        or state.transition_completes_at is None
-        or _as_utc(state.transition_completes_at) > now
-    ):
+    if state is None or state.pending_transition is None:
         return state
-    realm_id = state.realm_id
-    departed_node_id = state.node_id
-    state.node_id = state.transition_to_node_id
-    state.transition_to_node_id = None
-    state.transition_completes_at = None
-    outgoing_ids = [
-        edge.id
-        for edge in content.development_edges
-        if edge.from_node == departed_node_id
-    ]
-    if outgoing_ids:
-        session.execute(
-            delete(RealmEdgeProgress).where(
-                RealmEdgeProgress.realm_id == realm_id,
-                RealmEdgeProgress.edge_id.in_(outgoing_ids),
-            )
-        )
-    offered = set(content.development_node(state.node_id).projects)
-    projects = session.scalars(
-        select(RealmProject).where(RealmProject.realm_id == realm_id)
-    )
-    for project in projects:
-        if project.project_id not in offered and project.status != "closed":
-            project.status = "closed"
+    pending = state.pending_transition
+    if _as_utc(datetime.fromisoformat(pending["completes_at"])) > _as_utc(now):
+        return state
+    node = content.development_node(pending["to_node"])
+    allowed = set(node.carried_tags) | {
+        content.project(p).grants_tag for p in node.projects
+    }
+    for tag in session.scalars(select(RealmTag).where(RealmTag.realm_id == state.id)):
+        if tag.tag_id not in allowed:
+            session.delete(tag)
+        elif pending["cause"] == "regression":
+            tag.node_id = node.id
+    state.current_node_id = node.id
+    if pending["cause"] == "regression":
+        state.gauge = 0
+        state.shed_progress = 0
+        state.decay_stage = "fed"
+    state.pending_transition = None
+    session.flush()
     return state
 
 
@@ -102,54 +149,8 @@ def finalize_realm(
     prepare_sqlite: bool = False,
 ) -> RealmState | None:
     """Lazily and atomically complete a due realm-node transition."""
-    resolved_content = content or CONTENT
     if prepare_sqlite:
         prepare_sqlite_write(session)
-    state = _lock_realm(session, realm_id)
-    return _finalize_locked_realm(session, state, now, resolved_content)
-
-
-def award_edge_progress(
-    session: Session,
-    realm_id: str,
-    edge_id: str,
-    amount: int,
-    source: str,
-    now: datetime | None = None,
-    content: ContentIndex | None = None,
-) -> RealmEdgeProgress:
-    """Award an outgoing development edge and begin its transition if filled."""
-    del source  # Reserved for audit attribution when more award sources exist.
-    award_time = now or datetime.now(UTC)
-    resolved_content = content or CONTENT
-    if amount <= 0:
-        raise ValueError("edge progress award must be positive")
-    state = _lock_realm(session, realm_id)
-    if state is None:
-        raise InvalidEdgeAwardError(f"realm {realm_id!r} has no state")
-    try:
-        edge = resolved_content.development_edge(edge_id)
-    except KeyError:
-        raise InvalidEdgeAwardError(f"unknown edge {edge_id!r}") from None
-    if (
-        edge.kind != "development"
-        or edge.from_node != state.node_id
-        or state.transition_to_node_id is not None
-    ):
-        raise InvalidEdgeAwardError(
-            f"edge {edge_id!r} cannot be awarded from realm {realm_id!r}"
-        )
-    progress = session.get(RealmEdgeProgress, (realm_id, edge_id))
-    if progress is None:
-        progress = RealmEdgeProgress(
-            realm_id=realm_id, edge_id=edge_id, progress=0, updated_at=award_time
-        )
-        session.add(progress)
-    progress.progress += amount
-    progress.updated_at = award_time
-    if progress.progress >= edge.progress_target:
-        state.transition_to_node_id = edge.to_node
-        state.transition_completes_at = award_time + timedelta(
-            milliseconds=edge.transition_ms or 0
-        )
-    return progress
+    return _finalize_locked_realm(
+        session, _lock_realm(session, realm_id), now, content or CONTENT
+    )

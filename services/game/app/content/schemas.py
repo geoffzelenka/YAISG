@@ -217,14 +217,6 @@ class Modifier(ContentModel):
         return self
 
 
-class MarketOffer(ContentModel):
-    """A realm vendor's fixed offer for an item."""
-
-    item_id: str = Field(min_length=1)
-    buy_price: int = Field(ge=0)
-    sell_price: int = Field(ge=0)
-
-
 class CapBonus(ContentModel):
     """An additive increase to an engine cap."""
 
@@ -238,7 +230,7 @@ class Realm(ContentModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     starting_node_id: str = Field(min_length=1)
-    market_offers: tuple[MarketOffer, ...] = ()
+    isolated: bool = False
 
 
 class RealmsPack(ContentModel):
@@ -343,64 +335,76 @@ class EstateFormsPack(ContentModel):
     transformations: tuple[FormTransformation, ...]
 
 
-class DevelopmentNode(ContentModel):
-    """A complete realm mechanical identity."""
+class TagUpkeep(ContentModel):
+    """Daily selector demand added to the holder."""
+
+    selector: Selector
+    per_day: float = Field(gt=0, allow_inf_nan=False)
+
+
+class NodeRegression(ContentModel):
+    """The lower node reached after a regression."""
+
+    to_node: str = Field(min_length=1)
+
+
+class NodeUpgrade(ContentModel):
+    """A content-authored upgrade or change of realm type."""
 
     id: str = Field(min_length=1)
-    tier: int = Field(ge=1, le=5)
-    archetype: str = Field(min_length=1)
+    to_node: str = Field(min_length=1)
+    kind: Literal["tier_up", "morph"]
+    required_tags: tuple[str, ...] = ()
+    fee_gold: int = Field(ge=0)
+
+
+class DevelopmentNode(ContentModel):
+    """A realm type at a tier, with its available projects and transitions."""
+
+    id: str = Field(min_length=1)
+    tier: int = Field(ge=0, le=5)
+    realm_type: str = Field(min_length=1)
     name: str = Field(min_length=1)
     inherent_tags: tuple[str, ...] = ()
     actions: tuple[str, ...] = ()
     modifiers: tuple[Modifier, ...] = ()
     cap_bonuses: tuple[CapBonus, ...] = ()
-    upkeep_profile: tuple[ProfileItem, ...] = ()
+    upkeep: tuple[TagUpkeep, ...] = ()
     projects: tuple[str, ...] = ()
-
-
-class DevelopmentEdge(ContentModel):
-    """A directed development or regression gauge."""
-
-    id: str = Field(min_length=1)
-    from_node: str = Field(alias="from", min_length=1)
-    to_node: str = Field(alias="to", min_length=1)
-    progress_target: int = Field(gt=0)
-    kind: str
-    transition_ms: int | None = Field(default=None, gt=0)
-
-    @model_validator(mode="after")
-    def validate_transition(self) -> "DevelopmentEdge":
-        """Require transition time only for development edges."""
-        if self.kind not in {"development", "regression"}:
-            raise ValueError("edge kind must be development or regression")
-        if self.kind == "development" and self.transition_ms is None:
-            raise ValueError("development edge requires transition_ms")
-        if self.kind == "regression" and self.transition_ms is not None:
-            raise ValueError("regression edge forbids transition_ms")
-        return self
+    carried_tags: tuple[str, ...] = ()
+    upgrades: tuple[NodeUpgrade, ...] = ()
+    regression: NodeRegression | None
+    reserve_days: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cap_days: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    margin_pct: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class DevelopmentPack(ContentModel):
-    """Realm development nodes and directed edges."""
+    """Realm development graph, with edges owned by their source nodes."""
 
     nodes: tuple[DevelopmentNode, ...]
-    edges: tuple[DevelopmentEdge, ...]
 
 
-class ProjectAward(ContentModel):
-    """Progress granted to a development edge."""
+class ProjectKickoff(ContentModel):
+    """Payment and eligibility for starting a project."""
 
-    edge_id: str = Field(min_length=1)
-    progress: int = Field(gt=0)
+    gold: int = Field(ge=0)
+    goods: tuple[ActionInput, ...] = ()
+    who: Literal["residents", "anyone"]
 
 
 class Project(ContentModel):
-    """A communal project definition."""
+    """A non-repeatable project granting a single tag."""
 
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    targets: tuple[ItemQuantity, ...]
-    awards: tuple[ProjectAward, ...]
+    grants_tag: str = Field(min_length=1)
+    kickoff: ProjectKickoff
+    cost: tuple[ActionInput, ...]
+    build_seconds: float = Field(gt=0, allow_inf_nan=False)
+    realm_completion_days: float = Field(gt=0, allow_inf_nan=False)
+    requires_tags: tuple[str, ...] = ()
+    repeatable: Literal[False] = False
 
 
 class ProjectsPack(ContentModel):
@@ -533,13 +537,6 @@ class DecayStage(StrEnum):
     REGRESSED = "regressed"
 
 
-class TagUpkeep(ContentModel):
-    """Daily selector demand added to the holder."""
-
-    selector: Selector
-    per_day: float = Field(gt=0, allow_inf_nan=False)
-
-
 class MintEffect(ContentModel):
     """Reference value consumed by a mint per day."""
 
@@ -580,7 +577,14 @@ class DecayConfig(ContentModel):
     faltering_factor: float = Field(ge=0, le=1)
 
 
+class TransitionConfig(ContentModel):
+    """Content-owned transition window in days."""
+
+    duration_days: float = Field(default=7, gt=0, allow_inf_nan=False)
+
+
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
     decay: DecayConfig
+    transition: TransitionConfig = TransitionConfig()

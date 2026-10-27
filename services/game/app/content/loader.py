@@ -13,7 +13,6 @@ from pydantic import BaseModel, ValidationError
 from app.content.schemas import (
     Action,
     CapsConfig,
-    DevelopmentEdge,
     DevelopmentNode,
     DevelopmentPack,
     EconomyPack,
@@ -85,7 +84,6 @@ class ContentIndex:
     estate_forms: tuple[EstateForm, ...]
     transformations: tuple[FormTransformation, ...]
     development_nodes: tuple[DevelopmentNode, ...]
-    development_edges: tuple[DevelopmentEdge, ...]
     projects: tuple[Project, ...]
     caps: CapsConfig
     xp_curve: XpCurve
@@ -99,7 +97,6 @@ class ContentIndex:
     _upgrades_by_id: MappingProxyType[str, EstateUpgrade]
     _forms_by_id: MappingProxyType[str, EstateForm]
     _nodes_by_id: MappingProxyType[str, DevelopmentNode]
-    _edges_by_id: MappingProxyType[str, DevelopmentEdge]
     _projects_by_id: MappingProxyType[str, Project]
 
     def skill(self, skill_id: str) -> Skill:
@@ -133,10 +130,6 @@ class ContentIndex:
     def development_node(self, node_id: str) -> DevelopmentNode:
         """Look up a development node."""
         return self._nodes_by_id[node_id]
-
-    def development_edge(self, edge_id: str) -> DevelopmentEdge:
-        """Look up a development edge."""
-        return self._edges_by_id[edge_id]
 
     def project(self, project_id: str) -> Project:
         """Look up a realm project."""
@@ -229,6 +222,54 @@ def _require_items(values: Iterable[str], known: set[str], context: str) -> None
             raise ContentError(f"unknown item_id {item_id!r} in {context}")
 
 
+def _validate_development(
+    nodes: dict[str, DevelopmentNode],
+    projects: dict[str, Project],
+    tags: set[str],
+    items: dict[str, Item],
+) -> None:
+    """Check transition prerequisites, regression connectivity and project inputs."""
+    roots = [node.id for node in nodes.values() if node.regression is None]
+    if len(roots) != 1:
+        raise ContentError("development must have exactly one barren root")
+    root = roots[0]
+    if nodes[root].tier != 0 or nodes[root].upkeep:
+        raise ContentError("barren root must have tier zero and no upkeep")
+    for node in nodes.values():
+        if set(node.projects) - set(projects):
+            raise ContentError(f"node {node.id} references an unknown project")
+        if set(node.carried_tags) - tags:
+            raise ContentError(f"unknown carried tag in node {node.id}")
+        available = {projects[p].grants_tag for p in node.projects} | set(
+            node.carried_tags
+        )
+        _unique(node.upgrades, f"upgrade in node {node.id}")
+        for edge in node.upgrades:
+            if edge.to_node not in nodes or edge.to_node == node.id:
+                raise ContentError(f"invalid upgrade destination in node {node.id}")
+            if set(edge.required_tags) - available:
+                raise ContentError(f"unsatisfiable required_tags in node {node.id}")
+        visited: set[str] = set()
+        current = node.id
+        while current != root:
+            if current in visited or current not in nodes:
+                raise ContentError(f"node {node.id} cannot regress to barren root")
+            visited.add(current)
+            regression = nodes[current].regression
+            if regression is None:
+                raise ContentError(f"node {node.id} cannot regress to barren root")
+            current = regression.to_node
+        for upkeep in node.upkeep:
+            if not any(upkeep.selector.matches(item) for item in items.values()):
+                raise ContentError(f"empty upkeep selector in node {node.id}")
+    for project in projects.values():
+        if {project.grants_tag, *project.requires_tags} - tags:
+            raise ContentError(f"unknown tag in project {project.id}")
+        for entry in (*project.kickoff.goods, *project.cost):
+            if not any(entry.selector.matches(item) for item in items.values()):
+                raise ContentError(f"empty selector in project {project.id}")
+
+
 def _validate(
     skills: dict[str, Skill],
     actions: dict[str, Action],
@@ -238,7 +279,6 @@ def _validate(
     map_pack: MapPack,
     forms_pack: EstateFormsPack,
     nodes: dict[str, DevelopmentNode],
-    edges: dict[str, DevelopmentEdge],
     projects: dict[str, Project],
     xp_curve: XpCurve,
     progression: ProgressionPack,
@@ -293,11 +333,6 @@ def _validate(
                 "unknown starting_node_id "
                 f"{realm.starting_node_id!r} in realm {realm.id}"
             )
-        _require_items(
-            (v.item_id for v in realm.market_offers),
-            item_ids,
-            f"realm {realm.id} market",
-        )
     _unique(map_pack.edges, "map edge")
     for map_edge in map_pack.edges:
         if map_edge.a not in realms or map_edge.b not in realms:
@@ -327,26 +362,7 @@ def _validate(
         _require_items(
             (v.item_id for v in transformation.cost), item_ids, "transformation"
         )
-    for edge in edges.values():
-        if edge.from_node not in nodes or edge.to_node not in nodes:
-            raise ContentError(f"development edge {edge.id} references an unknown node")
-        if edge.from_node == edge.to_node:
-            raise ContentError(f"development edge {edge.id} is a self-loop")
-    for node in nodes.values():
-        if set(node.projects) - set(projects):
-            raise ContentError(f"node {node.id} references an unknown project")
-        _require_items(
-            (v.item_id for v in node.upkeep_profile), item_ids, f"node {node.id}"
-        )
-    for project in projects.values():
-        _require_items(
-            (v.item_id for v in project.targets), item_ids, f"project {project.id}"
-        )
-        for award in project.awards:
-            if award.edge_id not in edges:
-                raise ContentError(f"project {project.id} references an unknown edge")
-            if edges[award.edge_id].kind != "development":
-                raise ContentError(f"project {project.id} awards a regression edge")
+    _validate_development(nodes, projects, tags, items)
     for upgrade in upgrades.values():
         _require_items(
             (v.item_id for v in upgrade.cost), item_ids, f"upgrade {upgrade.id}"
@@ -394,7 +410,6 @@ def load_content(content_dir: Path) -> ContentIndex:
     realms = _unique(realms_pack.realms, "realm")
     upgrades = _unique(upgrades_pack.upgrades, "upgrade")
     nodes = _unique(development.nodes, "development node")
-    edges = _unique(development.edges, "development edge")
     projects = _unique(projects_pack.projects, "project")
     tag_ids = set(_unique(tags_pack.tags, "tag"))
     holders: tuple[DevelopmentNode | EstateForm | EstateUpgrade, ...] = (
@@ -428,7 +443,6 @@ def load_content(content_dir: Path) -> ContentIndex:
         map_pack,
         forms_pack,
         nodes,
-        edges,
         projects,
         xp_curve,
         progression,
@@ -458,7 +472,6 @@ def load_content(content_dir: Path) -> ContentIndex:
         tuple(forms.values()),
         forms_pack.transformations,
         tuple(nodes.values()),
-        tuple(edges.values()),
         tuple(projects.values()),
         caps,
         xp_curve,
@@ -472,6 +485,5 @@ def load_content(content_dir: Path) -> ContentIndex:
         MappingProxyType(upgrades),
         MappingProxyType(forms),
         MappingProxyType(nodes),
-        MappingProxyType(edges),
         MappingProxyType(projects),
     )

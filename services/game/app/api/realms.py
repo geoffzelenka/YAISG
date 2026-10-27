@@ -1,137 +1,68 @@
-"""Realm development, map, project contribution, endpoints."""
+"""Public realm identities and map, with lazy transition completion."""
 
-import uuid
 from datetime import datetime
-from typing import cast
+from typing import Literal, cast
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
-from app.auth import CurrentPlayer, DatabaseSession
+from app.auth import DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
-from app.content.schemas import CapBonus, ItemQuantity, Modifier
+from app.content.schemas import CapBonus, DecayStage, Modifier
+from app.engine.tags import TagHolder, active_tags
 from app.errors import api_error
-from app.models import (
-    Character,
-    Inventory,
-    RealmContribution,
-    RealmEdgeProgress,
-    RealmProject,
-    RealmState,
-)
-from app.services.actions import resolve_character
-from app.services.realms import (
-    award_edge_progress,
-    finalize_realm,
-    finalize_realms,
-    prepare_sqlite_write,
-)
+from app.models import RealmState, RealmTag
+from app.services.realms import finalize_realm, finalize_realms, prepare_sqlite_write
 
 router = APIRouter(tags=["realms"])
 
 
 class NodeIdentity(BaseModel):
-    """A realm's current development-node identity."""
+    """Current mechanical node identity."""
 
     id: str
     name: str
+    realm_type: str
+    tier: int
     tags: tuple[str, ...]
     modifiers: tuple[Modifier, ...]
     cap_bonuses: tuple[CapBonus, ...]
 
 
 class PendingTransition(BaseModel):
-    """A visible realm transition window."""
+    """Public transition timing and cause."""
 
-    to_node_id: str
+    to_node: str
+    cause: Literal["upgrade", "regression"]
+    started_at: datetime
     completes_at: datetime
 
 
-class ProjectProgress(BaseModel):
-    """An active project and contribution totals by target."""
+class StackTag(BaseModel):
+    """An acquired tag with its original order and D4 stamp."""
 
-    project_id: str
-    name: str
-    targets: tuple[ItemQuantity, ...]
-    contribution_totals: dict[str, int]
-
-
-class EdgeProgress(BaseModel):
-    """Progress toward one outgoing development edge."""
-
-    edge_id: str
-    progress: int
-    target: int
+    tag_id: str
+    seq: int
+    node_id: str
 
 
 class RealmResponse(BaseModel):
-    """Current public gameplay state for one realm."""
+    """Public gameplay state; never includes treasury."""
 
     id: str
     name: str
     node: NodeIdentity
+    tags: list[StackTag]
+    active_tags: tuple[str, ...]
+    decay_stage: str
+    gauge: float
     pending_transition: PendingTransition | None
-    active_projects: list[ProjectProgress]
-    outgoing_edges: list[EdgeProgress]
-
-
-class ContributionRequest(BaseModel):
-    """Requested project input contribution."""
-
-    item_id: str
-    quantity: int
-
-
-class ContributionResponse(BaseModel):
-    """Accepted contribution and resulting project state."""
-
-    accepted_quantity: int
-    project: ProjectProgress
-    completed: bool
 
 
 def _content(request: Request) -> ContentIndex:
     return cast(ContentIndex, request.app.state.content)
-
-
-def _character(session: DatabaseSession, player_id: uuid.UUID) -> Character:
-    character = session.scalar(
-        select(Character).where(Character.player_id == player_id)
-    )
-    if character is None:
-        raise api_error(404, "NO_CHARACTER", "Create a character to continue")
-    return character
-
-
-def _get_or_create_realm_state(
-    session: DatabaseSession, content: ContentIndex, realm_id: str
-) -> RealmState:
-    """Create first-touch realm state while tolerating a concurrent creator."""
-    state = session.get(RealmState, realm_id)
-    if state is not None:
-        return state
-    state = RealmState(
-        realm_id=realm_id,
-        node_id=content.realm(realm_id).starting_node_id,
-        treasury=0,
-        data={},
-    )
-    try:
-        with session.begin_nested():
-            session.add(state)
-            session.flush()
-    except IntegrityError:
-        statement = select(RealmState).where(RealmState.realm_id == realm_id)
-        if session.get_bind().dialect.name != "sqlite":
-            statement = statement.with_for_update()
-        existing = session.scalar(statement)
-        if existing is None:
-            raise
-        return existing
-    return state
 
 
 def _realm_response(
@@ -140,80 +71,67 @@ def _realm_response(
     realm_id: str,
     state: RealmState | None,
 ) -> RealmResponse:
-    realm = content.realm(realm_id)
-    node_id = state.node_id if state is not None else realm.starting_node_id
-    node = content.development_node(node_id)
-    stored_projects = {
-        value.project_id: value
-        for value in session.scalars(
-            select(RealmProject).where(RealmProject.realm_id == realm_id)
+    realm = content.realm(state.template_id if state else realm_id)
+    node = content.development_node(
+        state.current_node_id if state else realm.starting_node_id
+    )
+    tags = list(
+        session.scalars(
+            select(RealmTag).where(RealmTag.realm_id == realm_id).order_by(RealmTag.seq)
         )
-    }
-    projects = []
-    for project_id in node.projects:
-        stored = stored_projects.get(project_id)
-        if stored is not None and stored.status != "active":
-            continue
-        definition = content.project(project_id)
-        projects.append(
-            ProjectProgress(
-                project_id=project_id,
-                name=definition.name,
-                targets=definition.targets,
-                contribution_totals=dict(stored.contribution_totals) if stored else {},
-            )
-        )
-    stored_edges = {
-        value.edge_id: value.progress
-        for value in session.scalars(
-            select(RealmEdgeProgress).where(RealmEdgeProgress.realm_id == realm_id)
-        )
-    }
-    outgoing = [
-        EdgeProgress(
-            edge_id=edge.id,
-            progress=stored_edges.get(edge.id, 0),
-            target=edge.progress_target,
-        )
-        for edge in content.development_edges
-        if edge.from_node == node_id and edge.kind == "development"
-    ]
-    pending = None
-    if state is not None and state.transition_to_node_id is not None:
-        assert state.transition_completes_at is not None
-        pending = PendingTransition(
-            to_node_id=state.transition_to_node_id,
-            completes_at=state.transition_completes_at,
-        )
+    )
+    stage = DecayStage(state.decay_stage) if state else DecayStage.FED
+    ids = set(node.inherent_tags) | {tag.tag_id for tag in tags}
+    active = active_tags(
+        TagHolder(
+            tuple(t for t in content.tags if t.id in ids),
+            content.economy.decay.faltering_factor,
+        ),
+        stage,
+    )
     return RealmResponse(
-        id=realm.id,
+        id=realm_id,
         name=realm.name,
         node=NodeIdentity(
             id=node.id,
             name=node.name,
+            realm_type=node.realm_type,
+            tier=node.tier,
             tags=node.inherent_tags,
             modifiers=node.modifiers,
             cap_bonuses=node.cap_bonuses,
         ),
-        pending_transition=pending,
-        active_projects=projects,
-        outgoing_edges=outgoing,
+        tags=[StackTag(tag_id=t.tag_id, seq=t.seq, node_id=t.node_id) for t in tags],
+        active_tags=tuple(t.id for t, _ in active),
+        decay_stage=stage.value,
+        gauge=state.gauge if state else 0,
+        pending_transition=PendingTransition.model_validate(state.pending_transition)
+        if state and state.pending_transition
+        else None,
     )
+
+
+def _world_ids(session: DatabaseSession, content: ContentIndex) -> set[str]:
+    isolated = set(
+        session.scalars(select(RealmState.id).where(RealmState.isolated.is_(True)))
+    )
+    return {r.id for r in content.realms if not r.isolated and r.id not in isolated}
 
 
 @router.get("/realms", response_model=list[RealmResponse])
 async def get_realms(
     request: Request, now: ServerNow, session: DatabaseSession
 ) -> list[RealmResponse]:
-    """Return all realms after lazily finalizing due transitions."""
+    """Return world realms after finalizing transitions in sorted lock order."""
     content = _content(request)
     prepare_sqlite_write(session)
-    states = finalize_realms(
-        session, {realm.id for realm in content.realms}, now, content
-    )
-    result = []
-    for realm in content.realms:
-        result.append(_realm_response(session, content, realm.id, states[realm.id]))
+    ids = _world_ids(session, content)
+    states = finalize_realms(session, ids, now, content)
+    result = [
+        _realm_response(session, content, r.id, states[r.id])
+        for r in content.realms
+        if r.id in ids
+    ]
     session.commit()
     return result
 
@@ -222,13 +140,13 @@ async def get_realms(
 async def get_realm(
     realm_id: str, request: Request, now: ServerNow, session: DatabaseSession
 ) -> RealmResponse:
-    """Return one realm after lazily finalizing its transition."""
+    """Return a realm's public identity and acquired tag stack."""
     content = _content(request)
+    state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     try:
-        content.realm(realm_id)
+        content.realm(state.template_id if state else realm_id)
     except KeyError:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist") from None
-    state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     response = _realm_response(session, content, realm_id, state)
     session.commit()
     return response
@@ -238,14 +156,17 @@ async def get_realm(
 async def get_map(
     request: Request, now: ServerNow, session: DatabaseSession
 ) -> dict[str, object]:
-    """Return the content-defined realm graph without requiring authentication."""
+    """Return only world realms and edges joining visible realms."""
     content = _content(request)
     prepare_sqlite_write(session)
-    states = finalize_realms(session, {r.id for r in content.realms}, now, content)
+    ids = _world_ids(session, content)
+    states = finalize_realms(session, ids, now, content)
     nodes = []
     for realm in content.realms:
+        if realm.id not in ids:
+            continue
         state = states[realm.id]
-        node_id = state.node_id if state else realm.starting_node_id
+        node_id = state.current_node_id if state else realm.starting_node_id
         nodes.append(
             {
                 "realm_id": realm.id,
@@ -254,126 +175,13 @@ async def get_map(
                 "node": node_id,
                 "tier": content.development_node(node_id).tier,
                 "decay_stage": state.decay_stage if state else "fed",
-                "treasury_band": None,
-                "transition_pending": bool(state and state.transition_to_node_id),
+                "treasury_band": state.treasury_band if state else None,
+                "transition_pending": bool(state and state.pending_transition),
             }
         )
-    result: dict[str, object] = {"nodes": nodes, "edges": list(content.map.edges)}
+    result: dict[str, object] = {
+        "nodes": nodes,
+        "edges": [e for e in content.map.edges if e.a in ids and e.b in ids],
+    }
     session.commit()
     return result
-
-
-@router.post(
-    "/realms/{realm_id}/projects/{project_id}/contribute",
-    response_model=ContributionResponse,
-)
-async def contribute(
-    realm_id: str,
-    project_id: str,
-    body: ContributionRequest,
-    request: Request,
-    now: ServerNow,
-    player: CurrentPlayer,
-    session: DatabaseSession,
-) -> ContributionResponse:
-    """Consume inventory and atomically advance one offered realm project."""
-    content = _content(request)
-    try:
-        content.realm(realm_id)
-    except KeyError:
-        raise api_error(404, "UNKNOWN_REALM", "The realm does not exist") from None
-    character = _character(session, player.id)
-    resolve_character(
-        session,
-        character.id,
-        now,
-        content,
-        additional_realm_ids={realm_id},
-    )
-    state = _get_or_create_realm_state(session, content, realm_id)
-    if state.transition_to_node_id is not None:
-        raise api_error(
-            409,
-            "REALM_TRANSITIONING",
-            "The realm is already transitioning to another node",
-        )
-    node = content.development_node(state.node_id)
-    if project_id not in node.projects:
-        raise api_error(404, "UNKNOWN_PROJECT", "The project is not available")
-    definition = content.project(project_id)
-    target = next((v for v in definition.targets if v.item_id == body.item_id), None)
-    if body.quantity <= 0 or target is None:
-        raise api_error(409, "INVALID_CONTRIBUTION", "The contribution is invalid")
-    statement = select(RealmProject).where(
-        RealmProject.realm_id == realm_id,
-        RealmProject.project_id == project_id,
-    )
-    if session.get_bind().dialect.name != "sqlite":
-        statement = statement.with_for_update()
-    project = session.scalar(statement)
-    if project is None:
-        project = RealmProject(
-            realm_id=realm_id,
-            project_id=project_id,
-            contribution_totals={},
-            status="active",
-        )
-        session.add(project)
-        session.flush()
-    if project.status != "active":
-        raise api_error(404, "UNKNOWN_PROJECT", "The project is not available")
-    totals = dict(project.contribution_totals)
-    remaining = target.qty - totals.get(body.item_id, 0)
-    if remaining <= 0:
-        raise api_error(409, "INVALID_CONTRIBUTION", "That target is already filled")
-    accepted = min(body.quantity, remaining)
-    stack = session.get(Inventory, (character.id, body.item_id))
-    if stack is None or stack.quantity < accepted:
-        raise api_error(409, "MISSING_INPUTS", "The contribution is not affordable")
-    stack.quantity -= accepted
-    if stack.quantity == 0:
-        session.delete(stack)
-    totals[body.item_id] = totals.get(body.item_id, 0) + accepted
-    project.contribution_totals = totals
-    session.add(
-        RealmContribution(
-            realm_id=realm_id,
-            project_id=project_id,
-            character_id=character.id,
-            item_id=body.item_id,
-            quantity=accepted,
-            contributed_at=now,
-        )
-    )
-    completed = all(
-        totals.get(value.item_id, 0) >= value.qty for value in definition.targets
-    )
-    if completed:
-        project.status = "completed"
-        project.completed_at = now
-        for award in definition.awards:
-            award_edge_progress(
-                session,
-                realm_id,
-                award.edge_id,
-                award.progress,
-                f"project:{project_id}",
-                now,
-                content,
-            )
-            # A filled award starts departure immediately. Later awards in the
-            # same project are skipped under the same rule that rejects all
-            # further awards while a transition is pending.
-            if state.transition_to_node_id is not None:
-                break
-    session.commit()
-    return ContributionResponse(
-        accepted_quantity=accepted,
-        project=ProjectProgress(
-            project_id=project_id,
-            name=definition.name,
-            targets=definition.targets,
-            contribution_totals=totals,
-        ),
-        completed=completed,
-    )

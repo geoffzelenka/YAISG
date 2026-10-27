@@ -497,7 +497,7 @@ async def test_requirement_lost_after_realm_node_change(
     with factory() as session:
         realm = session.get(RealmState, "realm.verdant_vale")
         assert realm is not None
-        realm.node_id = "node.verdant_t0_stub"
+        realm.current_node_id = "node.verdant_t0_stub"
         session.commit()
     clock.advance(timedelta(seconds=3))
     lost = await client.get("/characters/me/action", headers=headers)
@@ -522,7 +522,7 @@ async def test_zero_cycle_requirement_loss_survives_availability_read(
     with factory() as session:
         realm = session.get(RealmState, "realm.verdant_vale")
         assert realm is not None
-        realm.node_id = "node.verdant_t0_stub"
+        realm.current_node_id = "node.verdant_t0_stub"
         session.commit()
     await client.get("/actions/available", headers=headers)
     feed = await client.get("/characters/me/action", headers=headers)
@@ -561,7 +561,7 @@ async def test_profile_and_available_share_decay_stage_state(
             realm = session.get(RealmState, "realm.verdant_vale")
             estate = session.scalar(select(Estate))
             assert realm is not None and estate is not None
-            realm.node_id = "node.verdant_t0_stub"
+            realm.current_node_id = "node.verdant_t0_stub"
             realm.decay_stage = stage
             estate.decay_stage = stage
             session.add(

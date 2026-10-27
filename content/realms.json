@@ -1,6 +1,16 @@
 {
   "realms": [
-    {"id": "realm.verdant_vale", "name": "Verdant Vale", "starting_node_id": "node.verdant_t1", "market_offers": [{"item_id": "item.fake_sprig", "buy_price": 4, "sell_price": 1}]},
-    {"id": "realm.ashen_reach", "name": "Ashen Reach", "starting_node_id": "node.ashen_t1", "market_offers": [{"item_id": "item.mock_ore", "buy_price": 7, "sell_price": 2}]}
+    {
+      "id": "realm.verdant_vale",
+      "name": "Verdant Vale",
+      "starting_node_id": "node.verdant_t1",
+      "isolated": false
+    },
+    {
+      "id": "realm.ashen_reach",
+      "name": "Ashen Reach",
+      "starting_node_id": "node.ashen_t1",
+      "isolated": false
+    }
   ]
 }

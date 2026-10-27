@@ -7,11 +7,14 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -113,62 +116,53 @@ class EstateOwnershipHistory(Base):
 
 
 class RealmState(Base):
-    """Current development identity for a realm."""
+    """A world realm or a character-owned isolated realm instance."""
 
     __tablename__ = "realm_state"
 
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    template_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    isolated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    owner_character_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("characters.id")
+    )
+    current_node_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    treasury: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    pending_transition: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    last_tick_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    gauge: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     decay_stage: Mapped[str] = mapped_column(
         String(32), nullable=False, default="fed", server_default="fed"
     )
-    realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    node_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    transition_to_node_id: Mapped[str | None] = mapped_column(String(128))
-    transition_completes_at: Mapped[datetime | None] = mapped_column(
+    shed_progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    vote_cooldown_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    treasury: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    treasury_band: Mapped[str | None] = mapped_column(String(32))
+    tag_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
 
-class RealmEdgeProgress(Base):
-    """Per-realm progress on a development edge."""
+class RealmTag(Base):
+    """A project tag, ordered by acquisition and stamped with its D4 node."""
 
-    __tablename__ = "realm_edge_progress"
-    realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    edge_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at: Mapped[datetime] = mapped_column(
+    __tablename__ = "realm_tags"
+
+    realm_id: Mapped[str] = mapped_column(
+        ForeignKey("realm_state.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    node_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-
-
-class RealmProject(Base):
-    """Per-realm communal project state."""
-
-    __tablename__ = "realm_projects"
-    realm_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    project_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    contribution_totals: Mapped[dict[str, int]] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class RealmContribution(Base):
-    """Audit record for a project contribution."""
-
-    __tablename__ = "realm_contributions"
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    project_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    character_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("characters.id"), nullable=False
-    )
-    item_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
-    contributed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+    # Prompt 10 introduces the referenced project-run table.
+    project_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    __table_args__ = (
+        UniqueConstraint("realm_id", "seq", name="uq_realm_tags_seq"),
+        CheckConstraint("seq > 0", name="ck_realm_tags_seq_positive"),
     )
 
 

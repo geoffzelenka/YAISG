@@ -2,11 +2,9 @@
   "nodes": [
     {
       "id": "node.verdant_t0_stub",
-      "archetype": "agrarian",
       "name": "Verdant Stub",
       "modifiers": [],
       "cap_bonuses": [],
-      "upkeep_profile": [],
       "projects": [],
       "actions": [
         "gathering.fake_sprigs",
@@ -17,11 +15,15 @@
         "access.fake",
         "bonus.fake"
       ],
-      "tier": 1
+      "tier": 0,
+      "realm_type": "barren",
+      "upkeep": [],
+      "carried_tags": [],
+      "upgrades": [],
+      "regression": null
     },
     {
       "id": "node.verdant_t1",
-      "archetype": "agrarian",
       "name": "Verdant Vale",
       "modifiers": [
         {
@@ -31,7 +33,6 @@
         }
       ],
       "cap_bonuses": [],
-      "upkeep_profile": [],
       "projects": [
         "project.verdant_cardboard"
       ],
@@ -44,11 +45,36 @@
         "verdant",
         "facility.fake_node"
       ],
-      "tier": 1
+      "tier": 1,
+      "realm_type": "agrarian",
+      "upkeep": [],
+      "carried_tags": [],
+      "upgrades": [
+        {
+          "id": "upgrade.fake_tier",
+          "to_node": "node.verdant_t2",
+          "kind": "tier_up",
+          "required_tags": [
+            "bonus.fake"
+          ],
+          "fee_gold": 0
+        },
+        {
+          "id": "upgrade.fake_morph",
+          "to_node": "node.ashen_t1",
+          "kind": "morph",
+          "required_tags": [
+            "bonus.fake"
+          ],
+          "fee_gold": 0
+        }
+      ],
+      "regression": {
+        "to_node": "node.verdant_t0_stub"
+      }
     },
     {
       "id": "node.verdant_t2",
-      "archetype": "agrarian",
       "name": "Verdant Vale II",
       "modifiers": [
         {
@@ -63,7 +89,6 @@
         }
       ],
       "cap_bonuses": [],
-      "upkeep_profile": [],
       "projects": [],
       "actions": [
         "gathering.fake_sprigs",
@@ -73,27 +98,19 @@
       "inherent_tags": [
         "verdant"
       ],
-      "tier": 2
-    },
-    {
-      "id": "node.ashen_t0_stub",
-      "archetype": "industrial",
-      "name": "Ashen Stub",
-      "modifiers": [],
-      "cap_bonuses": [],
-      "upkeep_profile": [],
-      "projects": [],
-      "actions": [
-        "gathering.fake_sprigs",
-        "gathering.mock_ore",
-        "gathering.test_crystal"
+      "tier": 2,
+      "realm_type": "agrarian",
+      "upkeep": [],
+      "carried_tags": [
+        "bonus.fake"
       ],
-      "inherent_tags": [],
-      "tier": 1
+      "upgrades": [],
+      "regression": {
+        "to_node": "node.verdant_t1"
+      }
     },
     {
       "id": "node.ashen_t1",
-      "archetype": "industrial",
       "name": "Ashen Reach",
       "modifiers": [
         {
@@ -103,7 +120,6 @@
         }
       ],
       "cap_bonuses": [],
-      "upkeep_profile": [],
       "projects": [
         "project.ashen_placeholder"
       ],
@@ -115,68 +131,14 @@
       "inherent_tags": [
         "ashen"
       ],
-      "tier": 1
-    },
-    {
-      "id": "node.ashen_t2",
-      "archetype": "industrial",
-      "name": "Ashen Reach II",
-      "modifiers": [
-        {
-          "type": "cycle_speed_pct",
-          "value": -10,
-          "skill_id": "gathering"
-        },
-        {
-          "type": "extra_drop_chance_pct",
-          "value": 3,
-          "skill_id": "gathering"
-        }
-      ],
-      "cap_bonuses": [],
-      "upkeep_profile": [],
-      "projects": [],
-      "actions": [
-        "gathering.fake_sprigs",
-        "gathering.mock_ore",
-        "gathering.test_crystal"
-      ],
-      "inherent_tags": [
-        "ashen"
-      ],
-      "tier": 2
-    }
-  ],
-  "edges": [
-    {
-      "id": "edge.verdant_t1_t2",
-      "from": "node.verdant_t1",
-      "to": "node.verdant_t2",
-      "progress_target": 100,
-      "kind": "development",
-      "transition_ms": 300000
-    },
-    {
-      "id": "edge.verdant_regress",
-      "from": "node.verdant_t1",
-      "to": "node.verdant_t0_stub",
-      "progress_target": 100,
-      "kind": "regression"
-    },
-    {
-      "id": "edge.ashen_t1_t2",
-      "from": "node.ashen_t1",
-      "to": "node.ashen_t2",
-      "progress_target": 100,
-      "kind": "development",
-      "transition_ms": 300000
-    },
-    {
-      "id": "edge.ashen_regress",
-      "from": "node.ashen_t1",
-      "to": "node.ashen_t0_stub",
-      "progress_target": 100,
-      "kind": "regression"
+      "tier": 1,
+      "realm_type": "industrial",
+      "upkeep": [],
+      "carried_tags": [],
+      "upgrades": [],
+      "regression": {
+        "to_node": "node.verdant_t0_stub"
+      }
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 import random
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 
@@ -412,7 +412,14 @@ async def test_postgres_travel_holds_character_realms_and_estate(
     with factory() as setup:
         for realm in CONTENT.realms:
             if setup.get(RealmState, realm.id) is None:
-                setup.add(RealmState(realm_id=realm.id, node_id=realm.starting_node_id))
+                setup.add(
+                    RealmState(
+                        id=realm.id,
+                        template_id=realm.id,
+                        last_tick_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        current_node_id=realm.starting_node_id,
+                    )
+                )
         setup.add(
             ActiveActionRecord(
                 character_id=character_id,
@@ -544,7 +551,7 @@ def test_next_step_uses_arrival_realm_bonus() -> None:
         _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: boosted}),
     )
     initial = replace(
-        traveller(), realm_states={DESTINATION: (node.id, DecayStage.FED)}
+        traveller(), realm_states={DESTINATION: (node.id, DecayStage.FED, ())}
     )
     state, active = advance(initial, journey(), 60_000, content)
     assert active is not None and active.meta["duration_ms"] == 30_000
@@ -603,3 +610,20 @@ def test_decimal_ties_and_rounding_are_exact() -> None:
     assert active is None
     assert state.skills_xp["travel"] == 29
     assert state.inventory["item.fake_sprig"] == 25
+
+
+def test_arrival_uses_destination_project_stack() -> None:
+    """Journey snapshots carry project tags into the next step's realm sources."""
+    from app.content.schemas import DecayStage
+    from app.engine.travel import arrival_state
+
+    node_id = CONTENT.realm(DESTINATION).starting_node_id
+    initial = replace(
+        traveller(),
+        realm_stack_tags=("access.fake",),
+        realm_states={DESTINATION: (node_id, DecayStage.FALTERING, ("bonus.fake",))},
+    )
+    arrived = arrival_state(initial, DESTINATION, "visit", CONTENT)
+    assert arrived.realm_stack_tags == ("bonus.fake",)
+    assert arrived.realm_stage == DecayStage.FALTERING
+    assert arrived.current_realm_id == DESTINATION

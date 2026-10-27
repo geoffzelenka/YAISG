@@ -15,7 +15,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 06 | `06-resolver-presence` | Resolver seam, current_realm_id, presence | done | v08/06-resolver-presence | 4d41518 | ActionResolver protocol + registry with UniformResolver (golden-verified against pre-refactor engine); current_realm_id; presence helpers; character-row lock on every resolve; /actions/poll and /actions/stop. |
 | 07 | `07-travel` | Map edges, journeys, the Travel skill | done | v08/07-travel | b6a2192 | Map edges with terrain/level/one-way; Dijkstra routing with exact tie-breaks; step-wise journeys (TravelResolver) with supplies via pay_selector and flat Travel XP; relocation removed; offline equals online. |
 | 08 | `08-client-skills-travel` | Client: skills, tiers, travel | done | v08/08-client-skills-travel | 87f63a7 | Skill panels with server tier/title, effective values and locked reasons; travel preview/start form with relocate mode; journey progress from server meta; resolver details in the reward feed without empty-journey toasts. |
-| 09 | `09-development-graph` | Nodes, tag stack, transitions | pending | — | — | — |
+| 09 | `09-development-graph` | Nodes, tag stack, transitions | ready for review | v08/09-development-graph | — | Realm instances, validated node-owned upgrades/regression, project tag stacks and D4 transition finalization; legacy edge progress and contributions removed. |
 | 10 | `10-project-runs` | Project runs and resolve_realm | pending | — | — | — |
 | 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | pending | — | — | — |
 | 12 | `12-estate-ownership` | Build, buy, surrender, valuation, larder | pending | — | — | — |

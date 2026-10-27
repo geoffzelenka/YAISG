@@ -9,10 +9,8 @@ from app.models.character import (
     EstateOwnershipHistory,
     EstateUpgrade,
     Inventory,
-    RealmContribution,
-    RealmEdgeProgress,
-    RealmProject,
     RealmState,
+    RealmTag,
     RewardLog,
 )
 from app.models.player import Player
@@ -28,8 +26,6 @@ __all__ = [
     "Inventory",
     "Player",
     "RewardLog",
-    "RealmContribution",
-    "RealmEdgeProgress",
-    "RealmProject",
     "RealmState",
+    "RealmTag",
 ]

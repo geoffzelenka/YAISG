@@ -23,6 +23,7 @@ from app.services.actions import (
     load_character_state,
     resolve_character,
 )
+from app.services.realms import stack_tags
 
 router = APIRouter(prefix="/travel", tags=["travel"])
 
@@ -87,7 +88,11 @@ async def preview(
     state = replace(
         state,
         realm_states={
-            realm.realm_id: (realm.node_id, DecayStage(realm.decay_stage))
+            realm.id: (
+                realm.current_node_id,
+                DecayStage(realm.decay_stage),
+                stack_tags(session, realm.id),
+            )
             for realm in session.scalars(select(RealmState))
         },
     )

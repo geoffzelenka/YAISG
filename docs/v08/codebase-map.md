@@ -13,9 +13,9 @@ v0.5 code, not the intended v0.8 architecture. No scheduler currently exists.
 | Content schemas | `services/game/app/content/schemas.py`: ContentModel (frozen, unknown fields forbidden; no strict type-coercion setting), pack and record models |
 | Content loading | `services/game/app/content/loader.py`: load_content, ContentIndex lookups/with_overrides, cross-reference validation, canonical serialization and hashes, PUBLIC_PACKS; `runtime.py`: process CONTENT; `content/*.json` plus private xp_curve and generator |
 | Content HTTP | `services/game/app/api/content.py`: manifest, pack bytes, ETag/304; main.py exempts exact public pack paths from JWT checks |
-| Game routes | `services/game/app/api/characters.py`: create/profile/inventory; `actions.py`: available/start/poll/stop; `estates.py`: home estate/install upgrade/transform; `realms.py`: list/detail/map/contribute; `travel.py`: journey preview/start; `api/schemas.py`: shared action payloads |
-| Transaction adapters | `services/game/app/services/actions.py`: resolve_character, state load/persist, reward claims, serialization; `services/realms.py`: sorted realm locks, transition finalization and edge awards. Journey presence/estate changes persist through the action adapter. Some orchestration remains in routers |
-| Models | `services/game/app/models/player.py`, `models/character.py`, exported in `models/__init__.py`; character, skills, currency, estate/history/upgrades, realm state/edge progress/projects/contributions, inventory, active action, reward log |
+| Game routes | `services/game/app/api/characters.py`: create/profile/inventory; `actions.py`: available/start/poll/stop; `estates.py`: home estate/install upgrade/transform; `realms.py`: list/detail/map; `travel.py`: journey preview/start; `api/schemas.py`: shared action payloads |
+| Transaction adapters | `services/game/app/services/actions.py`: resolve_character, state load/persist, reward claims, serialization; `services/realms.py`: sorted realm locks, start_transition and finalize_realm(s). Journey presence/estate changes persist through the action adapter. Some orchestration remains in routers |
+| Models | `services/game/app/models/player.py`, `models/character.py`, exported in `models/__init__.py`; character, skills, currency, estate/history/upgrades, realm_state instances (id/template_id, isolated/owner_character_id, current_node_id, treasury, pending_transition, last_tick_at, gauge/decay_stage/shed_progress, vote_cooldown_until, treasury_band and tag_seq), realm_tags, inventory, active action, reward log |
 | Database setup | Each service owns `app/db.py`, config, Alembic ini/env and metadata; game SQLite dialect hooks implement WAL and explicit BEGIN/BEGIN IMMEDIATE; PostgreSQL locks use SQLAlchemy with_for_update |
 | Migration histories | `services/auth/migrations/versions/0001_baseline.py` through `0002_auth_tables.py`; game `v08_0000_baseline.py` creates the current schema including reward claim tracking |
 | Scheduler | None; no APScheduler dependency or lifespan job. Prompt 14 introduces it; later prompts add caravans, order expiry/purge and guest purge |
@@ -82,8 +82,8 @@ Clock/RNG injection: `app/clock.py:utc_now` is the FastAPI ServerNow dependency;
 API fixtures override it with FakeClock or a mutable fixed-time mapping. Pure
 `engine/core.py:resolve` takes explicit now and RandomSource; engine tests pass
 seeded random.Random values. Production `services/actions.py:resolve_character`
-seeds a fresh RNG from secrets.randbits(256). Realm finalizers accept explicit
-now; legacy award_edge_progress also has a wall-clock fallback outside engine.
+seeds a fresh RNG from secrets.randbits(256). `services/realms.py:start_transition`,
+`finalize_realm` and `finalize_realms` all take an explicit now.
 Client clock tests use Vitest fake timers and polling math accepts injected
 randomness. Never put database, wall clock or global runtime state in engine.
 

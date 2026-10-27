@@ -167,10 +167,12 @@ async def create_character(
             with session.begin_nested():
                 session.add(
                     RealmState(
-                        realm_id=body.realm_id,
-                        node_id=content.realm(body.realm_id).starting_node_id,
+                        id=body.realm_id,
+                        template_id=body.realm_id,
+                        isolated=content.realm(body.realm_id).isolated,
+                        last_tick_at=now,
+                        current_node_id=content.realm(body.realm_id).starting_node_id,
                         treasury=0,
-                        data={},
                     )
                 )
                 session.flush()
@@ -243,7 +245,7 @@ def _profile(
     realm = content.realm(character.current_realm_id)
     realm_state = session.get(RealmState, character.current_realm_id)
     node = content.development_node(
-        realm_state.node_id if realm_state else realm.starting_node_id
+        realm_state.current_node_id if realm_state else realm.starting_node_id
     )
     stored_skills = {
         skill.skill_id: skill

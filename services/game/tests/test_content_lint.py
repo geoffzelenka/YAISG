@@ -279,3 +279,39 @@ def test_stack_maximizes_joint_factors_and_keeps_groups_separate() -> None:
     )
     # XP upgrade yields 2 * 0.5 = 1; speed yields 1 * 1.5 = 1.5.
     assert stack_bound(skill, content) == pytest.approx(1.2 * 1.5)
+
+
+def test_stack_bound_includes_project_and_carried_tags() -> None:
+    """Potential realm stacks contribute to the author's uncapped bonus bound."""
+    content = load_content(CONTENT_DIR)
+    # Remove existing emitted bonuses so a project is the only source of this effect.
+    nodes = tuple(
+        n.model_copy(
+            update={
+                "modifiers": (),
+                "inherent_tags": (),
+                "carried_tags": (),
+                "projects": (),
+            }
+        )
+        for n in content.development_nodes
+    )
+    content = replace(
+        content,
+        development_nodes=nodes,
+        upgrades=(),
+        estate_forms=tuple(
+            f.model_copy(update={"modifiers": (), "tags": ()})
+            for f in content.estate_forms
+        ),
+    )
+    skill = content.skill("gathering")
+    baseline = stack_bound(skill, content)
+    project_node = nodes[0].model_copy(
+        update={"projects": ("project.verdant_cardboard",)}
+    )
+    project_content = replace(content, development_nodes=(project_node, *nodes[1:]))
+    carried_node = nodes[0].model_copy(update={"carried_tags": ("bonus.fake",)})
+    carried_content = replace(content, development_nodes=(carried_node, *nodes[1:]))
+    assert stack_bound(skill, project_content) == pytest.approx(baseline * 1.02)
+    assert stack_bound(skill, carried_content) == pytest.approx(baseline * 1.02)

@@ -28,7 +28,10 @@ cycle-speed factor. Each group adds matching skill/category/all modifiers and
 uses the engine's `max(min_factor, 1 + sum / 100)` separately for XP and speed.
 Their product is maximized jointly over each group's alternatives:
 
-- Realm: each development node's modifiers and active inherent-tag modifiers.
+- Realm: each development node's modifiers and active inherent tags, plus every
+  subset of its carried tags and tags granted by offered projects. Partial stacks
+  matter because a completed project can add a malus. Prerequisite/build history
+  is conservatively relaxed, preserving the upper bound.
 - Estate: each form with every subset of distinct, non-inert upgrades that fits
   effective slot cap, including tag cap bonuses. Form and upgrade emissions
   and direct modifiers use the runtime all-of requires_realm_tags checks; an
@@ -48,8 +51,8 @@ warns even if the runtime XP cap would absorb some of the excess.
 
 Subset enumeration is exponential in the number of eligible upgrades; current
 placeholder packs are small. Larger packs may require a bounded optimization
-that preserves the conservative guarantee. Prompt 09 must extend candidates
-with possible project tag stacks; 11/12 must adapt form/slot eligibility; 26 and
+that preserves the conservative guarantee. Prompts 11/12 must adapt form/slot
+eligibility; 26 and
 27 must add gear slot combinations and simultaneous consumable effects to their
 own groups. Prompt 28 owns combat checks. No unavailable schemas are guessed by
 this lint.
