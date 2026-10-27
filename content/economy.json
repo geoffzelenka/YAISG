@@ -45,5 +45,9 @@
     "band_hysteresis_pct": 10,
     "m": 0.25
   },
-  "coinage_multiple": 1.2
+  "coinage_multiple": 1.2,
+  "vote": {
+    "duration_hours": 72,
+    "fail_cooldown_hours": 72
+  }
 }

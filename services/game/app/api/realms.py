@@ -22,6 +22,8 @@ from app.models import (
     RealmProjectRun,
     RealmState,
     RealmTag,
+    RealmVote,
+    RealmVoteEligibility,
 )
 from app.services.actions import resolve_character
 from app.services.estates import estate_ask_provider, persisted_estate_value
@@ -33,6 +35,7 @@ from app.services.realms import (
     prepare_sqlite_write,
 )
 from app.services.stores import recompute_lines
+from app.services.votes import call_vote, cast_vote
 
 router = APIRouter(tags=["realms"])
 
@@ -620,3 +623,125 @@ async def gift_treasury(
     resolve_character(session, character.id, now, content, {realm_id})
     gift(session, character, _project_realm(session, realm_id), body.gold)
     session.commit()
+
+
+class VoteRequest(BaseModel):
+    """An ephemeral ballot choice, never recorded against a character."""
+
+    model_config = ConfigDict(extra="forbid")
+    choice: Literal["yes", "no"]
+
+
+class VoteParticipation(BaseModel):
+    """Public eligibility and participation snapshot."""
+
+    character_id: uuid.UUID
+    weight: int
+    voted_at: datetime | None
+
+
+class VoteResponse(BaseModel):
+    """Public ballot; aggregate totals remain hidden until close."""
+
+    id: uuid.UUID
+    upgrade_id: str
+    called_by: uuid.UUID
+    called_at: datetime
+    closes_at: datetime
+    status: str
+    eligible_weight: int
+    fee_gold: int
+    yes_weight: int | None
+    no_weight: int | None
+    participation: list[VoteParticipation]
+
+
+def _vote_response(session: DatabaseSession, vote: RealmVote) -> VoteResponse:
+    return VoteResponse(
+        id=vote.id,
+        upgrade_id=vote.upgrade_id,
+        called_by=vote.called_by,
+        called_at=vote.called_at,
+        closes_at=vote.closes_at,
+        status=vote.status,
+        eligible_weight=vote.eligible_weight,
+        fee_gold=vote.fee_gold,
+        yes_weight=vote.yes_weight if vote.status != "open" else None,
+        no_weight=vote.no_weight if vote.status != "open" else None,
+        participation=[
+            VoteParticipation(
+                character_id=e.character_id, weight=e.weight, voted_at=e.voted_at
+            )
+            for e in session.scalars(
+                select(RealmVoteEligibility)
+                .where(RealmVoteEligibility.vote_id == vote.id)
+                .order_by(RealmVoteEligibility.character_id)
+            )
+        ],
+    )
+
+
+@router.post("/realms/{realm_id}/upgrades/{upgrade_id}/call")
+async def call_upgrade_vote(
+    realm_id: str,
+    upgrade_id: str,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> VoteResponse:
+    """Resolve and lock the realm before paying and snapshotting eligibility."""
+    content = _content(request)
+    character = get_character(session, player.id)
+    _check_realm_id(session, content, realm_id)
+    resolve_character(session, character.id, now, content, {realm_id})
+    vote = call_vote(
+        session, character, _project_realm(session, realm_id), upgrade_id, now, content
+    )
+    response = _vote_response(session, vote)
+    session.commit()
+    return response
+
+
+@router.post("/realms/{realm_id}/vote")
+async def submit_vote(
+    realm_id: str,
+    body: VoteRequest,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> VoteResponse:
+    """Add aggregate weight once, without logging or retaining the choice."""
+    content = _content(request)
+    character = get_character(session, player.id)
+    _check_realm_id(session, content, realm_id)
+    resolve_character(session, character.id, now, content, {realm_id})
+    vote = cast_vote(
+        session, character, _project_realm(session, realm_id), body.choice, now, content
+    )
+    response = _vote_response(session, vote)
+    session.commit()
+    return response
+
+
+@router.get("/realms/{realm_id}/vote")
+async def get_vote(
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+) -> VoteResponse | None:
+    """Read the current or most recently called ballot after lazy close."""
+    content = _content(request)
+    _check_realm_id(session, content, realm_id)
+    finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
+    vote = session.scalar(
+        select(RealmVote)
+        .where(RealmVote.realm_id == realm_id)
+        .order_by(RealmVote.called_at.desc(), RealmVote.id.desc())
+        .limit(1)
+    )
+    response = _vote_response(session, vote) if vote is not None else None
+    session.commit()
+    return response

@@ -33,8 +33,10 @@ def active_run(session: Session, realm_id: str) -> RealmProjectRun | None:
 
 
 def has_open_vote(session: Session, realm: RealmState) -> bool:
-    """Prompt 19 replaces this gate with the open-vote query."""
-    return False
+    """Check the reciprocal vote/project exclusion under the realm lock."""
+    from app.services.votes import open_vote
+
+    return open_vote(session, realm.id) is not None
 
 
 def begin_build(run: RealmProjectRun, now: datetime, content: ContentIndex) -> None:

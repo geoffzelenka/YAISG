@@ -43,6 +43,7 @@ const packBodies = {
     cap_days: 11,
     warehouse_value_cap: 10000,
     coinage_multiple: 1.2,
+    vote: { duration_hours: 72, fail_cooldown_hours: 72 },
     decay: { faltering_factor: 0.5 },
     transition: { duration_days: 7 },
     project: {

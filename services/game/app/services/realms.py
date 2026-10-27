@@ -198,14 +198,22 @@ def finalize_realm(
 
 
 def vote_close_event(session: Session, realm: RealmState) -> datetime | None:
-    """Prompt 19 supplies the next vote close time."""
-    return None
+    """Return the open ballot deadline under the realm lock."""
+    from app.services.votes import open_vote
+
+    vote = open_vote(session, realm.id)
+    return vote.closes_at if vote is not None else None
 
 
 def close_due_vote(
     session: Session, realm: RealmState, due: datetime, content: ContentIndex
 ) -> None:
-    """Prompt 19 closes the vote at its due time, possibly starting a transition."""
+    """Close the ballot at the exact scheduled time."""
+    from app.services.votes import close_vote, open_vote
+
+    vote = open_vote(session, realm.id)
+    if vote is not None:
+        close_vote(realm, vote, due, content)
 
 
 class TimedEventKind(IntEnum):

@@ -219,6 +219,7 @@ type ContentPacks = {
     }
     warehouse_value_cap: number
     coinage_multiple: number
+    vote: { duration_hours: number; fail_cooldown_hours: number }
     decay: { faltering_factor: number }
     transition: { duration_days: number }
     project: {
