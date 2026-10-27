@@ -50,23 +50,9 @@ def _lock_realm(
     if template.isolated:
         # Isolated templates become owned instances through the tutorial lifecycle.
         return None
-    # Before world seeding (Prompt 13), travel can reach untouched templates.
-    # The conflict-safe insert serializes concurrent first touches as well.
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from app.services.world import create_world
 
-    insert = sqlite_insert if session.get_bind().dialect.name == "sqlite" else pg_insert
-    session.execute(
-        insert(RealmState)
-        .values(
-            id=realm_id,
-            template_id=template.id,
-            isolated=template.isolated,
-            current_node_id=template.starting_node_id,
-            last_tick_at=now,
-        )
-        .on_conflict_do_nothing(index_elements=["id"])
-    )
+    create_world(session, content, now)
     return session.scalar(statement)
 
 

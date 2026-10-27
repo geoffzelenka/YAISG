@@ -32,6 +32,7 @@ from app.content.schemas import (
     Tag,
     TagsPack,
     UpgradesPack,
+    WorldSeedPack,
     XpCurve,
 )
 
@@ -49,7 +50,7 @@ PUBLIC_PACKS = (
     "tags",
     "economy",
 )
-_KNOWN_PACKS = {*PUBLIC_PACKS, "xp_curve"}
+_KNOWN_PACKS = {*PUBLIC_PACKS, "xp_curve", "world_seed"}
 
 
 class ContentError(RuntimeError):
@@ -72,6 +73,7 @@ class ContentManifest:
 class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
+    world_seed: WorldSeedPack
     tags: tuple[Tag, ...]
     economy: EconomyPack
     manifest: ContentManifest
@@ -393,7 +395,9 @@ def load_content(content_dir: Path) -> ContentIndex:
     tags_pack = _load_model(content_dir, "tags", TagsPack)
     economy = _load_model(content_dir, "economy", EconomyPack)
     progression = _load_model(content_dir, "progression", ProgressionPack)
+    world_seed = _load_model(content_dir, "world_seed", WorldSeedPack)
     packs: dict[str, BaseModel] = {
+        "world_seed": world_seed,
         "tags": tags_pack,
         "economy": economy,
         "skills": skills_pack,
@@ -452,6 +456,49 @@ def load_content(content_dir: Path) -> ContentIndex:
         progression,
         tags_pack.tags,
     )
+    upkeep_holders: tuple[DevelopmentNode | EstateForm | Tag, ...] = (
+        *nodes.values(),
+        *forms_pack.forms,
+        *tags_pack.tags,
+    )
+    upkeep_selectors = [
+        line.selector for holder in upkeep_holders for line in holder.upkeep
+    ]
+    for selector in upkeep_selectors:
+        prices = {i.reference_price for i in items.values() if selector.matches(i)}
+        if selector.class_ is not None and len(prices) > 1:
+            raise ContentError(f"mixed reference prices in upkeep selector {selector}")
+    for node in nodes.values():
+        possible_tags = (
+            set(node.inherent_tags)
+            | set(node.carried_tags)
+            | {projects[p].grants_tag for p in node.projects}
+        )
+        largest_delta = sum(
+            max(0, t.effects.reserve_days_delta)
+            for t in tags_pack.tags
+            if t.id in possible_tags
+        )
+        reserve = (
+            economy.reserve_days if node.reserve_days is None else node.reserve_days
+        )
+        cap = economy.cap_days if node.cap_days is None else node.cap_days
+        if cap <= reserve + largest_delta + economy.transition.duration_days:
+            raise ContentError(
+                f"cap_days must exceed largest reserve in node {node.id}"
+            )
+    seeds = {s.realm_id: s for s in world_seed.realms}
+    if len(seeds) != len(world_seed.realms) or set(seeds) != {
+        r.id for r in realms.values() if not r.isolated
+    }:
+        raise ContentError("world_seed must name each non-isolated realm exactly once")
+    forms_by_id = {f.id: f for f in forms_pack.forms}
+    for seed in seeds.values():
+        _require_items((s.item_id for s in seed.stores), set(items), "world_seed")
+        if len({s.item_id for s in seed.stores}) != len(seed.stores):
+            raise ContentError("duplicate world_seed store item")
+        if set(seed.estates) - set(forms_by_id):
+            raise ContentError("unknown world_seed estate form")
     canonical = {
         name: model.model_dump(mode="json", by_alias=True)
         for name, model in packs.items()
@@ -462,6 +509,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     }
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
+        world_seed,
         tags_pack.tags,
         economy,
         ContentManifest(

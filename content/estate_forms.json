@@ -117,7 +117,7 @@
       "upkeep": [
         {
           "selector": {
-            "class": "fake_plant"
+            "item": "item.fake_sprig"
           },
           "per_day": 1
         }

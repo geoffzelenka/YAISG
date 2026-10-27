@@ -1,0 +1,30 @@
+{
+  "realms": [
+    {
+      "realm_id": "realm.verdant_vale",
+      "treasury": 1000,
+      "stores": [
+        {
+          "item_id": "item.fake_sprig",
+          "qty": 100
+        }
+      ],
+      "estates": [
+        "form.fake_workshop"
+      ]
+    },
+    {
+      "realm_id": "realm.ashen_reach",
+      "treasury": 1000,
+      "stores": [
+        {
+          "item_id": "item.fake_sprig",
+          "qty": 100
+        }
+      ],
+      "estates": [
+        "form.fake_workshop"
+      ]
+    }
+  ]
+}

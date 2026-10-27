@@ -67,6 +67,7 @@ export type Item = {
   name: string
   tier: number
   classes: string[]
+  warehouse_cap?: number | null
   reference_price: number
   bullion: boolean
   spoilage_pct_per_day: number
@@ -206,6 +207,9 @@ export type Tag = {
 type ContentPacks = {
   tags: { tags: Tag[] }
   economy: {
+    reserve_days: number
+    cap_days: number
+    warehouse_value_cap: number
     decay: { faltering_factor: number }
     transition: { duration_days: number }
     project: {

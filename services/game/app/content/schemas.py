@@ -183,6 +183,7 @@ class Item(ContentModel):
     tier: int = Field(ge=1, le=5)
     classes: tuple[str, ...]
     reference_price: int = Field(gt=0)
+    warehouse_cap: int | None = Field(default=None, gt=0)
     bullion: bool = False
     spoilage_pct_per_day: float = Field(default=0, ge=0, le=100)
     stack_limit: int = Field(default=2_147_483_647, gt=0)
@@ -602,8 +603,26 @@ class EstateConfig(ContentModel):
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
+    reserve_days: float = Field(default=3, ge=0, allow_inf_nan=False)
+    cap_days: float = Field(default=10, gt=0, allow_inf_nan=False)
+    warehouse_value_cap: int = Field(gt=0)
     decay: DecayConfig
     estate: EstateConfig = EstateConfig()
     transition: TransitionConfig = TransitionConfig()
     project: ProjectConfig = ProjectConfig()
     tick: TickConfig = TickConfig()
+
+
+class SeedRealm(ContentModel):
+    """Initial holdings for a world realm; stores use whole units."""
+
+    realm_id: str
+    treasury: int = Field(ge=0)
+    stores: tuple[ItemQuantity, ...] = ()
+    estates: tuple[str, ...] = ()
+
+
+class WorldSeedPack(ContentModel):
+    """Private, versioned world creation data."""
+
+    realms: tuple[SeedRealm, ...]

@@ -1,6 +1,9 @@
 """Game service application."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -23,7 +26,19 @@ from app.logging import log_request
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-app = FastAPI(title="YAISG Game")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Seed the world after migrations and before accepting requests."""
+    from app.db import SessionLocal
+    from app.services.world import create_world
+
+    with SessionLocal.begin() as session:
+        create_world(session, application.state.content, datetime.now(UTC))
+    yield
+
+
+app = FastAPI(title="YAISG Game", lifespan=lifespan)
 app.state.content = CONTENT
 app.middleware("http")(log_request)
 app.include_router(content_router)

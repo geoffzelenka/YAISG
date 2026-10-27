@@ -161,24 +161,13 @@ async def create_character(
             422, "UNKNOWN_REALM", "The selected realm does not exist"
         ) from None
 
-    realm_state = session.get(RealmState, body.realm_id)
-    if realm_state is None:
-        try:
-            with session.begin_nested():
-                session.add(
-                    RealmState(
-                        id=body.realm_id,
-                        template_id=body.realm_id,
-                        isolated=content.realm(body.realm_id).isolated,
-                        last_tick_at=now,
-                        current_node_id=content.realm(body.realm_id).starting_node_id,
-                        treasury=0,
-                    )
-                )
-                session.flush()
-        except IntegrityError:
-            # Another character creation initialized this realm concurrently.
-            pass
+    if content.realm(body.realm_id).isolated:
+        raise api_error(
+            422, "UNKNOWN_REALM", "An isolated template is not a starting realm"
+        )
+    from app.services.world import create_world
+
+    create_world(session, content, now)
 
     estate_id = uuid.uuid4()
     character = Character(

@@ -32,6 +32,7 @@ from app.services.realms import (
     finalize_realms,
     prepare_sqlite_write,
 )
+from app.services.stores import recompute_lines
 
 router = APIRouter(tags=["realms"])
 
@@ -96,6 +97,20 @@ def _run_response(
     )
 
 
+class DemandLineResponse(BaseModel):
+    """Public demand in milli-line-units; no private treasury information."""
+
+    line_key: str
+    selector: dict[str, object]
+    value_measured: bool
+    draw_per_day: int
+    reserve: int
+    cap: int
+    stock: int
+    in_transit: int
+    below_reserve: bool
+
+
 class RealmResponse(BaseModel):
     """Public gameplay state; never includes treasury."""
 
@@ -107,6 +122,7 @@ class RealmResponse(BaseModel):
     decay_stage: str
     gauge: float
     active_run: ProjectRunResponse | None
+    lines: list[DemandLineResponse]
     pending_transition: PendingTransition | None
 
 
@@ -140,7 +156,22 @@ def _realm_response(
         stage,
     )
     run = active_run(session, realm_id)
+    lines = recompute_lines(session, state, content) if state else []
     return RealmResponse(
+        lines=[
+            DemandLineResponse(
+                line_key=line.line_key,
+                selector=line.selector,
+                value_measured=line.value_measured,
+                draw_per_day=line.draw_per_day,
+                reserve=line.reserve,
+                cap=line.cap,
+                stock=line.stock,
+                in_transit=line.in_transit,
+                below_reserve=line.stock < line.reserve,
+            )
+            for line in lines
+        ],
         active_run=_run_response(run, now, content) if run else None,
         id=realm_id,
         name=realm.name,
