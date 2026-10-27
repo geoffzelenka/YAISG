@@ -135,7 +135,7 @@ async def test_creation_builds_complete_profile(
     assert profile["estate"]["installed_upgrades"] == []
     assert profile["caps"]["inventory_slots"] == {"base": 30.0, "effective": 30.0}
     assert profile["caps"]["estate_upgrade_slots"] == {
-        "base": 2.0,
+        "base": 4.0,
         "effective": 4.0,
     }
     assert all(

@@ -161,7 +161,6 @@ def test_stack_respects_slots_scope_and_inert_upgrades() -> None:
         development_nodes=(node,),
         estate_forms=(form,),
         upgrades=upgrades,
-        caps=content.caps.model_copy(update={"estate_upgrade_slots": 1}),
     )
     assert stack_bound(skill, content) == pytest.approx(1.5 * 1.2)
     form = form.model_copy(update={"upgrade_slots": 2})
@@ -278,7 +277,6 @@ def test_stack_maximizes_joint_factors_and_keeps_groups_separate() -> None:
         development_nodes=(node,),
         estate_forms=(form,),
         upgrades=(xp, speed),
-        caps=content.caps.model_copy(update={"estate_upgrade_slots": 1}),
     )
     # XP upgrade yields 2 * 0.5 = 1; speed yields 1 * 1.5 = 1.5.
     assert stack_bound(skill, content) == pytest.approx(1.2 * 1.5)

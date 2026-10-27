@@ -32,7 +32,6 @@ const packBodies = {
     order_slots: 5,
     key_listings: 2,
     belt_slots: 2,
-    estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },
   estate_forms: { forms: [] },

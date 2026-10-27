@@ -441,7 +441,6 @@ class CapsConfig(ContentModel):
     order_slots: int = Field(gt=0)
     key_listings: int = Field(gt=0)
     belt_slots: int = Field(gt=0)
-    estate_upgrade_slots: int = Field(gt=0)
 
 
 class XpLevel(ContentModel):

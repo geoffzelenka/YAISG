@@ -1129,3 +1129,102 @@ async def test_transform_overlapping_selectors_are_atomic(
             if success
             else {"item.fake_sprig": 3, "item.worthless_button": 2}
         )
+
+
+@pytest.mark.parametrize("path", ["transform", "upgrades/upgrade.alarm_clock"])
+async def test_estate_mutations_reject_unowned_home_pointer(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    path: str,
+) -> None:
+    """A home pointer grants no right to change or pay for an unowned estate."""
+    from app.content.schemas import BuildCost
+
+    client, factory, headers, _ = estate_client
+    character_id = _give(factory, "item.fake_plank", 5)
+    _give(factory, "item.prototype_widget", 3)
+    content = app.state.content
+    form = content.estate_form("form.homestead")
+    form = form.model_copy(
+        update={"build_cost": BuildCost(gold=7, goods=form.build_cost.goods)}
+    )
+    app.state.content = replace(
+        content, _forms_by_id=MappingProxyType({**content._forms_by_id, form.id: form})
+    )
+    with factory() as session:
+        character = session.get(Character, character_id)
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert character is not None and currency is not None and realm is not None
+        other_estate = Estate(realm_id=realm.id, form_id="form.camp")
+        session.add(other_estate)
+        session.flush()
+        character.home_estate_id = other_estate.id
+        currency.gold = 7
+        realm.treasury = 11
+        other_estate_id = other_estate.id
+        session.commit()
+    response = await client.post(
+        f"/estates/me/{path}", headers=headers, json={"form_id": form.id}
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "NOT_ESTATE_OWNER"
+    with factory() as session:
+        holdings = {
+            stack.item_id: stack.quantity
+            for stack in session.scalars(
+                select(Inventory).where(Inventory.character_id == character_id)
+            )
+        }
+        assert holdings == {"item.fake_plank": 5, "item.prototype_widget": 3}
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        estate = session.get(Estate, other_estate_id)
+        assert currency is not None and currency.gold == 7
+        assert realm is not None and realm.treasury == 11
+        assert estate is not None and estate.form_id == "form.camp"
+        assert session.scalar(select(func.count()).select_from(EstateUpgrade)) == 0
+
+
+@pytest.mark.parametrize("bonus", [0, 3])
+async def test_profile_estate_slots_use_form_base_plus_bonuses(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    bonus: int,
+) -> None:
+    """The profile's slot base and effective cap share the form-owned base."""
+    client, factory, headers, clock = estate_client
+    content = app.state.content
+    form = content.estate_form("form.camp").model_copy(update={"upgrade_slots": 7})
+    app.state.content = replace(
+        content,
+        _forms_by_id=MappingProxyType({**content._forms_by_id, form.id: form}),
+    )
+    if bonus:
+        upgrade = content.upgrade("upgrade.alarm_clock").model_copy(
+            update={
+                "cap_bonuses": (
+                    CapBonus(cap=CapType.ESTATE_UPGRADE_SLOTS, value=bonus),
+                )
+            }
+        )
+        app.state.content = app.state.content.with_overrides(upgrades=(upgrade,))
+        with factory() as session:
+            estate = session.scalar(select(Estate))
+            assert estate is not None
+            session.add(
+                EstateUpgrade(
+                    estate_id=estate.id,
+                    slot_index=0,
+                    upgrade_id=upgrade.id,
+                    purchased_at=clock["now"],
+                )
+            )
+            session.commit()
+    response = await client.get("/characters/me", headers=headers)
+    assert response.status_code == 200
+    slots = response.json()["caps"]["estate_upgrade_slots"]
+    assert slots == {"base": 7, "effective": 7 + bonus}
+    assert slots["base"] + bonus == slots["effective"]

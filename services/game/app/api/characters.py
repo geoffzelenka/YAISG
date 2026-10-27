@@ -339,7 +339,11 @@ def _profile(
         ),
         caps={
             cap: CapSummary(
-                base=float(getattr(content.caps, cap.value)),
+                base=float(
+                    content.estate_form(estate.form_id).upgrade_slots
+                    if cap == CapType.ESTATE_UPGRADE_SLOTS
+                    else getattr(content.caps, cap.value)
+                ),
                 effective=float(value),
             )
             for cap, value in effective_caps.items()

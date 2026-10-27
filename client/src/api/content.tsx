@@ -103,10 +103,12 @@ export type Caps = {
   order_slots: number
   key_listings: number
   belt_slots: number
-  estate_upgrade_slots: number
 }
 
-export type CapBonus = { cap: keyof Caps; value: number }
+export type CapBonus = {
+  cap: keyof Caps | 'estate_upgrade_slots'
+  value: number
+}
 
 export type EstateForm = {
   id: string

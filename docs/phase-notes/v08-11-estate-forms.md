@@ -47,8 +47,21 @@
   Disposable SQLite `make db-reset`, subsequent `alembic upgrade head` and
   `alembic check` pass. `git diff --check` is clean. No dependencies added.
 
+- Round 1: removed the unused global estate slot base from content schema,
+  caps.json, client Caps and fixtures; profiles now report the form's slots as
+  base, so base plus applicable bonuses equals effective. Added
+  test_profile_estate_slots_use_form_base_plus_bonuses and
+  test_estate_mutations_reject_unowned_home_pointer (both mutations), asserting
+  NOT_ESTATE_OWNER without spending goods or gold. Documented selector scope,
+  vote_weight's EstateForm signature and the client transform limitations.
+  Round 1 SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passes: auth 15, game 327
+  with seven database-specific skips, client 41; all checks pass.
+
 ## Removed
 
+- §7.5 / §13.2: removed estate_upgrade_slots from the global CapsConfig,
+  caps.json, client content Caps type, fixtures and lint overrides. The runtime
+  estate_upgrade_slots cap and bonus kind remain; its base is form.upgrade_slots.
 - Estate level and persisted upgrade_slots columns and their API/client fields.
   Replaced the obsolete level-preservation assertion with gauge preservation
   and destination-tier assertions in the existing transform test.
@@ -62,6 +75,10 @@
 - §13.2 / §7.5: upgrade_slots is the form's physical base, replacing the old
   global-plus-form base; cap_bonuses use the same typed records as upgrades and
   nodes. Inertness and presence still gate bonus sources, not physical slots.
+- §13.3 "costs may use selectors": selectors apply to transforms only.
+  Upgrade installs retain exact ItemQuantity costs, per the orchestrator ruling.
+- §12.5 / §13.2: vote_weight takes the resolved EstateForm, not an estate
+  record. Prompt 19 must resolve the form before calling this pure helper.
 - §13.3: missing destination requirements return MISSING_REALM_TAGS; absence
   returns existing NOT_PRESENT, and a home pointer without ownership returns
   NOT_ESTATE_OWNER. Check relocate ESTATE_BUSY before other transform gates.
@@ -97,6 +114,9 @@ None.
 - 21-client-realm-estate: build the full ownership/larder/realm-estate UI;
   consume tier and decay_stage and the new public estate list. Current controls
   only received compatibility changes; transform affordability is server-side.
+  Transform buttons are not disabled when their cost is unaffordable, and the
+  cost line shows raw selector and item ids. Add affordability gating and
+  readable cost labels in Prompt 21.
 
 ## New error codes
 
