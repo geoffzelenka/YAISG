@@ -56,3 +56,8 @@ None.
 ## New error codes
 
 None. No dependencies added.
+
+### Orchestrator hand-off (review round 1, non-blocking)
+
+- 14-realm-tick: build `RealmTickContext` and flush only when `ticks > 0`. Today a zero-tick resolve issues an extra active_run SELECT and a flush. Also reuse the active_run already loaded in the last pass of `_finalize_timed_events`, so the context doesn't select it a second time.
+- 14-realm-tick: tighten `test_realm_catchup_statement_bound` to assert that the count for 72 ticks equals the count for 2 ticks (measured today: 4 statements), instead of `<= 10`. For the max_catchup case, assert `run.status == "failed"` and the expected `failed_at`.
