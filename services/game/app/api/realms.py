@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Literal, cast
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
@@ -27,7 +27,12 @@ from app.models import (
 )
 from app.services.actions import resolve_character
 from app.services.estates import estate_ask_provider, persisted_estate_value
-from app.services.projects import active_run, contribute_character, kickoff
+from app.services.projects import (
+    active_run,
+    contribute_character,
+    kickoff,
+    validate_kickoff,
+)
 from app.services.realms import (
     as_utc,
     finalize_realm,
@@ -297,6 +302,32 @@ def _check_realm_id(
         and session.get(RealmState, realm_id) is None
     ):
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+
+
+@router.get("/realms/{realm_id}/projects/availability")
+async def project_availability(
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> dict[str, dict[str, str] | None]:
+    """Expose kickoff gate reasons without paying or starting a project."""
+    content = _content(request)
+    character = get_character(session, player.id)
+    _check_realm_id(session, content, realm_id)
+    resolve_character(session, character.id, now, content, {realm_id})
+    realm = _project_realm(session, realm_id)
+    result: dict[str, dict[str, str] | None] = {}
+    for project_id in content.development_node(realm.current_node_id).projects:
+        try:
+            validate_kickoff(session, character, realm, project_id, now, content)
+        except HTTPException as exc:
+            result[project_id] = cast(dict[str, dict[str, str]], exc.detail)["error"]
+        else:
+            result[project_id] = None
+    session.commit()
+    return result
 
 
 @router.post("/realms/{realm_id}/projects/{project_id}/kickoff")

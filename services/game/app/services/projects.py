@@ -51,13 +51,13 @@ def begin_build(run: RealmProjectRun, now: datetime, content: ContentIndex) -> N
         )
 
 
-def _pay_kickoff(
+def _kickoff_payment(
     session: Session,
     character: Character,
-    realm: RealmState,
     project_id: str,
     content: ContentIndex,
-) -> None:
+) -> tuple[Currency, dict[str, Inventory], dict[str, int]]:
+    """Plan payment without changing holdings."""
     project = content.project(project_id)
     currency = session.get(Currency, character.id)
     stacks = {
@@ -75,6 +75,20 @@ def _pay_kickoff(
             raise api_error(409, "MISSING_INPUTS", "Kickoff payment is unavailable")
         for item, quantity in payment.items():
             remaining[item] -= quantity
+    return currency, stacks, remaining
+
+
+def _pay_kickoff(
+    session: Session,
+    character: Character,
+    realm: RealmState,
+    project_id: str,
+    content: ContentIndex,
+) -> None:
+    currency, stacks, remaining = _kickoff_payment(
+        session, character, project_id, content
+    )
+    project = content.project(project_id)
     currency.gold -= project.kickoff.gold
     realm.treasury += project.kickoff.gold
     for item, stack in stacks.items():
@@ -84,15 +98,15 @@ def _pay_kickoff(
             session.delete(stack)
 
 
-def kickoff(
+def validate_kickoff(
     session: Session,
     character: Character,
     realm: RealmState,
     project_id: str,
     now: datetime,
     content: ContentIndex,
-) -> RealmProjectRun:
-    """Check conditions in specification order, then consume payment."""
+) -> None:
+    """Check kickoff gates and affordability without consuming payment."""
     if character.current_realm_id != realm.id:
         raise api_error(409, "NOT_PRESENT", "You must be in the realm")
     try:
@@ -150,6 +164,20 @@ def kickoff(
     from app.services.stores import require_project_stock
 
     require_project_stock(session, realm, content)
+    _kickoff_payment(session, character, project_id, content)
+
+
+def kickoff(
+    session: Session,
+    character: Character,
+    realm: RealmState,
+    project_id: str,
+    now: datetime,
+    content: ContentIndex,
+) -> RealmProjectRun:
+    """Validate kickoff gates, then consume payment and create the attempt."""
+    validate_kickoff(session, character, realm, project_id, now, content)
+    project = content.project(project_id)
     _pay_kickoff(session, character, realm, project_id, content)
     run = RealmProjectRun(
         realm_id=realm.id,

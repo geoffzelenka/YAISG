@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 
+import type { ProjectRun } from './development'
 import type { MapEdge, Modifier, Selector } from './content'
 import { gameRequest, readApiError } from './http'
 
@@ -16,6 +17,7 @@ export type RealmDemandLine = {
 }
 
 export type RealmDetail = {
+  active_run: ProjectRun | null
   lines: RealmDemandLine[]
   id: string
   name: string
@@ -46,6 +48,7 @@ export type RealmMap = {
     node: string
     tier: number
     decay_stage: string
+    gauge: number
     treasury_band: string | null
     transition_pending: boolean
     name: string
@@ -78,6 +81,7 @@ export function useRealm(realmId: string) {
     queryFn: () =>
       request<RealmDetail>(`/realms/${encodeURIComponent(realmId)}`),
     enabled: realmId.length > 0,
+    refetchInterval: 30_000,
   })
 }
 

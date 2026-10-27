@@ -1309,6 +1309,15 @@ async def test_build_buy_surrender_and_larder(
         json={"item_id": "item.fake_sprig", "quantity": 3},
     )
     assert deposited.status_code == 200
+    assert deposited.json()["larder"] == {"item.fake_sprig": 3000}
+    assert deposited.json()["surrender_value"] == built.json()["surrender_value"]
+    assert deposited.json()["surrender_value"] > 3
+    assert "surrender_payout" not in deposited.json()
+    preview = await client.get("/estates/me", headers=headers)
+    assert preview.json()["larder"] == {"item.fake_sprig": 3000}
+    assert preview.json()["surrender_value"] == built.json()["surrender_value"]
+    assert "surrender_payout" not in preview.json()
+    assert "treasury" not in preview.json()
     assert (
         await client.delete("/estates/me/larder", headers=headers)
     ).status_code == 405
@@ -1316,6 +1325,8 @@ async def test_build_buy_surrender_and_larder(
         "/estates/me/surrender", headers=headers, json={"donate": donate}
     )
     assert surrendered.status_code == 200
+    assert surrendered.json()["surrender_value"] is None
+    assert surrendered.json()["larder"] == {}
     surrendered_mobile_id = uuid.UUID(surrendered.json()["id"])
     with factory() as session:
         holding = session.get(EstateLarder, (fixed_id, "item.fake_sprig"))

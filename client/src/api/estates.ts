@@ -22,6 +22,9 @@ export type Estate = {
   mobility: 'mobile' | 'fixed'
   tags: string[]
   decay_stage: string
+  gauge: number
+  larder: Record<string, number>
+  surrender_value: number | null
   status: string
   upgrade_slots: number
   installed_upgrades: {
