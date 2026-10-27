@@ -20,7 +20,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 10a | `10a-tick-batching` | Realm tick catch-up batching | done | v08/10a-tick-batching | 3805505 | Tick catch-up preloads RealmTickContext and flushes once (4 statements for 72 ticks); deadline=None on DB Hypothesis tests |
 | 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | done | v08/11-estate-forms | b63b9ac | Strict estate form graph, selector-paid transforms to realm treasury, realm-owned estates, vote weights; global slot base removed |
 | 12 | `12-estate-ownership` | Build, buy, surrender, valuation, larder | done | v08/12-estate-ownership | 719ec0b | Valuation (cheapest tier-1 path, provider-priced goods), build/buy/surrender with treasury flows, deposit-only larder |
-| 13 | `13-stores-lines` | Stores, demand lines, world seed | pending | — | — | — |
+| 13 | `13-stores-lines` | Stores, demand lines, world seed | ready for review | v08/13-stores-lines | — | Milli-unit stores, pure demand derivation and reserve/cap rules, private atomic world seed, public reserve flags |
 | 14 | `14-realm-tick` | The realm tick and the scheduled job | pending | — | — | — |
 | 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | pending | — | — | — |
 | 16 | `16-realm-pricing` | Realm market pricing and visibility | pending | — | — | — |

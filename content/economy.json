@@ -16,5 +16,8 @@
   },
   "estate": {
     "sale_markup_pct": 15
-  }
+  },
+  "reserve_days": 3,
+  "cap_days": 11,
+  "warehouse_value_cap": 10000
 }

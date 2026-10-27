@@ -1,11 +1,15 @@
 """Game service application."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.middleware.base import RequestResponseEndpoint
 
 from app.api.actions import router as actions_router
@@ -23,7 +27,29 @@ from app.logging import log_request
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-app = FastAPI(title="YAISG Game")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Seed the world after migrations and before accepting requests."""
+    from app.db import SessionLocal
+    from app.services.world import create_world
+
+    try:
+        with SessionLocal.begin() as session:
+            create_world(session, application.state.content, datetime.now(UTC))
+    except DBAPIError as error:
+        missing_table = getattr(error.orig, "sqlstate", None) == "42P01" or (
+            isinstance(error, OperationalError) and "no such table:" in str(error.orig)
+        )
+        if missing_table:
+            logging.getLogger(__name__).error(
+                "Database not migrated; run alembic upgrade head / make db-reset"
+            )
+        raise
+    yield
+
+
+app = FastAPI(title="YAISG Game", lifespan=lifespan)
 app.state.content = CONTENT
 app.middleware("http")(log_request)
 app.include_router(content_router)

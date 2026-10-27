@@ -232,15 +232,45 @@ def render_text(reports: tuple[SkillReport, ...]) -> str:
     return "\n".join(lines)
 
 
+def upkeep_overlaps(content: ContentIndex) -> tuple[str, ...]:
+    """Warn about distinct upkeep selectors sharing any good."""
+    from app.content.schemas import DevelopmentNode, EstateForm, Tag
+    from app.engine.stores import line_key
+
+    holders: tuple[DevelopmentNode | EstateForm | Tag, ...] = (
+        *content.development_nodes,
+        *content.estate_forms,
+        *content.tags,
+    )
+    selectors = {
+        line_key(line.selector): line.selector
+        for holder in holders
+        for line in holder.upkeep
+    }
+    keys = sorted(selectors)
+    return tuple(
+        f"WARNING upkeep overlap: {a} and {b}"
+        for index, a in enumerate(keys)
+        for b in keys[index + 1 :]
+        if any(
+            selectors[a].matches(item) and selectors[b].matches(item)
+            for item in content.items
+        )
+    )
+
+
 def main() -> int:
     """Print text and JSON by default; warnings always return success."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--content-dir", type=Path, default=CONTENT_DIR)
     parser.add_argument("--format", choices=("text", "json", "both"), default="both")
     args = parser.parse_args()
-    reports = lint_content(load_content(args.content_dir))
+    content = load_content(args.content_dir)
+    reports = lint_content(content)
     if args.format in {"text", "both"}:
         print(render_text(reports))
+        for warning in upkeep_overlaps(content):
+            print(warning)
     if args.format in {"json", "both"}:
         print(json.dumps([asdict(report) for report in reports], indent=2))
     return 0

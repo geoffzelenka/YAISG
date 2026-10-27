@@ -111,6 +111,11 @@ async def action_client(
     async def frozen_now() -> datetime:
         return clock.now
 
+    from world_helpers import create_empty_world
+
+    with factory() as session:
+        create_empty_world(session, app.state.content, clock.now)
+
     app.dependency_overrides[get_db] = test_db
     app.dependency_overrides[utc_now] = frozen_now
     original = jwks_cache.get_key

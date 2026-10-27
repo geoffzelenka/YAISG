@@ -60,6 +60,9 @@ const packs: Record<string, unknown> = {
   projects: { projects: [] },
   tags: { tags: [] },
   economy: {
+    reserve_days: 3,
+    cap_days: 11,
+    warehouse_value_cap: 10000,
     decay: { faltering_factor: 0.5 },
     transition: { duration_days: 7 },
     project: {

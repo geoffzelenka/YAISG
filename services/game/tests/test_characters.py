@@ -26,6 +26,7 @@ from app.models import (
     Estate,
     EstateUpgrade,
     RealmState,
+    WorldState,
 )
 
 pytestmark = pytest.mark.anyio
@@ -85,6 +86,11 @@ async def client(
     async def test_db() -> AsyncGenerator[Session, None]:
         with factory() as session:
             yield session
+
+    from world_helpers import create_empty_world
+
+    with factory() as session:
+        create_empty_world(session, app.state.content, datetime(2026, 1, 1, tzinfo=UTC))
 
     app.dependency_overrides[get_db] = test_db
     original = jwks_cache.get_key
@@ -241,6 +247,11 @@ async def test_concurrent_first_characters_share_realm_initialization(
     client: tuple[AsyncClient, sessionmaker[Session]],
 ) -> None:
     """A realm-state initialization race does not become a name error."""
+    # Start this race before either the world or any character exists.
+    with client[1]() as session:
+        session.execute(delete(WorldState))
+        session.execute(delete(RealmState))
+        session.commit()
     responses = await asyncio.gather(
         _post(client[0], _token(), "Realm First", "realm.verdant_vale"),
         _post(client[0], _token(), "Realm Second", "realm.verdant_vale"),
@@ -248,7 +259,17 @@ async def test_concurrent_first_characters_share_realm_initialization(
 
     assert [response.status_code for response in responses] == [201, 201]
     with client[1]() as session:
-        assert session.scalar(select(func.count()).select_from(RealmState)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(RealmState)
+                .where(RealmState.id == "realm.verdant_vale")
+            )
+            == 1
+        )
+        assert set(session.scalars(select(RealmState.id))) == {
+            realm.id for realm in app.state.content.realms if not realm.isolated
+        }
         assert session.scalar(select(func.count()).select_from(Character)) == 2
 
 

@@ -1,9 +1,22 @@
 import { useQuery } from '@tanstack/react-query'
 
-import type { MapEdge, Modifier } from './content'
+import type { MapEdge, Modifier, Selector } from './content'
 import { gameRequest, readApiError } from './http'
 
+export type RealmDemandLine = {
+  line_key: string
+  selector: Selector
+  value_measured: boolean
+  draw_per_day: number
+  reserve: number
+  cap: number
+  stock: number
+  in_transit: number
+  below_reserve: boolean
+}
+
 export type RealmDetail = {
+  lines: RealmDemandLine[]
   id: string
   name: string
   node: {

@@ -35,3 +35,7 @@ scripts-ci:
 .PHONY: content-lint
 content-lint:
 	cd services/game && python -m app.content.lint
+
+.PHONY: world-create
+world-create:
+	cd services/game && python -m app.services.world
