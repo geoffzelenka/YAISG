@@ -1,12 +1,17 @@
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { CharacterProfile } from '../../api/characters'
 import { useRealmMap } from '../../api/realms'
+import { useWorldMarkets } from '../../api/realmMarket'
+import { selectorLabel } from './presentation'
 import { TravelForm } from './TravelForm'
 
 export function MapPanel({ profile }: { profile: CharacterProfile }) {
   const [search] = useSearchParams()
   const destination = search.get('destination') ?? ''
   const map = useRealmMap()
+  const markets = useWorldMarkets(
+    map.data?.nodes.map((node) => node.realm_id) ?? [],
+  )
   if (map.isPending) return <p>Loading map…</p>
   if (map.isError) return <p className="text-red-300">Unable to load map.</p>
   return (
@@ -19,15 +24,57 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
         nodes={map.data.nodes}
       />
       <p className="mt-2 text-slate-400">Travel routes connect the realms.</p>
-      <ul className="mt-4">
+      <ul className="mt-4" aria-label="Realm health">
         {map.data.nodes.map((node) => (
           <li key={node.realm_id}>
-            {node.name} · Tier {node.tier} · {node.decay_stage}· Gauge:{' '}
+            {node.name} · Tier {node.tier} · {node.decay_stage} · Gauge:{' '}
             {node.gauge} days
             {node.treasury_band && ` · Treasury: ${node.treasury_band}`}
             {node.transition_pending && ' · Transition pending'}
           </li>
         ))}
+      </ul>
+      <h3 className="mt-6 text-xl">Hungry realms</h3>
+      <p>Highest gauge first. Short lines are below reserve.</p>
+      <ul>
+        {[...map.data.nodes]
+          .sort(
+            (a, b) => b.gauge - a.gauge || a.realm_id.localeCompare(b.realm_id),
+          )
+          .map((node) => {
+            const market = markets[map.data.nodes.indexOf(node)]
+            if (
+              market?.data &&
+              !market.data.lines.some((line) => line.stock < line.reserve)
+            )
+              return null
+            return (
+              <li key={node.realm_id}>
+                <Link
+                  to={`/realm/market?realm=${encodeURIComponent(node.realm_id)}`}
+                >
+                  {node.name}
+                </Link>{' '}
+                · Gauge: {node.gauge} days
+                {market?.isError ? (
+                  ' · Unable to load short lines.'
+                ) : !market?.data ? (
+                  ' · Loading short lines…'
+                ) : (
+                  <ul>
+                    {market.data.lines
+                      .filter((line) => line.stock < line.reserve)
+                      .map((line) => (
+                        <li key={line.line_key}>
+                          {selectorLabel(line.selector)}: short{' '}
+                          {(line.reserve - line.stock) / 1000} line units
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </li>
+            )
+          })}
       </ul>
       <svg
         aria-label="Realm graph"

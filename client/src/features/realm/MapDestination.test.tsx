@@ -50,7 +50,11 @@ afterEach(() => {
 it('estate travel link preselects the home realm on the map without reloading', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve(new Response('[]'))),
+    vi.fn((path: string) =>
+      Promise.resolve(
+        new Response(path.endsWith('/market') ? '{"lines":[]}' : '[]'),
+      ),
+    ),
   )
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -85,7 +89,11 @@ it('estate travel link preselects the home realm on the map without reloading', 
 it('surrender confirmation shows an uncapped upper bound and donation stays explicit', () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve(new Response('[]'))),
+    vi.fn((path: string) =>
+      Promise.resolve(
+        new Response(path.endsWith('/market') ? '{"lines":[]}' : '[]'),
+      ),
+    ),
   )
   profile.character.current_realm_id = 'home'
   const view = render(
