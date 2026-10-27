@@ -21,7 +21,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | done | v08/11-estate-forms | b63b9ac | Strict estate form graph, selector-paid transforms to realm treasury, realm-owned estates, vote weights; global slot base removed |
 | 12 | `12-estate-ownership` | Build, buy, surrender, valuation, larder | done | v08/12-estate-ownership | 719ec0b | Valuation (cheapest tier-1 path, provider-priced goods), build/buy/surrender with treasury flows, deposit-only larder |
 | 13 | `13-stores-lines` | Stores, demand lines, world seed | done | v08/13-stores-lines | 8099216 | Store due math, demand lines with most-specific membership, reserve/cap, private versioned world seed created once at boot |
-| 14 | `14-realm-tick` | The realm tick and the scheduled job | ready for review | `v08/14-realm-tick` | — | Batched estate/store ticks and advisory-locked scheduler; overlay timing needs ratification. |
+| 14 | `14-realm-tick` | The realm tick and the scheduled job | done | v08/14-realm-tick | 24ab9fc | Tick steps 0-10 (reserve priority, pro-rata, production, spoilage, caps, realm-funded overlay), APScheduler liveness job under PG advisory lock |
 | 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | pending | — | — | — |
 | 16 | `16-realm-pricing` | Realm market pricing and visibility | pending | — | — | — |
 | 17 | `17-realm-trade` | Realm trade and treasury gift | pending | — | — | — |
