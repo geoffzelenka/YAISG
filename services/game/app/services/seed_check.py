@@ -25,8 +25,10 @@ class SeedReport:
     reached_faltering: bool
 
 
-def check_seed(content: ContentIndex) -> list[SeedReport]:
-    """Run thirty days one tick at a time, detecting even transient starvation."""
+def check_seed(content: ContentIndex, *, days: int = 30) -> list[SeedReport]:
+    """Simulate the requested days, stopping at the first failing health check."""
+    if days <= 0:
+        raise ValueError("seed-check days must be positive")
     engine = create_engine("sqlite://")
     try:
         Base.metadata.create_all(engine)
@@ -36,11 +38,14 @@ def check_seed(content: ContentIndex) -> list[SeedReport]:
             realms = list(session.scalars(select(RealmState).order_by(RealmState.id)))
             unhealthy: set[str] = set()
             interval = timedelta(days=1) / content.economy.tick.per_day
-            for tick in range(1, 30 * content.economy.tick.per_day + 1):
+            for tick in range(1, days * content.economy.tick.per_day + 1):
                 for realm in realms:
                     resolve_realm(session, realm, start + tick * interval, content)
                     if realm.decay_stage not in (DecayStage.FED, DecayStage.STRAINED):
                         unhealthy.add(realm.id)
+                        break
+                if unhealthy:
+                    break
             return [
                 SeedReport(
                     realm.id,

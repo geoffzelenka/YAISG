@@ -450,11 +450,19 @@ def _acquire(
     )
 
 
-def _destroy_mobile(session: DatabaseSession, estate: Estate) -> None:
-    # Explicitly remove dependants on SQLite too, where FK enforcement may be off.
-    for model in (EstateUpgrade, EstateLarder, EstateOwnershipHistory):
+def _destroy_mobile(session: DatabaseSession, estate: Estate, now: datetime) -> None:
+    """Retire a replaced mobile estate without deleting ownership history."""
+    for model in (EstateUpgrade, EstateLarder):
         session.execute(delete(model).where(model.estate_id == estate.id))
-    session.delete(estate)
+    for history in session.scalars(
+        select(EstateOwnershipHistory).where(
+            EstateOwnershipHistory.estate_id == estate.id,
+            EstateOwnershipHistory.relinquished_at.is_(None),
+        )
+    ):
+        history.relinquished_at = now
+    estate.owner_character_id = None
+    estate.status = "destroyed"
     session.flush()
 
 
@@ -490,7 +498,7 @@ async def build_estate(
     if not tags_present(form.requires_realm_tags, tags):
         raise api_error(409, "MISSING_REALM_TAGS", "The form requires realm tags")
     _pay_build_cost(session, character, mobile, form.build_cost, content)
-    _destroy_mobile(session, mobile)
+    _destroy_mobile(session, mobile, now)
     estate = Estate(form_id=form.id, realm_id=character.current_realm_id)
     session.add(estate)
     session.flush()
@@ -548,7 +556,7 @@ async def buy_estate(
         raise api_error(409, "MISSING_INPUTS", "The sale price is not affordable")
     currency.gold -= cost
     realm.treasury += cost
-    _destroy_mobile(session, mobile)
+    _destroy_mobile(session, mobile, now)
     _acquire(session, character, estate, now)
     response = _estate_response(session, content, character, estate)
     session.commit()

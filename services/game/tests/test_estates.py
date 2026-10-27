@@ -1272,7 +1272,17 @@ async def test_build_buy_surrender_and_larder(
     assert built.status_code == 200, built.text
     fixed_id = uuid.UUID(built.json()["id"])
     with factory() as session:
-        assert session.get(Estate, old_id) is None
+        tombstone = session.get(Estate, old_id)
+        assert tombstone is not None and tombstone.status == "destroyed"
+        assert tombstone.owner_character_id is None
+        old_history = session.scalar(
+            select(EstateOwnershipHistory).where(
+                EstateOwnershipHistory.estate_id == old_id
+            )
+        )
+        assert old_history is not None
+        assert old_history.relinquished_at is not None
+        assert old_history.relinquished_at.replace(tzinfo=UTC) == clock["now"]
         assert session.get(EstateUpgrade, (old_id, 0)) is None
         assert (
             session.scalar(
@@ -1306,6 +1316,7 @@ async def test_build_buy_surrender_and_larder(
         "/estates/me/surrender", headers=headers, json={"donate": donate}
     )
     assert surrendered.status_code == 200
+    surrendered_mobile_id = uuid.UUID(surrendered.json()["id"])
     with factory() as session:
         holding = session.get(EstateLarder, (fixed_id, "item.fake_sprig"))
         currency = session.get(Currency, character_id)
@@ -1317,6 +1328,18 @@ async def test_build_buy_surrender_and_larder(
     bought = await client.post(f"/estates/{fixed_id}/buy", headers=headers)
     assert bought.status_code == 200, bought.text
     with factory() as session:
+        retired = session.get(Estate, surrendered_mobile_id)
+        assert retired is not None and retired.status == "destroyed"
+        assert retired.owner_character_id is None
+        retired_history = session.scalar(
+            select(EstateOwnershipHistory).where(
+                EstateOwnershipHistory.estate_id == surrendered_mobile_id
+            )
+        )
+        assert (
+            retired_history is not None and retired_history.relinquished_at is not None
+        )
+        assert retired_history.relinquished_at.replace(tzinfo=UTC) == clock["now"]
         assert_world_estate_invariant(session)
     again = await client.post(f"/estates/{fixed_id}/buy", headers=headers)
     assert again.json()["error"]["code"] == "MOBILE_ESTATE_REQUIRED"

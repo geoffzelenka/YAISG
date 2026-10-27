@@ -191,7 +191,10 @@ def test_shed_order_rate_transition_pause_and_recovery(realm_session: Session) -
     assert realm_session.get(RealmTag, (REALM, second.tag_id)) is None
 
 
-def test_d4_upgrade_survivors_regress_and_restamp(realm_session: Session) -> None:
+@pytest.mark.parametrize("completion", ["context", "session"])
+def test_d4_upgrade_survivors_regress_and_restamp(
+    realm_session: Session, completion: str
+) -> None:
     """A carried tag cannot block regression; restamping waits for completion."""
     realm = realm_session.get(RealmState, REALM)
     assert realm is not None
@@ -211,7 +214,18 @@ def test_d4_upgrade_survivors_regress_and_restamp(realm_session: Session) -> Non
     assert realm.pending_transition is not None
     assert realm.decay_stage == "regressed"
     assert carried.node_id == "node.verdant_t1"
-    complete_tick_transition(context, realm, NOW + timedelta(days=15), CONTENT)
+    # A carried tag may have been acquired several tiers earlier. Its stamp
+    # must actually change here, rather than already matching the target.
+    carried.node_id = "node.verdant_t0_stub"
+    assert carried.node_id != realm.pending_transition["to_node"]
+    if completion == "context":
+        complete_tick_transition(context, realm, NOW + timedelta(days=15), CONTENT)
+    else:
+        from app.services.realms import _finalize_locked_realm
+
+        persist_context(realm_session, realm, context)
+        realm_session.flush()
+        _finalize_locked_realm(realm_session, realm, NOW + timedelta(days=15), CONTENT)
     assert realm.current_node_id == "node.verdant_t1"
     assert realm.gauge == realm.shed_progress == 0
     assert carried.node_id == realm.current_node_id
@@ -244,6 +258,9 @@ def test_estate_chain_and_replacement_retains_history(realm_session: Session) ->
         estate_id=e.id, character_id=hero.id, acquired_at=NOW
     )
     realm_session.add(history)
+    from app.models import EstateLarder
+
+    realm_session.add(EstateLarder(estate_id=e.id, item_id=ITEM, quantity_milli=4321))
     for slot in range(2):
         realm_session.add(
             EstateUpgrade(
@@ -266,6 +283,8 @@ def test_estate_chain_and_replacement_retains_history(realm_session: Session) ->
     persist_context(realm_session, realm, context)
     realm_session.flush()
     assert e.status == "destroyed" and e.owner_character_id is None
+    assert context.larders[e.id][ITEM] == 0
+    assert realm_session.get(EstateLarder, (e.id, ITEM)) is None
     assert history.relinquished_at == NOW + timedelta(days=3)
     new = context.replacements[0]
     assert new.owner_character_id == hero.id
@@ -307,16 +326,30 @@ def test_live_faltering_production_and_strained_equality(
 
 
 def test_seed_check_healthy_and_starving_fixture() -> None:
-    """Check all thirty days; a seed that starves and later regresses still fails."""
-    assert all(not r.reached_faltering for r in check_seed(CONTENT))
+    """Exercise thirty daily ticks and stop a starving world on first Faltering."""
+    content = replace(
+        CONTENT,
+        economy=CONTENT.economy.model_copy(
+            update={
+                "tick": CONTENT.economy.tick.model_copy(update={"per_day": 1}),
+            }
+        ),
+    )
+    assert all(not r.reached_faltering for r in check_seed(content))
     nodes = {
         key: node.model_copy(
             update={"upkeep": (TagUpkeep(selector=Selector(item=ITEM), per_day=1000),)}
         )
         for key, node in CONTENT._nodes_by_id.items()
     }
-    starving = replace(CONTENT, _nodes_by_id=MappingProxyType(nodes))
-    assert all(r.reached_faltering for r in check_seed(starving))
+    starving = replace(content, _nodes_by_id=MappingProxyType(nodes))
+    from unittest.mock import patch
+
+    with patch(
+        "app.services.seed_check.resolve_realm", wraps=resolve_realm
+    ) as resolved:
+        assert any(r.reached_faltering for r in check_seed(starving))
+    assert resolved.call_count < 5 * len(content.world_seed.realms)
 
 
 @given(days=st.integers(min_value=13, max_value=30))
@@ -442,6 +475,33 @@ def test_barren_root_remains_failing(realm_session: Session) -> None:
     realm.current_node_id = root.id
     realm.gauge, realm.decay_stage = 5, "failing"
     context = load_context(realm_session, realm, None, content)
+    realm.gauge = 10
+    for tick in range(30 * content.economy.tick.per_day):
+        step_9_decay(context, realm, NOW + timedelta(hours=tick), content)
+        assert realm.shed_progress <= 1
+    # A day of rescue drains the one pending loss before rebuilding.
+    realm.gauge = 0
+    for tick in range(content.economy.tick.per_day):
+        step_9_decay(context, realm, NOW + timedelta(days=30, hours=tick), content)
+    assert realm.shed_progress == 0
+    realm.current_node_id = "node.verdant_t1"
+    context.stack = [
+        RealmTag(
+            realm_id=REALM,
+            tag_id=tag_id,
+            node_id=realm.current_node_id,
+            seq=seq,
+            acquired_at=NOW,
+        )
+        for seq, tag_id in enumerate(("bonus.fake", "facility.fake_node"), start=1)
+    ]
+    realm.gauge = 5
+    step_9_decay(context, realm, NOW + timedelta(days=32), content)
+    assert len(context.stack) == 2
+    assert realm.pending_transition is None
+    realm.current_node_id = root.id
+    context.stack = []
+    realm.decay_stage = "failing"
     step_9_decay(context, realm, NOW, content)
     assert realm.decay_stage == "failing" and realm.pending_transition is None
     assert {t.id for t in context.tags} == set(
@@ -688,3 +748,27 @@ def test_faltering_weakens_numeric_economy_tag_effects() -> None:
     assert weakened[0].effects.edge_loss_reduction_pct == 10
     assert weakened[1].effects == access.effects
     assert bonus.effects.reserve_days_delta == 4
+
+
+def test_gauge_weights_are_cached_until_line_membership_changes(
+    realm_session: Session,
+) -> None:
+    """Repeated gauges and stock-only line refreshes never rescan item definitions."""
+    from unittest.mock import patch
+
+    content = tick_content()
+    realm = realm_session.get(RealmState, REALM)
+    assert realm is not None
+    context = load_context(realm_session, realm, None, content)
+    key = line_key(Selector(item=ITEM))
+    context.realm_due = {key: 1000}
+    context.realm_unmet = {key: 1000}
+    weight = content.item(ITEM).reference_price
+    assert context.line_weights[key] == weight
+    with patch.object(
+        Selector, "matches", side_effect=AssertionError("rescanned items")
+    ):
+        for _ in range(4):
+            step_8_gauges(context, realm, NOW, content)
+            step_10_lines(context, realm, NOW, content)
+    assert context.line_weights[key] == weight

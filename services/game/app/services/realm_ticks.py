@@ -63,6 +63,7 @@ class RealmTickContext:
     tags: tuple[Tag, ...] = ()
     stack_tag_ids: set[str] = field(default_factory=set)
     lines: tuple[Line, ...] = ()
+    line_weights: dict[str, int] = field(default_factory=dict)
     owed: dict[str, list[tuple[uuid.UUID, int]]] = field(default_factory=dict)
     realm_due: dict[str, int] = field(default_factory=dict)
     realm_unmet: dict[str, int] = field(default_factory=dict)
@@ -375,12 +376,7 @@ def step_8_gauges(
     """Prompt 15: update deficit gauges; isolated realms have no upkeep or decay."""
     if realm.isolated:
         return
-    weights = {
-        line.key: 1
-        if line.value_measured
-        else next(i.reference_price for i in content.items if line.selector.matches(i))
-        for line in context.lines
-    }
+    weights = context.line_weights
     due_value = sum(q * weights[k] for k, q in context.realm_due.items())
     unmet = sum(q * weights[k] for k, q in context.realm_unmet.items())
     realm.gauge = advance_gauge(
@@ -454,6 +450,9 @@ def decay_realm(
                 context.removed_tags.append(tag)
             realm.shed_progress -= 1
         if not any(t.node_id == realm.current_node_id for t in context.stack):
+            # Empty nodes may retain one pending loss, never a bank of losses
+            # that would destroy rebuilt tags or follow a later tier-up.
+            realm.shed_progress = min(1.0, realm.shed_progress)
             regression = content.development_node(realm.current_node_id).regression
             if regression is not None:
                 start_transition(realm, regression.to_node, "regression", now, content)
@@ -599,6 +598,14 @@ def step_10_lines(
         content,
         transition_days(realm),
     )
+    context.line_weights = {
+        line.key: context.line_weights[line.key]
+        if line.key in context.line_weights
+        else 1
+        if line.value_measured
+        else next(i.reference_price for i in content.items if line.selector.matches(i))
+        for line in context.lines
+    }
 
 
 TICK_STEPS = (
