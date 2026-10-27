@@ -27,7 +27,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 17 | `17-realm-trade` | Realm trade and treasury gift | done | v08/17-realm-trade | a90289a | Presence-gated realm sell/buy at integral prices with PRICE_MOVED rollback, exact milli transfers, budget+treasury debit, treasury gift |
 | 18 | `18-mint-gold` | Mint and the gold ledger | done | v08/18-mint-gold | 6cbb7c6 | Mint coinage, gold ledger, 64-bit wallets, /admin/economy |
 | 19 | `19-votes` | Realm upgrade votes and transitions | done | v08/19-votes | 75380e6 | Weighted secret ballots; RESERVE_SHORT stock gates (human ruling); conflict-safe close |
-| 20 | `20-caravans` | Trade between realms | ready for review | `v08/20-caravans` | — | Atomic caravan passes, expected loss, shipments and tick arrivals |
+| 20 | `20-caravans` | Trade between realms | done | v08/20-caravans | d0d64e5 | Caravan passes: remoteness, §16.3 selection, fees/burn, loss, shipments |
 | 21 | `21-client-realm-estate` | Client: realm, projects, votes, estate | pending | — | — | — |
 | 22 | `22-client-realm-market` | Client: realm market and world health | pending | — | — | — |
 | 23 | `23-global-market` | Global order book, slots, tax, access | pending | — | — | — |
