@@ -24,6 +24,7 @@ from app.content.schemas import (
     MapCost,
     Modifier,
     ModifierType,
+    SkillCategory,
     Tag,
 )
 from app.engine.levels import level_for_xp, tier_for_level
@@ -252,6 +253,15 @@ def modifier_groups(
     )
 
 
+def modifier_applies(
+    modifier: Modifier, skill_id: str, category: SkillCategory
+) -> bool:
+    """Return whether a modifier's skill/category scope includes this skill."""
+    return (modifier.skill_id is None or modifier.skill_id == skill_id) and (
+        modifier.category is None or modifier.category == category
+    )
+
+
 def bonus_total(
     modifier_type: ModifierType,
     action: Action,
@@ -266,8 +276,7 @@ def bonus_total(
             m.value
             for m in group
             if m.type == modifier_type
-            and (m.skill_id is None or m.skill_id == action.skill_id)
-            and (m.category is None or m.category == category)
+            and modifier_applies(m, action.skill_id, category)
         )
         factors.append(max(content.progression.min_factor, 1 + percent / 100))
     percent = (

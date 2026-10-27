@@ -41,6 +41,16 @@
   Existing availability, content, engine, estate and lint tests were updated
   for the replacement field names and complete requirements report.
 
+- Review follow-up: profiles now use load_character_state, sharing persisted
+  realm/estate stages, modifiers, caps and effective action values with resolve
+  and availability. The engine and content lint share modifier_applies for
+  skill/category scope checks. Estate upgrade annotations use realm_active_tags
+  and tags_present with the estate realm loaded once outside the upgrade loop.
+- Review regression tests: test_profile_and_available_share_decay_stage_state
+  covers Fed/Faltering bonuses and suspended estate cap bonuses;
+  test_upgrade_annotation_uses_estate_realm_active_tags covers Fed/Faltering
+  facilities while the owner is visiting another realm.
+
 ## Removed
 
 - Legacy upgrade `realm_tags` and any-of/wildcard inertness; replaced by
@@ -69,6 +79,11 @@
   character-scoped poll/stop and client calls until the resolver/presence phase
   reconciles the remaining consolidated endpoints.
 
+- §7.4 / §14.7 / D11: inherent node tags “cannot decay” means they are never
+  shed. Faltering suspension and modifier halving still apply to inherent
+  tags, through the same active_tags function as other emissions. 15-decay
+  depends on this distinction when implementing shedding and recovery.
+
 ## Deviations
 
 None.
@@ -86,6 +101,8 @@ None.
 - 09-development-graph: supply `CharacterState.realm_stack_tags` (empty by
   default) from completed projects. Reuse active_tags rather than duplicating
   stage rules. Keep lint's possible stack candidates aligned with new projects.
+  Populate the estate realm stack used by api/estates.py:_estate_response and
+  _upgrade_inert_reason, including when the owner is visiting another realm.
 - 11-estate-forms / 12-estate-ownership: retain form and upgrade all-of inertness,
   owner-only estate facilities and E-group presence when replacing estate forms,
   ownership and lifecycle. Suspended upgrades have no separate runtime lifecycle

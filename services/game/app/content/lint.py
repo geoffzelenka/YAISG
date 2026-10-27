@@ -20,6 +20,7 @@ from app.content.loader import ContentIndex, load_content
 from app.content.schemas import Action, DecayStage, Modifier, ModifierType, Skill
 from app.engine.core import (
     CharacterState,
+    modifier_applies,
     modifier_groups,
     realm_active_tags,
     resolve_caps,
@@ -87,9 +88,7 @@ def _group_bound(
         percent = sum(
             m.value
             for m in modifiers
-            if m.type == kind
-            and (m.skill_id is None or m.skill_id == skill.id)
-            and (m.category is None or m.category == skill.category)
+            if m.type == kind and modifier_applies(m, skill.id, skill.category)
         )
         factors.append(max(content.progression.min_factor, 1 + percent / 100))
     return factors[0] * factors[1]

@@ -886,3 +886,47 @@ async def test_get_realms_locks_in_id_order(
     assert not worker.is_alive()
     assert thread_errors == []
     assert returned_ids == [realm.id for realm in content.realms]
+
+
+@pytest.mark.parametrize(
+    "stage,expected_status", [("fed", "active"), ("faltering", "inert")]
+)
+async def test_upgrade_annotation_uses_estate_realm_active_tags(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    stage: str,
+    expected_status: str,
+) -> None:
+    """An absent owner's upgrade annotation follows facilities in the estate realm."""
+    client, factory, headers, _ = estate_client
+    original = app.state.content
+    upgrade = original.upgrade("upgrade.painted_sign")
+    app.state.content = original.with_overrides(
+        upgrades=(
+            upgrade.model_copy(update={"requires_realm_tags": ("facility.fake_node",)}),
+        )
+    )
+    with factory() as session:
+        estate = session.scalar(select(Estate))
+        character = session.scalar(select(Character))
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert estate is not None and character is not None and realm is not None
+        character.realm_id = "realm.ashen_reach"
+        realm.decay_stage = stage
+        session.add(
+            EstateUpgrade(
+                estate_id=estate.id,
+                upgrade_id=upgrade.id,
+                slot_index=0,
+                purchased_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        )
+        session.commit()
+    response = await client.get("/estates/me", headers=headers)
+    assert response.status_code == 200
+    installed = response.json()["installed_upgrades"][0]
+    assert installed["status"] == expected_status
+    assert installed["inert_reason"] == (
+        "realm requirements not met" if expected_status == "inert" else None
+    )

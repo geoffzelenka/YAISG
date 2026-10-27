@@ -510,3 +510,66 @@ async def test_zero_cycle_requirement_loss_survives_availability_read(
     assert feed.json()["since_last"]["cycles_completed"] == 0
     repeat = await client.get("/characters/me/action", headers=headers)
     assert repeat.json()["stop_reason"] is None
+
+
+@pytest.mark.parametrize(
+    "stage,realm_bonus,extra_slots", [("fed", 2, 7), ("faltering", 1, 0)]
+)
+async def test_profile_and_available_share_decay_stage_state(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+    stage: str,
+    realm_bonus: int,
+    extra_slots: int,
+) -> None:
+    """Profiles share both holder stages for bonuses, caps and action values."""
+    from dataclasses import replace
+
+    from app.content.schemas import CapType
+    from app.models import Estate, EstateUpgrade, RealmState
+
+    client, factory, clock, headers = action_client
+    original = app.state.content
+    tags = tuple(
+        tag.model_copy(update={"cap_bonuses": {CapType.INVENTORY_SLOTS: 7}})
+        if tag.id == "facility.fake_upgrade"
+        else tag
+        for tag in original.tags
+    )
+    app.state.content = replace(original, tags=tags)
+    try:
+        with factory() as session:
+            realm = session.get(RealmState, "realm.verdant_vale")
+            estate = session.scalar(select(Estate))
+            assert realm is not None and estate is not None
+            realm.node_id = "node.verdant_t0_stub"
+            realm.decay_stage = stage
+            estate.decay_stage = stage
+            session.add(
+                EstateUpgrade(
+                    estate_id=estate.id,
+                    upgrade_id="upgrade.painted_sign",
+                    slot_index=0,
+                    purchased_at=clock.now,
+                )
+            )
+            session.commit()
+        response = await client.get("/characters/me", headers=headers)
+        assert response.status_code == 200
+        profile = response.json()
+        available = (await client.get("/actions/available", headers=headers)).json()
+        action = available["skills"][0]["actions"][0]
+        report = profile["actions"][action["action_id"]]
+        assert report == {key: action[key] for key in report}
+        assert report["xp_bonus_uncapped"] == pytest.approx(
+            (1 + realm_bonus / 100) * 1.05 * 100 - 100
+        )
+        assert sorted(m["value"] for m in profile["realm"]["active_modifiers"]) == [
+            realm_bonus,
+            5,
+        ]
+        assert (
+            profile["caps"]["inventory_slots"]["effective"]
+            == original.caps.inventory_slots + extra_slots
+        )
+    finally:
+        app.state.content = original

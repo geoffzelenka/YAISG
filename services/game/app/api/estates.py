@@ -16,7 +16,8 @@ from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import CapType, DecayStage, ItemQuantity, Modifier
 from app.engine import resolve_caps
-from app.engine.tags import TagHolder, active_tags
+from app.engine.core import realm_active_tags
+from app.engine.tags import tags_present
 from app.errors import api_error
 from app.models import Character, Estate, EstateUpgrade, Inventory, RealmState
 from app.services.actions import load_character_state, resolve_character
@@ -96,26 +97,11 @@ def _home_estate(
     return estate
 
 
-def _realm_node_id(
-    session: DatabaseSession, content: ContentIndex, estate: Estate
-) -> str:
-    realm_state = session.get(RealmState, estate.realm_id)
-    if realm_state is not None:
-        return realm_state.node_id
-    return content.realm(estate.realm_id).starting_node_id
-
-
 def _upgrade_inert_reason(
-    content: ContentIndex, node_id: str, upgrade_id: str, stage: str
+    content: ContentIndex, realm_tags: set[str], upgrade_id: str
 ) -> str | None:
     upgrade = content.upgrade(upgrade_id)
-    node = content.development_node(node_id)
-    holder = TagHolder(
-        tuple(tag for tag in content.tags if tag.id in node.inherent_tags),
-        content.economy.decay.faltering_factor,
-    )
-    realm_tags = {tag.id for tag, _ in active_tags(holder, DecayStage(stage))}
-    if not set(upgrade.requires_realm_tags).issubset(realm_tags):
+    if not tags_present(upgrade.requires_realm_tags, realm_tags):
         return "realm requirements not met"
     return None
 
@@ -135,15 +121,24 @@ def _estate_response(
     )
     state = load_character_state(session, character.id)
     slots = resolve_caps(state, content).estate_upgrade_slots
-    node_id = _realm_node_id(session, content, estate)
+    realm = session.get(RealmState, estate.realm_id)
+    estate_realm_state = replace(
+        state,
+        realm_id=estate.realm_id,
+        realm_node_id=realm.node_id
+        if realm
+        else content.realm(estate.realm_id).starting_node_id,
+        realm_stage=DecayStage(realm.decay_stage) if realm else DecayStage.FED,
+        realm_stack_tags=state.realm_stack_tags
+        if estate.realm_id == state.realm_id
+        else (),
+    )
+    realm_tags = {tag.id for tag, _ in realm_active_tags(estate_realm_state, content)}
     form = content.estate_form(estate.form_id)
     summaries: list[InstalledUpgradeSummary] = []
     for record in installed:
         upgrade = content.upgrade(record.upgrade_id)
-        realm = session.get(RealmState, estate.realm_id)
-        reason = _upgrade_inert_reason(
-            content, node_id, upgrade.id, realm.decay_stage if realm else "fed"
-        )
+        reason = _upgrade_inert_reason(content, realm_tags, upgrade.id)
         summaries.append(
             InstalledUpgradeSummary(
                 slot_index=record.slot_index,
