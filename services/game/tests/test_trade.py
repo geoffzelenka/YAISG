@@ -499,7 +499,7 @@ def test_weighted_line_moves_item_milli_without_rounding_gap(
     monkeypatch.setattr(
         stores,
         "mint_demands",
-        lambda: (
+        lambda tags: (
             Demand(
                 Selector.model_validate({"class": "placeholder"}), Fraction(1000), True
             ),

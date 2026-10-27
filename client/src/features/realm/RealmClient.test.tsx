@@ -55,6 +55,7 @@ const contentBodies: Record<string, unknown> = {
     reserve_days: 3,
     cap_days: 11,
     warehouse_value_cap: 10000,
+    coinage_multiple: 1.2,
     decay: { faltering_factor: 0.5 },
     transition: { duration_days: 7 },
     project: {

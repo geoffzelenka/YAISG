@@ -71,7 +71,7 @@ def recompute_lines(
         stores,
         content,
         transition_days(realm),
-        mint_demands(),
+        mint_demands(tags),
     )
     previous = {
         r.line_key: r.budget_gold
@@ -100,7 +100,19 @@ def recompute_lines(
                 for upkeep in holder.upkeep
             )
             realm.treasury_band = band_from_upkeep(
-                realm.treasury, Decimal(daily), None, content.economy.market
+                realm.treasury,
+                Decimal(daily)
+                + sum(
+                    (
+                        Decimal(d.daily_milli.numerator)
+                        / Decimal(d.daily_milli.denominator)
+                        / 1000
+                        for d in mint_demands(tags)
+                    ),
+                    Decimal(0),
+                ),
+                None,
+                content.economy.market,
             )
     return replace_lines(session, realm.id, lines)
 

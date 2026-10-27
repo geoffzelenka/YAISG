@@ -16,6 +16,7 @@ from app.models.character import (
     RealmTag,
     RewardLog,
 )
+from app.models.gold import GoldLedger
 from app.models.player import Player
 
 __all__ = [
@@ -39,3 +40,5 @@ __all__ = [
 from app.models.stores import RealmLine, RealmStore, WorldState
 
 __all__ += ["RealmLine", "RealmStore", "WorldState"]
+
+__all__ += ["GoldLedger"]

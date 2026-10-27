@@ -55,6 +55,28 @@
       "realm_completion_days": 1,
       "requires_tags": [],
       "repeatable": false
+    },
+    {
+      "id": "project.fake_mint",
+      "name": "Fake Mint Project",
+      "grants_tag": "access.fake_mint",
+      "cost": [
+        {
+          "selector": {
+            "item": "item.mock_ingot"
+          },
+          "quantity": 10
+        }
+      ],
+      "kickoff": {
+        "gold": 0,
+        "goods": [],
+        "who": "anyone"
+      },
+      "build_seconds": 60,
+      "realm_completion_days": 1,
+      "requires_tags": [],
+      "repeatable": false
     }
   ]
 }

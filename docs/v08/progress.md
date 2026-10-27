@@ -25,7 +25,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 15 | `15-decay` | Gauges, stages, shedding, regression, seed-check | done | v08/15-decay | fddd09a | Realm/estate gauges and stages, bounded shedding, regression with restamp, estate decay chain with tombstoned history, make seed-check |
 | 16 | `16-realm-pricing` | Realm market pricing and visibility | done | v08/16-realm-pricing | b7b163f | Scarcity curve and integral pricing with margin, budget allocation and bisection, hysteretic band, typed market/quote endpoints hiding treasury |
 | 17 | `17-realm-trade` | Realm trade and treasury gift | done | v08/17-realm-trade | a90289a | Presence-gated realm sell/buy at integral prices with PRICE_MOVED rollback, exact milli transfers, budget+treasury debit, treasury gift |
-| 18 | `18-mint-gold` | Mint and the gold ledger | pending | — | — | — |
+| 18 | `18-mint-gold` | Mint and the gold ledger | ready for review | `v08/18-mint-gold` | — | Value-measured mint, signed gold ledger and operator economy report. |
 | 19 | `19-votes` | Realm upgrade votes and transitions | pending | — | — | — |
 | 20 | `20-caravans` | Trade between realms | pending | — | — | — |
 | 21 | `21-client-realm-estate` | Client: realm, projects, votes, estate | pending | — | — | — |

@@ -44,5 +44,6 @@
     ],
     "band_hysteresis_pct": 10,
     "m": 0.25
-  }
+  },
+  "coinage_multiple": 1.2
 }

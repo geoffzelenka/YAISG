@@ -74,6 +74,12 @@
               "chance": 0.75,
               "quantity_min": 1,
               "quantity_max": 1
+            },
+            {
+              "item_id": "item.fake_bullion",
+              "chance": 0.05,
+              "quantity_min": 1,
+              "quantity_max": 1
             }
           ]
         }
