@@ -343,3 +343,45 @@ async def test_profile_max_level_retains_64_bit_xp(
     assert skill_data["xp_to_next"] is None
     assert skill_data["tier"] == 5
     assert skill_data["tier_title"] == app.state.content.progression.tier_titles[4]
+
+
+async def test_visitor_profile_excludes_estate_modifiers(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """An estate elsewhere contributes neither form nor upgrade modifiers."""
+    token = _token()
+    created = await _post(client[0], token, "Visiting Hero", "realm.verdant_vale")
+    estate_id = uuid.UUID(created.json()["estate"]["id"])
+    with client[1]() as session:
+        estate = session.get(Estate, estate_id)
+        assert estate is not None
+        estate.form_id = "form.homestead"
+        session.add(
+            EstateUpgrade(
+                estate_id=estate_id,
+                slot_index=0,
+                upgrade_id="upgrade.painted_sign",
+                purchased_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    home = await client[0].get("/characters/me", headers=headers)
+    assert home.status_code == 200
+    assert len(home.json()["realm"]["active_modifiers"]) == 3
+    with client[1]() as session:
+        character = session.scalar(select(Character))
+        assert character is not None
+        character.realm_id = "realm.ashen_reach"
+        session.commit()
+    away = await client[0].get("/characters/me", headers=headers)
+    assert away.status_code == 200
+    assert away.json()["realm"]["active_modifiers"] == [
+        {
+            "type": "cycle_speed_pct",
+            "value": -10,
+            "skill_id": "gathering",
+            "category": None,
+        }
+    ]
+    assert away.json()["actions"]["gathering.fake_sprigs"]["xp_bonus_uncapped"] == 0

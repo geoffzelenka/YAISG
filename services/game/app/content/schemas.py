@@ -149,9 +149,7 @@ class Skill(ContentModel):
 
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    category: Literal[
-        "gathering", "refining", "manufacturing", "combat", "exploration", "travel"
-    ]
+    category: SkillCategory
     actions: tuple[Action, ...] = ()
 
     @model_validator(mode="after")
@@ -202,6 +200,19 @@ class Modifier(ContentModel):
     value: float
     skill_id: str | None = None
     category: SkillCategory | None = None
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "Modifier":
+        """Require one supported scope for this modifier type."""
+        if self.skill_id is not None and self.category is not None:
+            raise ValueError("modifier cannot specify both skill_id and category")
+        if (
+            self.type == ModifierType.EXTRA_DROP_CHANCE_PCT
+            and self.skill_id is None
+            and self.category is None
+        ):
+            raise ValueError("extra_drop_chance_pct requires a skill or category scope")
+        return self
 
 
 class MarketOffer(ContentModel):

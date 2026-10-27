@@ -433,3 +433,31 @@ def test_retired_modifier_types_are_rejected(retired: str) -> None:
 
     with pytest.raises(ValidationError):
         Modifier.model_validate_json(json.dumps({"type": retired, "value": 5}))
+
+
+@pytest.mark.parametrize(
+    ("scope", "message"),
+    [
+        (
+            {"skill_id": "gathering", "category": "gathering"},
+            "cannot specify both skill_id and category",
+        ),
+        ({}, "requires a skill or category scope"),
+    ],
+)
+def test_modifier_rejects_invalid_scope(scope: dict[str, str], message: str) -> None:
+    """Drop bonuses require a single skill or category scope."""
+    from pydantic import ValidationError
+
+    from app.content.schemas import Modifier
+
+    with pytest.raises(ValidationError, match=message):
+        Modifier.model_validate_json(
+            json.dumps(
+                {
+                    "type": "extra_drop_chance_pct",
+                    "value": 5,
+                    **scope,
+                }
+            )
+        )

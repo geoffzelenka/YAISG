@@ -26,6 +26,20 @@
 - SQLite db-reset rebuilt disposable /tmp databases successfully. No migration
   was needed; all new settings/state are content or derived values.
 
+- Round 1: profile active modifiers now use modifier_groups, including estate
+  presence; Skill.category reuses SkillCategory; modifier validation rejects
+  mixed scopes and unscoped drop bonuses. Added test_proficiency_never_changes_xp,
+  test_visitor_profile_excludes_estate_modifiers and
+  test_modifier_rejects_invalid_scope (two cases).
+- Round 1 final SQLite make ci passed: auth 15, game 179 passed / one
+  PostgreSQL-only skip, client 23; all lint, formatting, type, build and scripts
+  checks green. git diff --check passed. Changes left uncommitted.
+- Round 1 mutation check: temporarily applied group P to XP as well as speed;
+  test_proficiency_never_changes_xp failed (1.2 != 1). Restored the engine.
+- Orchestrator verification on a2b06c2: PostgreSQL 16 game-ci 176 passed,
+  PostgreSQL db-reset green, alembic check clean. Round 1 PostgreSQL
+  verification remains with the orchestrator.
+
 ## Removed
 
 - Additive cross-source stacking, retired cycle-time modifier enum/content/client
@@ -71,6 +85,8 @@ None.
   it to defensive XP. Proficiency table grants no combat cycle speed.
 - 08-client-skills-travel: server reports all effective action figures; add UI
   presentation as needed. Content types include the new progression settings.
+  Bonus percentages are raw floats (e.g. 45.199999999999996); format them for
+  display in the client.
 
 ## New error codes
 

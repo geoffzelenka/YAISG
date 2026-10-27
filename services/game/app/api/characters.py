@@ -16,6 +16,7 @@ from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import CapType, Modifier
 from app.engine import CharacterState, resolve_caps
+from app.engine.core import modifier_groups
 from app.engine.levels import level_for_xp, tier_for_level, xp_progress
 from app.errors import api_error
 from app.models import (
@@ -309,12 +310,9 @@ def _profile(
         installed_upgrades=tuple(upgrade.upgrade_id for upgrade in upgrades),
     )
     resolved = resolve_caps(state, content)
-    active_modifiers = [*node.modifiers, *content.estate_form(estate.form_id).modifiers]
-    node_tags = set(node.tags)
-    for installed in upgrades:
-        upgrade = content.upgrade(installed.upgrade_id)
-        if "*" in upgrade.realm_tags or node_tags.intersection(upgrade.realm_tags):
-            active_modifiers.extend(upgrade.modifiers)
+    active_modifiers = [
+        modifier for group in modifier_groups(state, content) for modifier in group
+    ]
     effective_caps = {
         CapType.OFFLINE_HOURS: resolved.offline_hours,
         CapType.INVENTORY_SLOTS: resolved.inventory_slots,

@@ -358,7 +358,9 @@ def test_source_groups_multiply_and_inert_upgrade_is_excluded(
         modifiers=(
             Modifier(type=ModifierType.CYCLE_SPEED_PCT, value=5),
             Modifier(type=ModifierType.XP_PCT, value=10),
-            Modifier(type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=20),
+            Modifier(
+                type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=20, skill_id="gathering"
+            ),
         ),
         realm_tags=("verdant",),
     )
@@ -698,7 +700,9 @@ def test_cycle_minimum_and_drop_clamp(content: ContentIndex) -> None:
         make_state(),
         gear_modifiers=(
             Modifier(type=ModifierType.CYCLE_SPEED_PCT, value=1e9),
-            Modifier(type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=1e9),
+            Modifier(
+                type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=1e9, skill_id="gathering"
+            ),
         ),
     )
     assert (
@@ -741,3 +745,27 @@ def test_scope_and_cap_before_taper(content: ContentIndex) -> None:
         ),
     )
     assert effective_xp(action, state, content) == 73  # floor(101 * 1.45 * .5)
+
+
+def test_proficiency_never_changes_xp(content: ContentIndex) -> None:
+    """Nonzero proficiency affects speed while uncapped XP remains unchanged."""
+    from app.api.schemas import action_values
+    from app.engine.core import bonus_total
+
+    action = content.action("gathering.fake_sprigs")
+    node = content.development_node("node.verdant_t1").model_copy(
+        update={"modifiers": ()}
+    )
+    custom = replace(
+        content,
+        _nodes_by_id=MappingProxyType({**content._nodes_by_id, node.id: node}),
+    )
+    state = make_state(level=95)
+    assert bonus_total(ModifierType.XP_PCT, action, state, custom) == 1
+    assert bonus_total(ModifierType.CYCLE_SPEED_PCT, action, state, custom) == 1.2
+    assert effective_xp(action, state, custom) == 10
+    report = action_values(action, state, custom)
+    assert report.proficiency_pct == 20
+    assert report.xp_per_cycle == 10
+    assert report.xp_bonus_uncapped == 0
+    assert report.xp_bonus_capped == 0
