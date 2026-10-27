@@ -69,6 +69,7 @@ export type Item = {
   classes: string[]
   warehouse_cap?: number | null
   reference_price: number
+  instanced?: boolean
   bullion: boolean
   spoilage_pct_per_day: number
   stack_limit: number
@@ -217,6 +218,11 @@ type ContentPacks = {
     reserve_days: number
     cap_days: number
     market?: {
+      tax_pct?: number
+      tax_burn_pct?: number
+      order_days?: number
+      retention_days?: number
+      lifecycle_interval_seconds?: number
       f: number
       c: number
       k: number

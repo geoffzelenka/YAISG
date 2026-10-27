@@ -61,6 +61,7 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
   const [confirmGift, setConfirmGift] = useState(false)
   const transfer = useMarketTransfer(id)
   async function loadQuote() {
+    setSuccess('')
     setQuote(null)
     setBusy(true)
     try {

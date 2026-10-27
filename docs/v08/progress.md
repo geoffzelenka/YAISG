@@ -32,7 +32,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 22 | `22-client-realm-market` | Client: realm market and world health | done | v08/22-client-realm-market | c40f60f | Client realm market, quote-then-confirm trade, gift, hungry-realms map |
 | 23 | `23-global-market` | Global order book, slots, tax, access | done | v08/23-global-market | 6dad2ba | Global order book, escrow slots, seller tax, access gating |
 | 24 | `24-market-lifecycle` | Order expiry, purge, world conservation suite | done | v08/24-market-lifecycle | 6cc0db1 | Order expiry/purge job, paginated private history, world conservation suite |
-| 25 | `25-client-global-market` | Client: global market | pending | — | — | — |
+| 25 | `25-client-global-market` | Client: global market | ready for review | `v08/25-client-global-market` | — | Book depth, access-gated orders/collection, slots, immediate fills and paginated history. |
 | 26 | `26-equipment` | Equipment slots and gear bonuses | pending | — | — | — |
 | 27 | `27-consumables-hp` | Belt, utility, buffs, hit points | pending | — | — | — |
 | 28 | `28-combat-model` | Combatants, stats, the hit, stance, combat lint | pending | — | — | — |
