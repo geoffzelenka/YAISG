@@ -69,6 +69,7 @@ async def test_boot_seeds_world_once(
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(db, "SessionLocal", factory)
+    monkeypatch.setattr("app.services.scheduler.start_scheduler", Mock())
     frozen_datetime = Mock()
     frozen_datetime.now.return_value = datetime(2026, 1, 1, tzinfo=UTC)
     monkeypatch.setattr(game_main, "datetime", frozen_datetime)

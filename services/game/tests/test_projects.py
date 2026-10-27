@@ -23,7 +23,13 @@ from test_realms import CONTENT, NOW
 from test_realms import realm_session as realm_session
 
 from app.content.loader import ContentIndex
-from app.content.schemas import ActionInput, Project, ProjectKickoff, Selector
+from app.content.schemas import (
+    ActionInput,
+    Project,
+    ProjectKickoff,
+    Selector,
+    TagUpkeep,
+)
 from app.engine.projects import erode_project
 from app.models import (
     Character,
@@ -409,6 +415,15 @@ def test_realm_catchup_statement_bound(realm_session: Session, ticks: int) -> No
     """Catch-up loads and writes once, independent of the tick count."""
     realm = realm_session.get(RealmState, REALM)
     assert realm is not None
+    # Keep a node line after project failure, so both writes have the same shape.
+    node = CONTENT.development_node(realm.current_node_id).model_copy(
+        update={
+            "upkeep": (TagUpkeep(selector=Selector(item="item.fake_sprig"), per_day=1),)
+        }
+    )
+    content = replace(
+        CONTENT, _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: node})
+    )
     run = _run(realm_session, realm)
     interval = timedelta(days=1) / CONTENT.economy.tick.per_day
     # Start after grace so both resolutions must persist eroded progress.
@@ -431,10 +446,14 @@ def test_realm_catchup_statement_bound(realm_session: Session, ticks: int) -> No
     assert isinstance(engine, Engine)
     event.listen(engine, "before_cursor_execute", record_statement)
     try:
-        resolve_realm(realm_session, realm, due, CONTENT)
+        resolve_realm(realm_session, realm, due, content)
     finally:
         event.remove(engine, "before_cursor_execute", record_statement)
-    assert len(statements) <= 10, statements
+    assert len(statements) == 9, statements
+    if ticks == content.economy.tick.max_catchup:
+        assert run.status == "failed"
+        assert run.failed_at is not None
+        assert as_utc(run.failed_at) == NOW + timedelta(days=4, hours=12)
     assert as_utc(realm.last_tick_at) == due
     assert run.contributed[0] < 50000
     # Verify the final flush persisted the computed state.

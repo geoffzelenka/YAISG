@@ -213,21 +213,39 @@ def contribute(
         raise api_error(
             409, "PROJECT_ITEM_NOT_NEEDED", "This cost line is already funded"
         )
+    session.add(
+        apply_project_payment(run, index, item_id, paid, character_id, now, content)
+    )
+    return paid
+
+
+def apply_project_payment(
+    run: RealmProjectRun,
+    index: int,
+    item_id: str,
+    paid: int,
+    character_id: uuid.UUID | None,
+    now: datetime,
+    content: ContentIndex,
+) -> RealmContribution:
+    """Apply an accepted payment and return its immutable consumption record.
+
+    Request payments and batched realm ticks share progress, idle and build
+    semantics; the caller owns withdrawing goods and persisting the record.
+    """
+    remaining = int(run.required[index]["quantity"]) * 1000 - run.contributed[index]
     progress = list(run.contributed)
     progress[index] += min(paid, remaining)
     run.contributed = progress
     run.last_contribution_at = now
-    session.add(
-        RealmContribution(
-            run_id=run.id,
-            character_id=character_id,
-            item_id=item_id,
-            quantity_milli=paid,
-            contributed_at=now,
-        )
-    )
     begin_build(run, now, content)
-    return paid
+    return RealmContribution(
+        run_id=run.id,
+        character_id=character_id,
+        item_id=item_id,
+        quantity_milli=paid,
+        contributed_at=now,
+    )
 
 
 def contribute_character(
