@@ -69,7 +69,7 @@
       "id": "item.demo_crate",
       "name": "Demo Crate",
       "tags": [
-        "crafted"
+        "manufactured"
       ],
       "tier": 1,
       "classes": [
@@ -81,7 +81,7 @@
       "id": "item.prototype_widget",
       "name": "Prototype Widget",
       "tags": [
-        "crafted"
+        "manufactured"
       ],
       "tier": 1,
       "classes": [

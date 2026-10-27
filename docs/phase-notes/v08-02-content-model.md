@@ -34,7 +34,17 @@
   one PostgreSQL-only skip; client 23. Ruff, format, strict mypy, eslint,
   prettier, TypeScript, Vitest, production build and scripts checks all green.
   git diff --check passed; retired names have no matches in runtime code,
-  content or tests. Changes remain uncommitted as instructed.
+  content or tests.
+- PostgreSQL verification runs outside this sandbox. The orchestrator verified
+  70b38b0: PostgreSQL 16 game-ci 139 passed, PostgreSQL db-reset green, and
+  alembic check clean.
+- Round 1: completed README Manufacturing and placeholder manufactured tag
+  renames, moved the local tier helper import out of the action loop, and
+  exported input_payment through the public engine API. Round 1 SQLite make ci
+  passed: auth 15, game 138 with one PostgreSQL-only skip, client 23; all
+  formatting, lint, type, build and scripts checks green.
+- 00 hand-off: realms.json is unchanged; verdant_vale still precedes
+  ashen_reach, so test_get_realms_locks_in_id_order stays meaningful.
 
 ## Removed
 
@@ -69,8 +79,7 @@
 
 ## Deviations
 
-- PostgreSQL checks cannot run in this sandbox, per orchestrator environment
-  instructions. Orchestrator must run PostgreSQL 16 CI/reset verification.
+None.
 
 ## Ratification needed
 
@@ -84,14 +93,19 @@ None.
   full requires enforcement/revalidation. Requirement references currently use
   development-node tags; extend that registry when introducing the tags pack.
   Requirement mappings are treated as read-only, like existing content maps.
+  _tags_match is still any-of, while §6.2 requires all-of; empty
+  requires.realm_tags now means available everywhere.
 - 06-resolver-presence: actions publish a concrete resolver; dispatch remains
   yours. Existing uniform implementation and CycleRewardStrategy seam preserved.
 - 07-travel, 10-project-runs, 12-estate-ownership, 14-realm-tick, 18-mint-gold,
   20-caravans and other selector consumers: reuse Selector and pay_selector from
-  engine/selectors.py. Pass explicit content; apply returned withdrawals only
-  after the complete enclosing payment succeeds.
+  engine/selectors.py. pay_selector takes content explicitly; apply withdrawals
+  only after the complete enclosing payment succeeds.
 - 26-equipment/27-consumables-hp: item equip/consumable blocks are absent as
   requested; belt_slots already resolves through all existing cap sources.
+- 36-hardening: pay_selector scans and sorts all items per call. If content
+  grows, pre-index candidates per selector in ContentIndex, preserving the
+  same (reference_price, id) order.
 
 ## New error codes
 

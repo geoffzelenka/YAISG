@@ -237,6 +237,9 @@ def _validate(
     xp_curve: XpCurve,
     progression: ProgressionPack,
 ) -> None:
+    # Keep this local to avoid the loader/engine package import cycle.
+    from app.engine.levels import tier_for_level
+
     item_ids = set(items)
     tags = {tag for node in nodes.values() for tag in node.tags}
     for action in actions.values():
@@ -244,8 +247,6 @@ def _validate(
             raise ContentError(
                 f"unknown skill_id {action.skill_id!r} in action {action.id}"
             )
-        from app.engine.levels import tier_for_level
-
         if action.tier != tier_for_level(
             action.unlock_level, progression.tier_thresholds
         ):

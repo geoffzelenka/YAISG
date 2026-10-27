@@ -14,8 +14,13 @@ from app.api.schemas import RewardsResponse, rewards_response
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
-from app.engine import ErrorCode, ResolveResult, can_start, effective_cycle_time
-from app.engine.core import input_payment
+from app.engine import (
+    ErrorCode,
+    ResolveResult,
+    can_start,
+    effective_cycle_time,
+    input_payment,
+)
 from app.errors import api_error
 from app.models import ActiveActionRecord, Character
 from app.services.actions import (
