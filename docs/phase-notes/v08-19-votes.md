@@ -21,8 +21,8 @@
   duration_hours and fail_cooldown_hours both default to and are authored as 72.
 - Replaced all three Prompt 10 hooks: has_open_vote, vote_close_event and
   close_due_vote. Timed close uses the exact deadline before ticks; the final
-  eligible cast closes immediately. Strictly greater yes weight passes; all
-  other outcomes fail. Failure cooldown starts at the close timestamp. Passed
+  eligible cast closes immediately. Strictly greater yes weight passes when
+  its edge is still available and no transition conflicts; other outcomes fail. Failure cooldown starts at the close timestamp. Passed
   ballots use start_transition with cause upgrade; existing reserve derivation
   and finalize_realm complete the lifecycle.
 - Routes reuse character resolution and character → sorted realm → estate locks.
@@ -41,18 +41,39 @@
   test_snapshot_includes_unresolved_decay_replacement,
   test_call_gates_leave_wallet_untouched,
   test_late_resolution_closes_and_finalizes_at_due_times, and
-  test_vote_cannot_replace_pending_decay_transition.
+  test_vote_conflict_keeps_realm_resolution_live.
 - Verification fix 1: resident test fixtures now use 20-character UUID hex
   prefixes for name and name_normalized, respecting PostgreSQL VARCHAR(20)
   without changing the schema.
-- Re-ran SQLite PATH=$PWD/.venv/bin:$PATH make ci after the fixture fix: auth 15,
-  game 487 with 17 database-specific skips, client 41. Lint, formatting, strict
-  typing, migration/reset/schema checks, client build and content lint pass.
+- Review round 1 verification: SQLite PATH=$PWD/.venv/bin:$PATH make ci passes:
+  auth 15, game 502 with 17 database-specific skips, client 41. Lint, formatting,
+  strict typing, migration/reset/schema checks, client build and content lint
+  pass. No dependencies added.
+
+- Review round 1: added the shared RESERVE_SHORT gate after existing development
+  gates and before payment/row creation for both vote calls and project kickoff.
+  Extracted nonmutating derive_realm_lines from recompute_lines, so the public
+  below_reserve display and development gates share stock/reserve accounting,
+  including bullion value measurement. Equality and no demand lines pass.
+- Conflicting ballot closes now fail with the ordinary fee retention and exact
+  close-time cooldown if a transition is pending or the edge has vanished.
+  Realm resolution and unrelated character resolution remain live, and the
+  existing regression is preserved and completes normally.
+- Added test_vanished_upgrade_fails_without_blocking_resolution,
+  test_reserve_gate_before_development (call/kickoff, ordinary and bullion
+  shortage/equality, above reserve, and no lines), and
+  test_reserve_gate_uses_resolved_stock (both HTTP entry points). Replaced the
+  old exception/rollback conflict test with the liveness sequence. Stocked
+  fixed-estate fixtures in test_weights_snapshot_excludes_arrivals_keeps_leavers
+  and test_passed_vote_raises_reserves without weakening their assertions.
+- Secrecy regression now checks the exact realm_votes column set as well as
+  eligibility columns. Timed-event iterations load an open ballot only once.
 
 ## Removed
 
-- Replaced the open-vote and timed-close stubs. No routes, columns, content
-  fields or existing tests removed.
+- Replaced the open-vote and timed-close stubs. No routes, columns or content
+  fields removed. Replaced test_vote_cannot_replace_pending_decay_transition,
+  which expected the now-retired exception, with the required liveness test.
 
 ## Design ambiguities resolved
 
@@ -70,20 +91,24 @@
 
 ## Deviations
 
-None.
+- §12.3 / §12.5: the human ruling adds the reserve gate to both entry points.
+  The authorized interim conflict rule fails an otherwise yes-majority ballot
+  when its upgrade cannot start, instead of raising or replacing a regression.
+  See the resolved ruling and interim rule under Ratification needed.
 
 ## Ratification needed
 
-- §12.5 / §12.6 / §14.7: what happens when decay starts a regression while a
-  ballot is open and that ballot later passes? Calls are allowed at any decay
-  stage, and only pending transitions pause shedding; an open vote does not.
-  The vote mandates an upgrade transition, but a regression transition may
-  already be pending, or its completion may remove the original authored edge.
-  Meanwhile the existing transition guard is preserved: the conflicting close
-  raises and the transaction rolls back, without overwriting the regression or
-  recording the final cast. A due conflicting ballot can therefore block realm
-  resolution. The regression test confirms that rollback and guard. A human must
-  choose cancellation, precedence or another rule; no such rule was invented.
+- Resolved by the human (review round 1), §12.3 / §12.5: "A realm's stock of goods
+  must be in good standing before a vote can be called. Create a gate that a
+  realm must have a positive Reserve before a project or upgrade can be started."
+  Binding interpretation: after resolving to now, every demand line must have
+  stock >= reserve; a realm without demand lines passes. Both kickoff and calls
+  return RESERVE_SHORT (409) after other gates and before mutation on a shortfall.
+- §12.5 / §12.6 / §14.7: implemented the orchestrator's interim precedence rule,
+  subject to human override: a yes-majority ballot closes as failed when a
+  transition is already pending or the upgrade edge no longer exists on the
+  current node. Keep its fee, apply the ordinary cooldown from exact close time,
+  and leave the existing transition untouched. A ballot cannot block resolution.
 
 ## Hand-offs
 
@@ -94,10 +119,16 @@ None.
 - 31-keys: extend the existing transition start/finalization seams for key
   deprecation and invalidation; no key behavior belongs to this phase.
 - 36-hardening: preserve body-free request logs for ballots and avoid recording
-  choices in telemetry, request tracing, audit logs or reward feeds.
+  choices in telemetry, request tracing, audit logs or reward feeds. A cast's
+  UPDATE currently changes only yes_weight or no_weight alongside voted_at;
+  database statement logging (PostgreSQL log_statement=mod/all, SQLAlchemy echo)
+  can therefore reveal individual choices. Keep statement logging off in
+  production, or write both aggregates on every cast when hardening this path.
 
 ## New error codes
 
+- RESERVE_SHORT (409): at least one demand line has stock below its reserve;
+  applies to both project kickoff and upgrade calls.
 - UPGRADE_NOT_OFFERED: upgrade is absent from the current node.
 - UPGRADE_TAGS_REQUIRED: realm lacks one or more required held tags.
 - VOTE_COOLDOWN: failed-vote cooldown has not elapsed.

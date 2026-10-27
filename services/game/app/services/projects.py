@@ -147,6 +147,9 @@ def kickoff(
             "KICKOFF_LIMIT",
             "You already kicked off a project in the last 24 hours",
         )
+    from app.services.stores import require_reserves
+
+    require_reserves(session, realm, content)
     _pay_kickoff(session, character, realm, project_id, content)
     run = RealmProjectRun(
         realm_id=realm.id,

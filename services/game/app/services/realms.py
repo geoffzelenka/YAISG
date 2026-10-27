@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
-from app.models import RealmProjectRun, RealmState, RealmTag
+from app.models import RealmProjectRun, RealmState, RealmTag, RealmVote
 
 
 def as_utc(value: datetime) -> datetime:
@@ -197,23 +197,18 @@ def finalize_realm(
     )
 
 
-def vote_close_event(session: Session, realm: RealmState) -> datetime | None:
-    """Return the open ballot deadline under the realm lock."""
-    from app.services.votes import open_vote
-
-    vote = open_vote(session, realm.id)
+def vote_close_event(vote: RealmVote | None) -> datetime | None:
+    """Return the already-loaded open ballot deadline."""
     return vote.closes_at if vote is not None else None
 
 
 def close_due_vote(
-    session: Session, realm: RealmState, due: datetime, content: ContentIndex
+    realm: RealmState, vote: RealmVote, due: datetime, content: ContentIndex
 ) -> None:
-    """Close the ballot at the exact scheduled time."""
-    from app.services.votes import close_vote, open_vote
+    """Close the loaded ballot at the exact scheduled time."""
+    from app.services.votes import close_vote
 
-    vote = open_vote(session, realm.id)
-    if vote is not None:
-        close_vote(realm, vote, due, content)
+    close_vote(realm, vote, due, content)
 
 
 class TimedEventKind(IntEnum):
@@ -231,11 +226,13 @@ def _finalize_timed_events(
     content: ContentIndex,
 ) -> RealmProjectRun | None:
     from app.services.projects import active_run
+    from app.services.votes import open_vote
 
     while True:
+        vote = open_vote(session, realm.id)
         run = active_run(session, realm.id)
         events: list[tuple[datetime, TimedEventKind]] = []
-        vote_due = vote_close_event(session, realm)
+        vote_due = vote_close_event(vote)
         if vote_due is not None:
             events.append((as_utc(vote_due), TimedEventKind.VOTE))
         if run is not None and run.build_completes_at is not None:
@@ -253,7 +250,8 @@ def _finalize_timed_events(
             return run
         due, kind = min(events)
         if kind == TimedEventKind.VOTE:
-            close_due_vote(session, realm, due, content)
+            assert vote is not None
+            close_due_vote(realm, vote, due, content)
         elif kind == TimedEventKind.BUILD:
             assert run is not None
             push_realm_tag(

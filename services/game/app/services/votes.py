@@ -85,6 +85,9 @@ def call_vote(
     currency = session.get(Currency, character.id)
     if currency is None or currency.gold < upgrade.fee_gold:
         raise api_error(409, "MISSING_INPUTS", "The vote fee is unavailable")
+    from app.services.stores import require_reserves
+
+    require_reserves(session, realm, content)
     residents = list(
         session.execute(
             select(Character.id, Estate.form_id)
@@ -126,12 +129,19 @@ def close_vote(
     """Decide by strict majority of cast weight, retaining the fee on failure."""
     if vote.status != "open":
         return
-    if vote.yes_weight > vote.no_weight:
-        upgrade = next(
+    upgrade = next(
+        (
             u
             for u in content.development_node(realm.current_node_id).upgrades
             if u.id == vote.upgrade_id
-        )
+        ),
+        None,
+    )
+    if (
+        vote.yes_weight > vote.no_weight
+        and realm.pending_transition is None
+        and upgrade is not None
+    ):
         vote.status = "passed"
         start_transition(realm, upgrade.to_node, "upgrade", now, content)
     else:

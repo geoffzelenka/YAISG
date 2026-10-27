@@ -23,6 +23,7 @@ from app.models import (
     Estate,
     Player,
     RealmState,
+    RealmStore,
     RealmVoteEligibility,
 )
 from app.services.projects import kickoff
@@ -39,6 +40,18 @@ def _ready(session: Session) -> tuple[Character, RealmState]:
     push_realm_tag(session, realm, "bonus.fake", NOW)
     session.flush()
     return hero, realm
+
+
+def _stock_reserves(session: Session, realm: RealmState) -> None:
+    """Give upkeep fixtures sufficient physical stock before development."""
+    from app.services.stores import derive_realm_lines
+
+    for line in derive_realm_lines(session, realm, CONTENT):
+        item = next(i for i in CONTENT.items if line.selector.matches(i))
+        session.add(
+            RealmStore(realm_id=realm.id, item_id=item.id, quantity_milli=1000000)
+        )
+    session.flush()
 
 
 def _resident(session: Session) -> Character:
@@ -101,6 +114,7 @@ def test_weights_snapshot_excludes_arrivals_keeps_leavers(
     estate = realm_session.get(Estate, other.home_estate_id)
     assert estate is not None
     estate.form_id = fixed.id
+    _stock_reserves(realm_session, realm)
     vote = call_vote(realm_session, hero, realm, UPGRADE, NOW, CONTENT)
     assert vote.eligible_weight == 1 + 9 + fixed.tier
     late = _resident(realm_session)
@@ -214,6 +228,19 @@ async def test_api_participation_secrecy_and_logs(
         and '"yes"' not in caplog.text
         and '"no"' not in caplog.text
     )
+    assert set(Base.metadata.tables["realm_votes"].columns.keys()) == {
+        "id",
+        "realm_id",
+        "upgrade_id",
+        "called_by",
+        "called_at",
+        "closes_at",
+        "status",
+        "yes_weight",
+        "no_weight",
+        "eligible_weight",
+        "fee_gold",
+    }
     assert set(Base.metadata.tables["realm_vote_eligibility"].columns.keys()) == {
         "vote_id",
         "character_id",
@@ -320,6 +347,7 @@ def test_passed_vote_raises_reserves(realm_session: Session) -> None:
     hero, realm = _ready(realm_session)
     realm_session.add(Estate(form_id=CONTENT.estate_forms[-1].id, realm_id=realm.id))
     realm_session.flush()
+    _stock_reserves(realm_session, realm)
     before = {
         line.line_key: (line.reserve, line.draw_per_day)
         for line in recompute_lines(realm_session, realm, CONTENT)
@@ -413,25 +441,206 @@ def test_late_resolution_closes_and_finalizes_at_due_times(
     assert realm.pending_transition is None
 
 
-def test_vote_cannot_replace_pending_decay_transition(realm_session: Session) -> None:
-    """Preserve the transition guard where upgrade/decay precedence is unspecified."""
-    from app.models import RealmVote
+def test_vote_conflict_keeps_realm_resolution_live(realm_session: Session) -> None:
+    """A regression wins a conflicting close without blocking resident actions."""
+    from app.services.actions import resolve_character
     from app.services.realms import start_transition
 
     hero, realm = _ready(realm_session)
+    other = _resident(realm_session)
+    node = CONTENT.development_node(realm.current_node_id)
+    node = node.model_copy(
+        update={
+            "upgrades": tuple(
+                u.model_copy(update={"fee_gold": 17}) for u in node.upgrades
+            )
+        }
+    )
+    content = replace(
+        CONTENT, _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: node})
+    )
+    vote = call_vote(realm_session, hero, realm, UPGRADE, NOW, content)
+    wallet = realm_session.get(Currency, hero.id)
+    assert wallet is not None
+    paid = (wallet.gold, realm.treasury)
+    cast_vote(realm_session, hero, realm, "yes", NOW, content)
+    start_transition(realm, "node.verdant_t0_stub", "regression", NOW, content)
+    pending = dict(realm.pending_transition or {})
+    close = as_utc(vote.closes_at)
+    late = close + timedelta(days=1)
+    finalize_realm(realm_session, REALM, late, content)
+    resolve_character(realm_session, other.id, late, content)
+    assert vote.status == "failed" and vote.yes_weight == 1
+    assert as_utc(realm.vote_cooldown_until) == close + timedelta(hours=72)  # type: ignore[arg-type]
+    assert (wallet.gold, realm.treasury) == paid
+    assert vote.fee_gold == 17
+    assert realm.pending_transition == pending
+    completed = NOW + timedelta(days=CONTENT.economy.transition.duration_days)
+    finalize_realm(realm_session, REALM, completed, content)
+    assert realm.current_node_id == "node.verdant_t0_stub"
+    assert realm.pending_transition is None
+
+
+def test_vanished_upgrade_fails_without_blocking_resolution(
+    realm_session: Session,
+) -> None:
+    """A vanished authored edge cannot leave a due ballot stuck open."""
+    hero, realm = _ready(realm_session)
+    _resident(realm_session)
     vote = call_vote(realm_session, hero, realm, UPGRADE, NOW, CONTENT)
-    start_transition(realm, "node.verdant_t0_stub", "regression", NOW, CONTENT)
-    hero_id, vote_id = hero.id, vote.id
-    realm_session.commit()
-    with pytest.raises(ValueError, match="already transitioning"):
-        cast_vote(realm_session, hero, realm, "yes", NOW, CONTENT)
-    # HTTP/session ownership rolls back a rejected final cast, including its
-    # participation and aggregate changes; neither transition is overwritten.
-    realm_session.rollback()
-    restored = realm_session.get(RealmVote, vote_id)
-    eligibility = realm_session.get(RealmVoteEligibility, (vote_id, hero_id))
-    assert restored is not None and restored.status == "open"
-    assert restored.yes_weight == 0
-    assert eligibility is not None and eligibility.voted_at is None
-    assert realm.pending_transition is not None
-    assert realm.pending_transition["cause"] == "regression"
+    cast_vote(realm_session, hero, realm, "yes", NOW, CONTENT)
+    realm.current_node_id = "node.ashen_t1"
+    close = as_utc(vote.closes_at)
+    finalize_realm(realm_session, REALM, close + timedelta(hours=1), CONTENT)
+    assert vote.status == "failed"
+    assert realm.pending_transition is None
+    assert as_utc(realm.vote_cooldown_until) == close + timedelta(hours=72)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("operation", ["call", "kickoff"])
+@pytest.mark.parametrize(
+    "stock", ["short", "equal", "above", "no_lines", "bullion_short", "bullion_equal"]
+)
+def test_reserve_gate_before_development(
+    realm_session: Session, operation: str, stock: str
+) -> None:
+    """Use shared demand accounting for reserve gates without charging failures."""
+    from app.content.schemas import Selector, TagUpkeep
+    from app.models import RealmProjectRun, RealmStore, RealmVote
+    from app.services.stores import derive_realm_lines
+
+    hero = _hero(realm_session)
+    realm = realm_session.get(RealmState, REALM)
+    assert realm is not None
+    # Offer an upgrade without acquiring the tag that the project would grant.
+    node = CONTENT.development_node(realm.current_node_id)
+    upkeep = (
+        ()
+        if stock == "no_lines"
+        else (
+            *CONTENT.estate_forms[-1].upkeep,
+            TagUpkeep(selector=Selector(item="item.demo_crate"), per_day=1),
+        )
+    )
+    updated = node.model_copy(
+        update={
+            "upkeep": upkeep,
+            "upgrades": tuple(
+                u.model_copy(update={"required_tags": (), "fee_gold": 7})
+                for u in node.upgrades
+            ),
+        }
+    )
+    content = replace(
+        CONTENT,
+        _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: updated}),
+    )
+    if stock.startswith("bullion"):
+        updated = updated.model_copy(update={"upkeep": (upkeep[0],)})
+        content = replace(
+            content,
+            _nodes_by_id=MappingProxyType({**content._nodes_by_id, node.id: updated}),
+        )
+        push_realm_tag(realm_session, realm, "access.fake_mint", NOW)
+    lines = derive_realm_lines(realm_session, realm, content)
+    for index, line in enumerate(lines):
+        item = next(i for i in content.items if line.selector.matches(i))
+        weight = item.reference_price if line.value_measured else 1
+        quantity = line.reserve // weight
+        if (stock == "short" and index == 0) or (
+            stock == "bullion_short" and line.value_measured
+        ):
+            quantity -= 1
+        elif stock == "above":
+            quantity += 1
+        realm_session.add(
+            RealmStore(realm_id=REALM, item_id=item.id, quantity_milli=quantity)
+        )
+    realm_session.flush()
+    wallet = realm_session.get(Currency, hero.id)
+    assert wallet is not None
+    before = (wallet.gold, realm.treasury, hero.last_kickoff_at)
+
+    def start() -> None:
+        if operation == "call":
+            call_vote(realm_session, hero, realm, UPGRADE, NOW, content)
+        else:
+            kickoff(
+                realm_session, hero, realm, "project.verdant_cardboard", NOW, content
+            )
+
+    if "short" in stock:
+        with pytest.raises(HTTPException, match="RESERVE_SHORT") as error:
+            start()
+        assert error.value.status_code == 409
+        assert (wallet.gold, realm.treasury, hero.last_kickoff_at) == before
+        assert list(realm_session.scalars(select(RealmVote))) == []
+        assert list(realm_session.scalars(select(RealmProjectRun))) == []
+    else:
+        start()
+        assert (
+            realm_session.scalar(
+                select(RealmVote if operation == "call" else RealmProjectRun)
+            )
+            is not None
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["call", "kickoff"])
+async def test_reserve_gate_uses_resolved_stock(
+    action_client: ApiFixture, operation: str
+) -> None:
+    """Accrued upkeep is resolved before either HTTP development gate."""
+    from unittest.mock import patch
+
+    from app.content.schemas import Selector, TagUpkeep
+    from app.main import app
+    from app.models import RealmProjectRun, RealmVote
+    from app.services.stores import derive_realm_lines
+
+    client, factory, clock, headers = action_client
+    node = CONTENT.development_node("node.verdant_t1")
+    node = node.model_copy(
+        update={
+            "upkeep": (
+                TagUpkeep(selector=Selector(item="item.fake_sprig"), per_day=24),
+            ),
+            "upgrades": tuple(
+                u.model_copy(update={"required_tags": ()}) for u in node.upgrades
+            ),
+        }
+    )
+    content = replace(
+        CONTENT, _nodes_by_id=MappingProxyType({**CONTENT._nodes_by_id, node.id: node})
+    )
+    with factory() as session:
+        hero = _hero(session)
+        realm = session.get(RealmState, REALM)
+        wallet = session.get(Currency, hero.id)
+        assert realm is not None and wallet is not None
+        line = derive_realm_lines(session, realm, content)[0]
+        session.add(
+            RealmStore(
+                realm_id=REALM, item_id="item.fake_sprig", quantity_milli=line.reserve
+            )
+        )
+        before = (wallet.gold, realm.treasury)
+        session.commit()
+    clock.advance(timedelta(hours=1))
+    path = (
+        f"upgrades/{UPGRADE}/call"
+        if operation == "call"
+        else "projects/project.verdant_cardboard/kickoff"
+    )
+    with patch.object(app.state, "content", content):
+        response = await client.post(f"/realms/{REALM}/{path}", headers=headers)
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "RESERVE_SHORT"
+    with factory() as session:
+        wallet = session.get(Currency, hero.id)
+        realm = session.get(RealmState, REALM)
+        assert wallet is not None and realm is not None
+        assert (wallet.gold, realm.treasury) == before
+        assert list(session.scalars(select(RealmVote))) == []
+        assert list(session.scalars(select(RealmProjectRun))) == []

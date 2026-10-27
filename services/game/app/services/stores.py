@@ -13,6 +13,7 @@ from app.content.schemas import ActionInput, DecayStage, DevelopmentNode, Tag
 from app.engine.market import PRECISION, allocate_budgets, band_from_upkeep
 from app.engine.stores import Demand, Line, derive_lines, mint_demands, project_demands
 from app.engine.tags import TagHolder, economy_tags
+from app.errors import api_error
 from app.models import Estate, RealmLine, RealmState, RealmStore, RealmTag
 from app.services.projects import active_run
 
@@ -28,10 +29,9 @@ def transition_days(realm: RealmState) -> Fraction:
     return Fraction(duration // timedelta(microseconds=1), 86400000000)
 
 
-def recompute_lines(
+def _realm_holders(
     session: Session, realm: RealmState, content: ContentIndex
-) -> list[RealmLine]:
-    """Replace all derived rows; caller owns transaction and persistence."""
+) -> tuple[DevelopmentNode, tuple[Tag, ...]]:
     node = content.development_node(realm.current_node_id)
     ids = set(node.inherent_tags) | set(
         session.scalars(select(RealmTag.tag_id).where(RealmTag.realm_id == realm.id))
@@ -43,6 +43,14 @@ def recompute_lines(
         ),
         DecayStage(realm.decay_stage),
     )
+    return node, tags
+
+
+def derive_realm_lines(
+    session: Session, realm: RealmState, content: ContentIndex
+) -> tuple[Line, ...]:
+    """Derive current stock and demand without mutating materialized rows."""
+    node, tags = _realm_holders(session, realm, content)
     estates = tuple(
         content.estate_form(e.form_id)
         for e in session.scalars(
@@ -73,6 +81,25 @@ def recompute_lines(
         transition_days(realm),
         mint_demands(tags),
     )
+    return lines
+
+
+def require_reserves(
+    session: Session, realm: RealmState, content: ContentIndex
+) -> None:
+    """Reject new development when any current demand line is below reserve."""
+    if any(
+        line.stock < line.reserve
+        for line in derive_realm_lines(session, realm, content)
+    ):
+        raise api_error(409, "RESERVE_SHORT", "The realm's stores are below reserve")
+
+
+def recompute_lines(
+    session: Session, realm: RealmState, content: ContentIndex
+) -> list[RealmLine]:
+    """Replace all derived rows; caller owns transaction and persistence."""
+    lines = derive_realm_lines(session, realm, content)
     previous = {
         r.line_key: r.budget_gold
         for r in session.scalars(
@@ -86,6 +113,7 @@ def recompute_lines(
     elif not realm.isolated and realm.treasury_band is None:
         lines = allocate_budgets(lines, realm.treasury, content)
     if not realm.isolated and realm.treasury_band is None:
+        node, tags = _realm_holders(session, realm, content)
         holders: tuple[DevelopmentNode | Tag, ...] = (node, *tags)
         with localcontext() as precision:
             precision.prec = PRECISION
