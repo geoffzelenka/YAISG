@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CharacterProfile } from '../../api/characters'
 import { useRealmMap, RealmApiError } from '../../api/realms'
@@ -10,6 +10,11 @@ import {
   type TradeIntent,
 } from '../../api/realmMarket'
 import { selectorLabel } from '../realm/presentation'
+
+function formatMarketError(cause: unknown): string {
+  if (cause instanceof RealmApiError) return `${cause.message} (${cause.code})`
+  return cause instanceof Error ? cause.message : 'Market request failed.'
+}
 
 export function RealmMarketPanel({ profile }: { profile: CharacterProfile }) {
   const [search, setSearch] = useSearchParams()
@@ -49,6 +54,8 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
   })
   const [quote, setQuote] = useState<Quote | null>(null)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const inFlight = useRef<boolean>(false)
   const [busy, setBusy] = useState(false)
   const [gift, setGift] = useState(1)
   const [confirmGift, setConfirmGift] = useState(false)
@@ -59,30 +66,52 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
     try {
       setQuote(await quoteMarket(id, intent))
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to quote trade.',
-      )
+      setError(formatMarketError(cause))
     } finally {
       setBusy(false)
     }
   }
   async function confirmTrade() {
-    if (!quote || !present) return
+    if (!quote || !present || inFlight.current) return
+    inFlight.current = true
     setError('')
+    setSuccess('')
     try {
-      await transfer.mutateAsync({ intent, limit_gold: quote.gold })
+      const result = await transfer.mutateAsync({
+        intent,
+        limit_gold: quote.gold,
+      })
+      if (result) {
+        setSuccess(
+          `${intent.side === 'buy' ? 'Bought' : 'Sold'} ${result.max_quantity} ${intent.item_id} for ${result.gold} gold.`,
+        )
+      }
       setQuote(null)
     } catch (cause) {
       setQuote(null)
       if (cause instanceof RealmApiError && cause.code === 'PRICE_MOVED') {
-        setError('Price moved. Review the new quote and confirm again.')
-        await loadQuote()
-      } else
         setError(
-          cause instanceof Error
-            ? `${cause.message}${cause instanceof RealmApiError ? ` (${cause.code})` : ''}`
-            : 'Trade failed.',
+          `${formatMarketError(cause)} Review the new quote and confirm again.`,
         )
+        await loadQuote()
+      } else setError(formatMarketError(cause))
+    } finally {
+      inFlight.current = false
+    }
+  }
+  async function sendGift() {
+    if (!present || inFlight.current) return
+    inFlight.current = true
+    setError('')
+    setSuccess('')
+    try {
+      await transfer.mutateAsync({ gold: gift })
+      setSuccess(`Gave ${gift} gold to this realm.`)
+      setConfirmGift(false)
+    } catch (cause) {
+      setError(formatMarketError(cause))
+    } finally {
+      inFlight.current = false
     }
   }
   if (market.isPending) return <p>Loading market…</p>
@@ -111,8 +140,8 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
         </Link>
       )}
       <p>
-        {data.decay_stage} · Gauge: {data.gauge_days} days · Treasury band:{' '}
-        {data.treasury_band ?? 'Unavailable'} (0 poorest–4 richest)
+        {data.decay_stage} · Gauge: {data.gauge_days.toFixed(2)} days · Treasury
+        band: {data.treasury_band ?? 'Unavailable'} (0 poorest–4 richest)
       </p>
       <h3>Demand lines</h3>
       <p>
@@ -156,7 +185,7 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
         ))}
       </ul>
       <h3>Shortfalls</h3>
-      <ul>
+      <ul aria-label="Shortfalls">
         {data.shortfalls.map((short) => (
           <li key={short.line_key}>
             {selectorLabel(
@@ -283,18 +312,14 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
           <p>Give {gift} gold to this realm?</p>
           <button
             disabled={!present || transfer.isPending}
-            onClick={() => {
-              void transfer
-                .mutateAsync({ gold: gift })
-                .then(() => setConfirmGift(false))
-                .catch((cause: Error) => setError(cause.message))
-            }}
+            onClick={() => void sendGift()}
           >
             Confirm gift
           </button>
           <button onClick={() => setConfirmGift(false)}>Cancel</button>
         </div>
       )}
+      {success && <p role="status">{success}</p>}
       {error && <p role="alert">{error}</p>}
     </>
   )

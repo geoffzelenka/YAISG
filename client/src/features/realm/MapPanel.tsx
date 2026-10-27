@@ -28,7 +28,7 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
         {map.data.nodes.map((node) => (
           <li key={node.realm_id}>
             {node.name} · Tier {node.tier} · {node.decay_stage} · Gauge:{' '}
-            {node.gauge} days
+            {node.gauge.toFixed(2)} days
             {node.treasury_band && ` · Treasury: ${node.treasury_band}`}
             {node.transition_pending && ' · Transition pending'}
           </li>
@@ -36,10 +36,17 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
       </ul>
       <h3 className="mt-6 text-xl">Hungry realms</h3>
       <p>Highest gauge first. Short lines are below reserve.</p>
+      {markets.every(
+        (market) =>
+          market.isSuccess &&
+          !market.data.lines.some((line) => line.stock < line.reserve),
+      ) && <p>No realm is below reserve.</p>}
       <ul>
         {[...map.data.nodes]
           .sort(
-            (a, b) => b.gauge - a.gauge || a.realm_id.localeCompare(b.realm_id),
+            (a, b) =>
+              b.gauge - a.gauge ||
+              (a.realm_id < b.realm_id ? -1 : a.realm_id > b.realm_id ? 1 : 0),
           )
           .map((node) => {
             const market = markets[map.data.nodes.indexOf(node)]
@@ -55,7 +62,7 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
                 >
                   {node.name}
                 </Link>{' '}
-                · Gauge: {node.gauge} days
+                · Gauge: {node.gauge.toFixed(2)} days
                 {market?.isError ? (
                   ' · Unable to load short lines.'
                 ) : !market?.data ? (

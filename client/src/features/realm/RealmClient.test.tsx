@@ -259,7 +259,7 @@ describe('realm client interactions', () => {
     )
     expect(
       within(screen.getByRole('list', { name: 'Realm health' })).getByText(
-        /Gauge: 2.5 days/,
+        /Gauge: 2.50 days/,
       ),
     ).toBeInTheDocument()
     expect(within(graph).queryByText('Two')).not.toBeInTheDocument()

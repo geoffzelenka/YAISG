@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -46,7 +47,11 @@ const market = {
 let moved = false
 let quoteGold = 4
 const requests: { path: string; body: unknown }[] = []
-function setup(present = true, component: 'market' | 'map' = 'market') {
+function setup(
+  present = true,
+  component: 'market' | 'map' = 'market',
+  options: { equalGauge?: boolean; healthy?: boolean } = {},
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
@@ -59,7 +64,7 @@ function setup(present = true, component: 'market' | 'map' = 'market') {
         return Response.json({
           nodes: [
             {
-              realm_id: 'home',
+              realm_id: options.equalGauge ? 'Zrealm' : 'home',
               name: 'Home',
               gauge: 2,
               decay_stage: 'strained',
@@ -67,9 +72,9 @@ function setup(present = true, component: 'market' | 'map' = 'market') {
               position: null,
             },
             {
-              realm_id: 'away',
+              realm_id: options.equalGauge ? 'arealm' : 'away',
               name: 'Away',
-              gauge: 5,
+              gauge: options.equalGauge ? 2 : 5,
               decay_stage: 'faltering',
               treasury_band: '0',
               position: null,
@@ -91,7 +96,17 @@ function setup(present = true, component: 'market' | 'map' = 'market') {
         return Response.json({ gold: quoteGold, max_quantity: 1 })
       if (path.includes('/quote?'))
         return Response.json({ gold: quoteGold, max_quantity: 2 })
-      return Response.json(market)
+      return Response.json(
+        options.healthy
+          ? {
+              ...market,
+              lines: market.lines.map((line) => ({
+                ...line,
+                stock: line.reserve,
+              })),
+            }
+          : market,
+      )
     }),
   )
   const profile = {
@@ -146,6 +161,9 @@ it('PRICE_MOVED re-quotes and requires another confirmation', async () => {
   fireEvent.click(await getQuote())
   expect(await screen.findByText(/Review the new quote/)).toBeInTheDocument()
   await screen.findByText(/Receive 6 gold/)
+  expect(
+    requests.filter((r) => r.path === '/realms/home/market').length,
+  ).toBeGreaterThan(1)
   expect(requests.filter((r) => r.path.endsWith('/trade'))).toHaveLength(1)
   fireEvent.click(screen.getByRole('button', { name: 'Confirm trade' }))
   await waitFor(() =>
@@ -163,9 +181,14 @@ it('trade and gift are disabled when not present while market stays readable', a
 it('shortfalls render without a buy button and member alternatives retain units', async () => {
   setup()
   await screen.findByText(/missing 1 line units/)
-  expect(screen.queryByRole('button', { name: /buy/i })).not.toBeInTheDocument()
+  expect(
+    within(screen.getByRole('list', { name: 'Shortfalls' })).queryByRole(
+      'button',
+    ),
+  ).not.toBeInTheDocument()
   expect(screen.getByText(/Funded quantity: 2/)).toHaveTextContent('2.12345678')
   expect(screen.getByText(/Stock: 1/)).toHaveTextContent('Cover: 0.50 days')
+  expect(screen.getByText(/Gauge:/)).toHaveTextContent('Gauge: 2.00 days')
 })
 it('gifts require confirmation and accept a 204 response', async () => {
   setup()
@@ -180,6 +203,9 @@ it('gifts require confirmation and accept a 204 response', async () => {
   await waitFor(() =>
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
   )
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Gave 1 gold to this realm.',
+  )
   expect(requests.find((r) => r.path.endsWith('/treasury/gift'))?.body).toEqual(
     { gold: 1 },
   )
@@ -192,7 +218,7 @@ it('hungry realms sort by descending gauge and display short lines, stage and ba
     'Home',
   ])
   expect(screen.getByText(/Tier.*strained/)).toHaveTextContent(
-    'strained · Gauge: 2 days · Treasury: 1',
+    'strained · Gauge: 2.00 days · Treasury: 1',
   )
 })
 
@@ -244,7 +270,7 @@ it.each([400, 409])(
     })
     fireEvent.click(screen.getByRole('button', { name: 'Get quote' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'The realm has no demand for this item',
+      'The realm has no demand for this item (NO_DEMAND)',
     )
     expect(
       screen.queryByRole('button', { name: 'Confirm trade' }),
@@ -274,4 +300,129 @@ it('reports the largest fundable quantity on UNFUNDED_DEMAND', async () => {
   expect(
     screen.queryByRole('button', { name: 'Confirm trade' }),
   ).not.toBeInTheDocument()
+})
+
+it.each(['trade', 'gift'] as const)(
+  'double-clicking confirm sends exactly one %s request',
+  async (kind) => {
+    setup()
+    let confirm: HTMLElement
+    if (kind === 'trade') confirm = await getQuote()
+    else {
+      await screen.findByText('Demand lines')
+      fireEvent.click(screen.getByRole('button', { name: 'Give gold' }))
+      confirm = screen.getByRole('button', { name: 'Confirm gift' })
+    }
+    const fetchMock = vi.mocked(fetch)
+    const original = fetchMock.getMockImplementation()!
+    let finish!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      finish = resolve
+    })
+    const suffix = kind === 'trade' ? '/trade' : '/treasury/gift'
+    fetchMock.mockImplementation((path, init) =>
+      String(path).endsWith(suffix) ? pending : original(path, init),
+    )
+    act(() => {
+      fireEvent.click(confirm)
+      fireEvent.click(confirm)
+    })
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([path]) => String(path).endsWith(suffix)),
+      ).toHaveLength(1),
+    )
+    finish(
+      kind === 'trade'
+        ? Response.json({ gold: 3, max_quantity: 1 })
+        : new Response(null, { status: 204 }),
+    )
+    expect(
+      await screen.findByText(
+        kind === 'trade'
+          ? 'Sold 1 sprig for 3 gold.'
+          : 'Gave 1 gold to this realm.',
+      ),
+    ).toBeInTheDocument()
+  },
+)
+
+it('trade success reports the actual execution response instead of the quote', async () => {
+  setup()
+  const confirm = await getQuote()
+  vi.mocked(fetch).mockResolvedValueOnce(
+    Response.json({ gold: 3, max_quantity: 1 }),
+  )
+  fireEvent.click(confirm)
+  expect(await screen.findByText('Sold 1 sprig for 3 gold.')).toHaveAttribute(
+    'role',
+    'status',
+  )
+})
+
+it('gift success clears an earlier error before sending', async () => {
+  setup()
+  const confirm = await getQuote()
+  vi.mocked(fetch).mockResolvedValueOnce(
+    Response.json(
+      { error: { code: 'NOT_PRESENT', message: 'Absent' } },
+      { status: 409 },
+    ),
+  )
+  fireEvent.click(confirm)
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Absent (NOT_PRESENT)',
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Give gold' }))
+  let finish!: (response: Response) => void
+  vi.mocked(fetch).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm gift' }))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  await waitFor(() => expect(finish).toBeDefined())
+  finish(new Response(null, { status: 204 }))
+  expect(await screen.findByRole('status')).toHaveTextContent(
+    'Gave 1 gold to this realm.',
+  )
+})
+
+it('equal gauges sort realm ids by code point', async () => {
+  setup(true, 'map', { equalGauge: true })
+  await screen.findAllByText(/short 3 line units/)
+  expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Home',
+    'Away',
+  ])
+  expect(screen.getAllByText(/Gauge: 2.00 days/)).toHaveLength(4)
+})
+
+it('shows an empty hungry list only after every market has loaded without short lines', async () => {
+  setup(true, 'map', { healthy: true })
+  const fetchMock = vi.mocked(fetch)
+  const original = fetchMock.getMockImplementation()!
+  let finish!: (response: Response) => void
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve
+  })
+  fetchMock.mockImplementation((path, init) =>
+    String(path) === '/realms/away/market' ? pending : original(path, init),
+  )
+  await screen.findByText(/Loading short lines/)
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('link', { name: 'Home' }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(
+    screen.queryByText('No realm is below reserve.'),
+  ).not.toBeInTheDocument()
+  finish(Response.json({ ...market, lines: [] }))
+  expect(
+    await screen.findByText('No realm is below reserve.'),
+  ).toBeInTheDocument()
+  expect(screen.queryByRole('link')).not.toBeInTheDocument()
 })

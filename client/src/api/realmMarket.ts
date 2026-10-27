@@ -105,6 +105,11 @@ export function useMarketTransfer(id: string) {
             limit_gold: transfer.limit_gold,
           })
         : request<void>(`${base(id)}/treasury/gift`, transfer),
+    onError: async (error) => {
+      if (error instanceof RealmApiError && error.code === 'PRICE_MOVED') {
+        await client.invalidateQueries({ queryKey: ['realms', id, 'market'] })
+      }
+    },
     onSuccess: async () => {
       await Promise.all(
         ['realms', 'characters', 'estates', 'map'].map((key) =>

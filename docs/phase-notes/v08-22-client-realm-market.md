@@ -37,6 +37,32 @@
   575 with 18 database-specific skips, client 70. Formatting, lint, strict
   typing, production build, scripts and content lint pass; git diff --check is clean.
 
+- Review round 1: added a synchronous shared in-flight ref for trade and gift
+  confirmation, held through completion/re-quote and released in finally. Added
+  deferred-response double-click regressions for both; removing the guard makes
+  each fail with two mutation requests instead of one.
+- Review round 1: PRICE_MOVED invalidates the market snapshot before re-quoting.
+  Trade success reports side, executed quantity/item and actual response gold;
+  gift success reports the transfer and clears earlier errors before sending.
+  Quote, trade and gift failures share message (CODE) formatting.
+- Review round 1: gauge days use two decimals, equal gauges sort realm ids by
+  code point, and fully loaded markets with no short lines show the explicit
+  empty hungry-list message. Scoped the nontradeable-shortfall assertion to
+  the shortfalls list and refreshed the positionless-map gauge assertion.
+
+- Review round 1 tests added in RealmMarketPanel.test.tsx:
+  `double-clicking confirm sends exactly one %s request` (trade/gift),
+  `trade success reports the actual execution response instead of the quote`,
+  `gift success clears an earlier error before sending`,
+  `equal gauges sort realm ids by code point`, and
+  `shows an empty hungry list only after every market has loaded without short lines`.
+  Extended existing PRICE_MOVED, shortfall, gift, gauge/band and NO_DEMAND cases;
+  updated RealmClient.test.tsx's positionless-node gauge expectation.
+
+- Review round 1 validation: SQLite PATH=$PWD/.venv/bin:$PATH make ci passes
+  (auth 15, game 575 with 18 database-specific skips, client 76). Lint,
+  formatting, strict typing, production build, scripts and content lint pass.
+
 ## Removed
 
 None. No tests or existing features removed.
@@ -71,6 +97,8 @@ None.
 - 36-hardening: the map currently uses one cached market read per visible realm
   to obtain short lines. Consider a batched public health projection if world
   size makes this costly; preserve remote visibility and balance privacy.
+  When that projection lands, provide the server's below_reserve flag and
+  consume it in the hungry list instead of calculating stock < reserve locally.
 
 ## New error codes
 
