@@ -1,6 +1,5 @@
 """Realm-development service tests using a deterministic clock."""
 
-import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
@@ -12,8 +11,6 @@ from app.config import CONTENT_DIR
 from app.content import load_content
 from app.db import Base, configure_sqlite_engine
 from app.models import (
-    Character,
-    Estate,
     RealmEdgeProgress,
     RealmProject,
     RealmState,
@@ -22,7 +19,6 @@ from app.services.realms import (
     InvalidEdgeAwardError,
     award_edge_progress,
     finalize_realm,
-    finalize_relocation,
 )
 
 CONTENT = load_content(CONTENT_DIR)
@@ -142,39 +138,3 @@ def test_finalize_transition_resets_siblings_and_closes_projects(
         RealmProject, (state.realm_id, "project.verdant_cardboard")
     )
     assert project is not None and project.status == "closed"
-
-
-def test_finalize_relocation_syncs_character_realm(realm_session: Session) -> None:
-    """Arrival moves both the residence source and its character cache."""
-    character_id = uuid.uuid4()
-    estate_id = uuid.uuid4()
-    character = Character(
-        id=character_id,
-        player_id=uuid.uuid4(),
-        name="Mover",
-        name_normalized="mover",
-        current_realm_id="realm.verdant_vale",
-        home_estate_id=estate_id,
-        created_at=NOW,
-    )
-    estate = Estate(
-        id=estate_id,
-        owner_character_id=character_id,
-        realm_id="realm.verdant_vale",
-        form_id="form.camp",
-        status="relocating",
-        relocating_to_realm_id="realm.ashen_reach",
-        relocation_completes_at=NOW,
-        level=1,
-        upgrade_slots=1,
-        data={},
-    )
-    realm_session.add_all([character, estate])
-    realm_session.flush()
-
-    finalized = finalize_relocation(realm_session, character, NOW)
-
-    assert finalized.realm_id == "realm.ashen_reach"
-    assert finalized.status == "active"
-    assert finalized.relocating_to_realm_id is None
-    assert character.current_realm_id == "realm.ashen_reach"

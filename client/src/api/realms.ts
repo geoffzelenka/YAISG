@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { ItemQuantity, MapEdge, Modifier } from './content'
-import type { Rewards } from './actions'
 import { gameRequest, readApiError } from './http'
 
 export type RealmDetail = {
@@ -27,30 +26,15 @@ export type RealmDetail = {
 export type RealmMap = {
   nodes: {
     realm_id: string
+    node: string
+    tier: number
+    decay_stage: string
+    treasury_band: string | null
+    transition_pending: boolean
     name: string
     position: { x: number; y: number } | null
   }[]
   edges: MapEdge[]
-}
-
-export type RelocationCost = {
-  gold: number
-  items: ItemQuantity[]
-  time_ms: number
-}
-
-export type RelocationPreview = {
-  realm_id: string
-  destination_realm_id: string
-  cost: RelocationCost
-}
-
-export type RelocationResponse = {
-  realm_id: string
-  relocating_to_realm_id: string | null
-  relocation_completes_at: string | null
-  cost: RelocationCost
-  final_rewards: Rewards
 }
 
 export type ContributionResponse = {
@@ -110,49 +94,6 @@ export function useContribute(realmId: string, projectId: string) {
         client.invalidateQueries({ queryKey: ['realms', realmId] }),
         client.invalidateQueries({
           queryKey: ['characters', 'me', 'inventory'],
-        }),
-      ])
-    },
-  })
-}
-
-export function useRelocationPreview(realmId: string | null) {
-  return useQuery({
-    queryKey: ['characters', 'me', 'relocate', 'preview', realmId],
-    queryFn: () =>
-      request<RelocationPreview>(
-        `/characters/me/relocate/preview?realm_id=${encodeURIComponent(realmId ?? '')}`,
-      ),
-    enabled: realmId !== null,
-  })
-}
-
-export function useRelocate() {
-  const client = useQueryClient()
-  return useMutation({
-    mutationFn: (realmId: string) =>
-      request<RelocationResponse>('/characters/me/relocate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ realm_id: realmId }),
-      }),
-    onSuccess: async (response) => {
-      window.dispatchEvent(
-        new CustomEvent('yaisg:relocation-rewards', {
-          detail: response.final_rewards,
-        }),
-      )
-      await Promise.all([
-        client.invalidateQueries({
-          queryKey: ['characters', 'me'],
-          exact: true,
-        }),
-        client.invalidateQueries({ queryKey: ['estates', 'me'] }),
-        client.invalidateQueries({
-          queryKey: ['characters', 'me', 'inventory'],
-        }),
-        client.invalidateQueries({
-          queryKey: ['characters', 'me', 'actions', 'available'],
         }),
       ])
     },

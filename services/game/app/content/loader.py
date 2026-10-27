@@ -90,7 +90,6 @@ class ContentIndex:
     caps: CapsConfig
     xp_curve: XpCurve
     progression: ProgressionPack
-    relocation_classes: MappingProxyType[str, Any]
     pack_payloads: MappingProxyType[str, bytes]
     _skills_by_id: MappingProxyType[str, Skill]
     _actions_by_id: MappingProxyType[str, Action]
@@ -299,24 +298,19 @@ def _validate(
             item_ids,
             f"realm {realm.id} market",
         )
-    pairs: set[frozenset[str]] = set()
+    _unique(map_pack.edges, "map edge")
     for map_edge in map_pack.edges:
-        left, right = map_edge.realms
-        if left not in realms or right not in realms:
-            raise ContentError(f"unknown realm in map edge {map_edge.realms}")
-        pair = frozenset(map_edge.realms)
-        if left == right or len(pair) != 2:
+        if map_edge.a not in realms or map_edge.b not in realms:
+            raise ContentError(f"unknown realm in map edge {map_edge.id}")
+        if map_edge.a == map_edge.b:
             raise ContentError("map edges cannot be self-edges")
-        if pair in pairs:
-            raise ContentError(f"duplicate map edge {map_edge.realms}")
-        pairs.add(pair)
-        _require_items((v.item_id for v in map_edge.cost.items), item_ids, "map edge")
+        for entry in map_edge.supplies:
+            if not any(entry.selector.matches(item) for item in items.values()):
+                raise ContentError(f"empty supply selector in edge {map_edge.id}")
     if set(map_pack.positions) - set(realms):
         raise ContentError("map position references an unknown realm")
     forms = _unique(forms_pack.forms, "estate form")
     for form in forms.values():
-        if form.relocation_class not in forms_pack.relocation_classes:
-            raise ContentError(f"unknown relocation class {form.relocation_class!r}")
         _require_items(
             (v.item_id for v in form.upkeep_profile),
             item_ids,
@@ -469,7 +463,6 @@ def load_content(content_dir: Path) -> ContentIndex:
         caps,
         xp_curve,
         progression,
-        MappingProxyType(forms_pack.relocation_classes),
         MappingProxyType(payloads),
         MappingProxyType(skills),
         MappingProxyType(actions),

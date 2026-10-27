@@ -1,3 +1,4 @@
+import type { TravelProfile } from './content'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { Caps, ItemQuantity, Modifier } from './content'
@@ -9,7 +10,8 @@ export type Estate = {
     id: string
     name: string
     specialty_tags: string[]
-    relocation_class: string
+    mobility: 'mobile' | 'fixed'
+    travel_profile: TravelProfile | null
     base_caps: Partial<Caps>
     modifiers: Modifier[]
   }
@@ -24,8 +26,6 @@ export type Estate = {
     status: 'active' | 'inert'
     inert_reason: string | null
   }[]
-  relocating_to_realm_id: string | null
-  relocation_completes_at: string | null
 }
 
 export class EstateApiError extends Error {

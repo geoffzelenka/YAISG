@@ -95,7 +95,6 @@ describe('skill panel', () => {
           '/content/estate_forms': {
             forms: [],
             transformations: [],
-            relocation_classes: {},
           },
           '/content/development': { nodes: [], edges: [] },
           '/content/tags': { tags: [] },

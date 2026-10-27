@@ -18,9 +18,6 @@ from app.content.schemas import (
     CapBonus,
     CapType,
     EstateUpgrade,
-    MapCost,
-    MapEdge,
-    MapPack,
     Modifier,
     ModifierType,
 )
@@ -34,8 +31,6 @@ from app.engine import (
     effective_cycle_time,
     effective_drops,
     effective_xp,
-    path_cost,
-    relocation_cost,
     resolve,
     resolve_caps,
 )
@@ -401,45 +396,6 @@ def test_form_and_node_sources_resolve_without_changing_t1_rate(
     homestead = make_state(form_id="form.homestead")
     assert effective_cycle_time(action, homestead, content) == 2_727
     assert effective_xp(action, homestead, content) == 10
-
-
-def test_placeholder_path_and_relocation_cost(content: ContentIndex) -> None:
-    """Map costs are summed and relocation multipliers truncate to integers."""
-    path = path_cost("realm.verdant_vale", "realm.ashen_reach", content)
-    assert path.gold == 25
-    assert path.items == ()
-    assert path.time_ms == 60_000
-
-    moved = relocation_cost(path, content.estate_form("form.homestead"), content)
-    assert moved.gold == 62
-    assert moved.time_ms == 120_000
-
-
-def test_path_cost_prefers_cheaper_indirect_route_then_lower_time(
-    content: ContentIndex,
-) -> None:
-    """Four-node routing sums costs and breaks equal-gold ties by time."""
-    realms = tuple(
-        content.realms[0].model_copy(
-            update={"id": f"realm.{letter}", "starting_node_id": "node.verdant_t1"}
-        )
-        for letter in "abcd"
-    )
-    map_pack = MapPack(
-        edges=(
-            MapEdge(realms=("realm.a", "realm.d"), cost=MapCost(gold=20, time_ms=1)),
-            MapEdge(realms=("realm.a", "realm.b"), cost=MapCost(gold=4, time_ms=20)),
-            MapEdge(realms=("realm.b", "realm.d"), cost=MapCost(gold=4, time_ms=20)),
-            MapEdge(realms=("realm.a", "realm.c"), cost=MapCost(gold=4, time_ms=5)),
-            MapEdge(realms=("realm.c", "realm.d"), cost=MapCost(gold=4, time_ms=5)),
-        )
-    )
-    synthetic = replace(content, realms=realms, map=map_pack)
-
-    cost = path_cost("realm.a", "realm.d", synthetic)
-
-    assert cost.gold == 8
-    assert cost.time_ms == 10
 
 
 def test_seeded_drop_frequency_is_close_to_declared_chance(

@@ -6,7 +6,6 @@ import { useContent } from '../../api/content'
 import { useInventory } from '../../api/inventory'
 import { useContribute, useRealm } from '../../api/realms'
 import { Countdown } from './Countdown'
-import { RelocationFlow } from './RelocationFlow'
 
 function progressPercent(progress: number, target: number): number {
   if (target <= 0) return 100
@@ -237,7 +236,6 @@ export function RealmPanel({ profile }: { profile: CharacterProfile }) {
           </div>
         </div>
       ))}
-      <RelocationFlow currentRealmId={profile.character.current_realm_id} />
     </section>
   )
 }

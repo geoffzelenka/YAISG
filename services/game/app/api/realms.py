@@ -1,7 +1,7 @@
-"""Realm development, map, project contribution, and relocation endpoints."""
+"""Realm development, map, project contribution, endpoints."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import cast
 
 from fastapi import APIRouter, Request
@@ -9,29 +9,24 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.schemas import RewardsResponse, rewards_response
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
-from app.content.schemas import CapBonus, ItemQuantity, MapCost, Modifier
-from app.engine import path_cost, relocation_cost
+from app.content.schemas import CapBonus, ItemQuantity, Modifier
 from app.errors import api_error
 from app.models import (
     Character,
-    Currency,
-    Estate,
     Inventory,
     RealmContribution,
     RealmEdgeProgress,
     RealmProject,
     RealmState,
 )
-from app.services.actions import claim_rewards, clear_active_action, resolve_character
+from app.services.actions import resolve_character
 from app.services.realms import (
     award_edge_progress,
     finalize_realm,
     finalize_realms,
-    finalize_relocation,
     prepare_sqlite_write,
 )
 
@@ -98,30 +93,6 @@ class ContributionResponse(BaseModel):
     completed: bool
 
 
-class RelocateRequest(BaseModel):
-    """Requested destination realm."""
-
-    realm_id: str
-
-
-class RelocateResponse(BaseModel):
-    """Charged relocation and any rewards resolved before departure."""
-
-    realm_id: str
-    relocating_to_realm_id: str | None
-    relocation_completes_at: datetime | None
-    cost: MapCost
-    final_rewards: RewardsResponse
-
-
-class RelocationPreviewResponse(BaseModel):
-    """Computed relocation terms without changing character state."""
-
-    realm_id: str
-    destination_realm_id: str
-    cost: MapCost
-
-
 def _content(request: Request) -> ContentIndex:
     return cast(ContentIndex, request.app.state.content)
 
@@ -133,29 +104,6 @@ def _character(session: DatabaseSession, player_id: uuid.UUID) -> Character:
     if character is None:
         raise api_error(404, "NO_CHARACTER", "Create a character to continue")
     return character
-
-
-def _relocation_cost_for(
-    content: ContentIndex, estate: Estate, destination_realm_id: str
-) -> MapCost:
-    """Validate a destination and compute the estate's path-based cost."""
-    try:
-        content.realm(destination_realm_id)
-    except KeyError:
-        raise api_error(
-            404, "UNKNOWN_REALM", "The destination does not exist"
-        ) from None
-    if destination_realm_id == estate.realm_id:
-        raise api_error(409, "ALREADY_THERE", "The estate is already in that realm")
-    if estate.status != "active" or estate.relocating_to_realm_id is not None:
-        raise api_error(409, "ESTATE_BUSY", "The estate is not active")
-    try:
-        route = path_cost(estate.realm_id, destination_realm_id, content)
-    except ValueError:
-        raise api_error(
-            409, "UNREACHABLE", "No route reaches the destination"
-        ) from None
-    return relocation_cost(route, content.estate_form(estate.form_id), content)
 
 
 def _get_or_create_realm_state(
@@ -287,20 +235,32 @@ async def get_realm(
 
 
 @router.get("/map")
-async def get_map(request: Request) -> dict[str, object]:
+async def get_map(
+    request: Request, now: ServerNow, session: DatabaseSession
+) -> dict[str, object]:
     """Return the content-defined realm graph without requiring authentication."""
     content = _content(request)
-    return {
-        "nodes": [
+    prepare_sqlite_write(session)
+    states = finalize_realms(session, {r.id for r in content.realms}, now, content)
+    nodes = []
+    for realm in content.realms:
+        state = states[realm.id]
+        node_id = state.node_id if state else realm.starting_node_id
+        nodes.append(
             {
                 "realm_id": realm.id,
                 "name": realm.name,
                 "position": content.map.positions.get(realm.id),
+                "node": node_id,
+                "tier": content.development_node(node_id).tier,
+                "decay_stage": state.decay_stage if state else "fed",
+                "treasury_band": None,
+                "transition_pending": bool(state and state.transition_to_node_id),
             }
-            for realm in content.realms
-        ],
-        "edges": list(content.map.edges),
-    }
+        )
+    result: dict[str, object] = {"nodes": nodes, "edges": list(content.map.edges)}
+    session.commit()
+    return result
 
 
 @router.post(
@@ -416,80 +376,4 @@ async def contribute(
             contribution_totals=totals,
         ),
         completed=completed,
-    )
-
-
-@router.post("/characters/me/relocate", response_model=RelocateResponse)
-async def relocate(
-    body: RelocateRequest,
-    request: Request,
-    now: ServerNow,
-    player: CurrentPlayer,
-    session: DatabaseSession,
-) -> RelocateResponse:
-    """Stop active work, charge path cost, and move the home estate."""
-    content = _content(request)
-    character = _character(session, player.id)
-    resolution = resolve_character(session, character.id, now, content)
-    rewards = claim_rewards(session, character.id, now)
-    clear_active_action(session, character.id)
-    estate = session.get(Estate, character.home_estate_id)
-    currency = session.get(Currency, character.id)
-    if estate is None or currency is None:
-        raise RuntimeError(f"character {character.id} has incomplete relocation state")
-    cost = _relocation_cost_for(content, estate, body.realm_id)
-    relocation_stacks: dict[str, Inventory] = {}
-    for entry in cost.items:
-        stack = session.get(Inventory, (character.id, entry.item_id))
-        if stack is None or stack.quantity < entry.qty:
-            raise api_error(409, "MISSING_INPUTS", "Relocation items are missing")
-        relocation_stacks[entry.item_id] = stack
-    if currency.gold < cost.gold:
-        raise api_error(409, "INSUFFICIENT_GOLD", "Relocation gold is insufficient")
-    currency.gold -= cost.gold
-    for entry in cost.items:
-        stack = relocation_stacks[entry.item_id]
-        stack.quantity -= entry.qty
-        if stack.quantity == 0:
-            session.delete(stack)
-    completes_at = None
-    if cost.time_ms == 0:
-        estate.realm_id = body.realm_id
-        character.current_realm_id = body.realm_id
-    else:
-        completes_at = now + timedelta(milliseconds=cost.time_ms)
-        estate.status = "relocating"
-        estate.relocating_to_realm_id = body.realm_id
-        estate.relocation_completes_at = completes_at
-    final_rewards = rewards_response(rewards)
-    if final_rewards.stop_reason is None:
-        final_rewards.stop_reason = resolution.result.stop_reason
-    session.commit()
-    return RelocateResponse(
-        realm_id=estate.realm_id,
-        relocating_to_realm_id=estate.relocating_to_realm_id,
-        relocation_completes_at=completes_at,
-        cost=cost,
-        final_rewards=final_rewards,
-    )
-
-
-@router.get("/characters/me/relocate/preview", response_model=RelocationPreviewResponse)
-async def preview_relocation(
-    realm_id: str,
-    request: Request,
-    now: ServerNow,
-    player: CurrentPlayer,
-    session: DatabaseSession,
-) -> RelocationPreviewResponse:
-    """Lazily finalize arrival, then return terms without starting a new move."""
-    content = _content(request)
-    character = _character(session, player.id)
-    estate = finalize_relocation(session, character, now, prepare_sqlite=True)
-    cost = _relocation_cost_for(content, estate, realm_id)
-    session.commit()
-    return RelocationPreviewResponse(
-        realm_id=estate.realm_id,
-        destination_realm_id=realm_id,
-        cost=cost,
     )

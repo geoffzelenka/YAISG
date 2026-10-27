@@ -259,7 +259,18 @@
       "id": "travel",
       "name": "Travel",
       "category": "travel",
-      "actions": []
+      "actions": [
+        {
+          "id": "action.fake_journey",
+          "name": "Fake journey",
+          "skill_id": "travel",
+          "tier": 1,
+          "unlock_level": 1,
+          "base_cycle_ms": 1000,
+          "xp": 1,
+          "resolver": "travel"
+        }
+      ]
     },
     {
       "id": "exploration",

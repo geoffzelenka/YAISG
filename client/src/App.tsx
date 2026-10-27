@@ -22,7 +22,6 @@ import { InventoryPanel } from './features/profile/InventoryPanel'
 import { SkillPanel } from './features/skills/SkillPanel'
 import { EstatePanel } from './features/estate/EstatePanel'
 import { MapPanel } from './features/realm/MapPanel'
-import { PendingRelocationBanner } from './features/realm/PendingRelocationBanner'
 import { RealmPanel, TransitionBanner } from './features/realm/RealmPanel'
 import { useRealm } from './api/realms'
 
@@ -43,6 +42,8 @@ function RequireAuth() {
 
 function describeModifier(modifier: Modifier): string {
   const labels: Record<Modifier['type'], string> = {
+    journey_speed_pct: 'journey speed',
+    supply_reduction_pct: 'supply reduction',
     cycle_speed_pct: 'cycle speed',
     xp_pct: 'XP',
     extra_drop_chance_pct: 'extra drop chance',
@@ -307,7 +308,6 @@ function Shell({ profile }: { profile: CharacterProfile }) {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
-        <PendingRelocationBanner />
         <ActionExperience />
       </div>
     </div>

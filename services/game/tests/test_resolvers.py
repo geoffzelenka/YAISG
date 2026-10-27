@@ -41,6 +41,7 @@ def test_uniform_matches_pre_refactor_goldens() -> None:
         # Compare every pre-existing field; the new seam adds explicit state,
         # consumed time and details without changing those recorded outcomes.
         actual = json.loads(json.dumps(asdict(state), default=str))
+        actual.pop("realm_states")
         actual["realm_id"] = actual.pop("current_realm_id")
         assert actual == row["state"]
         actual_active = asdict(active) if active else None

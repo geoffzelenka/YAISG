@@ -189,6 +189,10 @@ async def start_action(
         action = content.action(body.action_id)
     except KeyError:
         raise api_error(404, "UNKNOWN_ACTION", "The action does not exist") from None
+    if action.resolver == "travel":
+        raise api_error(
+            409, "TRAVEL_DESTINATION_REQUIRED", "Start a journey through /travel/start"
+        )
     validation = can_start(action.id, state, content)
     if isinstance(validation, ErrorCode):
         raise api_error(409, validation.value, "The action cannot currently be started")
@@ -236,6 +240,11 @@ async def get_action(
             state,
             content,
         )
+    if (
+        resolution.active is not None
+        and content.action(resolution.active.action_id).resolver == "travel"
+    ):
+        cycle_ms = int(resolution.active.meta["duration_ms"])
     feed = claim_rewards(session, character.id, now)
     feed = _prefer_current_stop_reason(feed, resolution.result)
     session.commit()

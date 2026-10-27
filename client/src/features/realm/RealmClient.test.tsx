@@ -14,9 +14,7 @@ import { ContentProvider } from '../../api/content'
 import type { CharacterProfile } from '../../api/characters'
 import { startActionClock, useActionClock } from '../actions/actionStore'
 import { MapPanel } from './MapPanel'
-import { PendingRelocationBanner } from './PendingRelocationBanner'
 import { ContributionForm, TransitionBanner } from './RealmPanel'
-import { RelocationFlow } from './RelocationFlow'
 
 const contentBodies: Record<string, unknown> = {
   skills: { skills: [] },
@@ -39,7 +37,7 @@ const contentBodies: Record<string, unknown> = {
     estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },
-  estate_forms: { forms: [], transformations: [], relocation_classes: {} },
+  estate_forms: { forms: [], transformations: [] },
   development: {
     nodes: [
       {
@@ -59,6 +57,15 @@ const contentBodies: Record<string, unknown> = {
   tags: { tags: [] },
   economy: { decay: { faltering_factor: 0.5 } },
   progression: {
+    visit_profile: {
+      time_mult: 1,
+      supply_mult: 1,
+      terrains: ['land', 'water'],
+    },
+    travel_xp_per_second: 1,
+    tier_benefits: {
+      travel: [{ journey_speed_pct: 0, supply_reduction_pct: 0 }],
+    },
     lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,
     min_cycle_ms: 1,
@@ -199,8 +206,15 @@ describe('realm client interactions', () => {
             ],
             edges: [
               {
-                realms: ['realm.one', 'realm.two'],
-                cost: { gold: 25, items: [], time_ms: 60000 },
+                id: 'fake.edge',
+                a: 'realm.one',
+                b: 'realm.two',
+                terrain: 'land',
+                base_time_s: 60,
+                supplies: [],
+                min_travel_level: 1,
+                base_loss_pct: 0,
+                one_way: false,
               },
             ],
           }),
@@ -221,61 +235,7 @@ describe('realm client interactions', () => {
     )
     const graph = screen.getByLabelText('Realm graph')
     expect(within(graph).queryByText('Two')).not.toBeInTheDocument()
-    expect(within(graph).queryByTitle('25 gold, 60s')).not.toBeInTheDocument()
-  })
-
-  it('shows pending relocation and retries profile invalidation after expiry', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: string | URL | Request) => {
-        const path = new URL(String(input), 'http://test').pathname
-        if (path === '/content/manifest')
-          return Promise.resolve(
-            response({ version: 'banner-test', packs: {} }),
-          )
-        if (path.startsWith('/content/'))
-          return Promise.resolve(
-            response(contentBodies[path.slice('/content/'.length)]),
-          )
-        return Promise.resolve(
-          response({
-            id: 'estate.one',
-            form: {},
-            realm_id: 'realm.one',
-            level: 1,
-            status: 'relocating',
-            upgrade_slots: 2,
-            installed_upgrades: [],
-            relocating_to_realm_id: 'realm.two',
-            relocation_completes_at: '2026-01-01T00:00:01Z',
-          }),
-        )
-      }),
-    )
-    const invalidate = vi.spyOn(client, 'invalidateQueries')
-    const stopClock = startActionClock()
-    render(<PendingRelocationBanner />, { wrapper })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(screen.getByText(/Relocating to Two/)).toBeInTheDocument()
-
-    act(() => {
-      vi.advanceTimersByTime(1_000)
-    })
-    act(() => {
-      vi.advanceTimersByTime(1_000)
-    })
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: ['characters', 'me'],
-      exact: true,
-    })
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['estates', 'me'] })
-    expect(invalidate).toHaveBeenCalledTimes(6)
-    stopClock()
+    expect(within(graph).queryByTitle('land, 60s')).not.toBeInTheDocument()
   })
 
   it('clamps a contribution to held quantity and remaining target', async () => {
@@ -321,61 +281,6 @@ describe('realm client interactions', () => {
         expect.objectContaining({
           body: JSON.stringify({ item_id: 'item.wood', quantity: 3 }),
         }),
-      ),
-    )
-  })
-
-  it('previews then confirms relocation through the mocked endpoints', async () => {
-    const fetchMock = vi.fn((input: string | URL | Request) => {
-      const url = new URL(String(input), 'http://test')
-      if (url.pathname === '/content/manifest')
-        return Promise.resolve(
-          response({ version: 'relocate-test', packs: {} }),
-        )
-      if (url.pathname.startsWith('/content/'))
-        return Promise.resolve(
-          response(contentBodies[url.pathname.slice('/content/'.length)]),
-        )
-      if (url.pathname.endsWith('/preview'))
-        return Promise.resolve(
-          response({
-            realm_id: 'realm.one',
-            destination_realm_id: 'realm.two',
-            cost: { gold: 25, items: [], time_ms: 60000 },
-          }),
-        )
-      return Promise.resolve(
-        response({
-          realm_id: 'realm.one',
-          relocating_to_realm_id: 'realm.two',
-          relocation_completes_at: '2026-01-01T00:01:00Z',
-          cost: { gold: 25, items: [], time_ms: 60000 },
-          final_rewards: {
-            cycles_completed: 0,
-            xp_gained: {},
-            items_consumed: {},
-            items_gained: {},
-            overflowed_items: {},
-            level_ups: {},
-            stop_reason: null,
-          },
-        }),
-      )
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    render(
-      <RelocationFlow
-        currentRealmId="realm.one"
-        initialDestination="realm.two"
-      />,
-      { wrapper },
-    )
-    expect(await screen.findByText('Cost: 25 gold')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm relocation' }))
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/characters/me/relocate'),
-        expect.objectContaining({ method: 'POST' }),
       ),
     )
   })
