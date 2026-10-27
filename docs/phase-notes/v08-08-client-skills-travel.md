@@ -82,6 +82,9 @@ None.
 - 21-client-realm-estate / 22-client-realm-market: map renders treasury bands when
   supplied; no balance or local health calculation is introduced here.
 
+- 21-client-realm-estate (orchestrator, from review): no ActionExperience-level test
+  covers a completed-edge or arrival toast end to end; add one when the feed is touched.
+
 ## New error codes
 
 None. Existing server errors display their messages.
