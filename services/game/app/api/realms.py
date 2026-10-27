@@ -393,15 +393,13 @@ async def get_realm_estates(
                 content.economy.estate.sale_markup_pct,
             )
             if estate.owner_character_id is None
+            and content.estate_form(estate.form_id).mobility == "fixed"
             else None,
             form=estate.form_id,
             decay_stage=estate.decay_stage,
         )
         for estate in session.scalars(
-            select(Estate)
-            .where(Estate.realm_id == realm_id)
-            .order_by(Estate.id)
-            .with_for_update()
+            select(Estate).where(Estate.realm_id == realm_id).order_by(Estate.id)
         )
     ]
     session.commit()

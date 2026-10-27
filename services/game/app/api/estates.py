@@ -448,9 +448,7 @@ def _acquire(
     )
 
 
-def _destroy_mobile(
-    session: DatabaseSession, character: Character, estate: Estate
-) -> None:
+def _destroy_mobile(session: DatabaseSession, estate: Estate) -> None:
     # Explicitly remove dependants on SQLite too, where FK enforcement may be off.
     for model in (EstateUpgrade, EstateLarder, EstateOwnershipHistory):
         session.execute(delete(model).where(model.estate_id == estate.id))
@@ -490,13 +488,14 @@ async def build_estate(
     if not tags_present(form.requires_realm_tags, tags):
         raise api_error(409, "MISSING_REALM_TAGS", "The form requires realm tags")
     _pay_build_cost(session, character, mobile, form.build_cost, content)
-    _destroy_mobile(session, character, mobile)
+    _destroy_mobile(session, mobile)
     estate = Estate(form_id=form.id, realm_id=character.current_realm_id)
     session.add(estate)
     session.flush()
     _acquire(session, character, estate, now)
     response = _estate_response(session, content, character, estate)
     session.commit()
+    _audit("estate_built", character, estate)
     return response
 
 
@@ -546,10 +545,11 @@ async def buy_estate(
         raise api_error(409, "MISSING_INPUTS", "The sale price is not affordable")
     currency.gold -= cost
     realm.treasury += cost
-    _destroy_mobile(session, character, mobile)
+    _destroy_mobile(session, mobile)
     _acquire(session, character, estate, now)
     response = _estate_response(session, content, character, estate)
     session.commit()
+    _audit("estate_bought", character, estate)
     return response
 
 
@@ -595,6 +595,7 @@ async def surrender_estate(
     _acquire(session, character, mobile, now)
     response = _estate_response(session, content, character, mobile)
     session.commit()
+    _audit("estate_surrendered", character, estate)
     return response
 
 
@@ -612,8 +613,11 @@ async def deposit_larder(
     resolve_character(session, character.id, now, content)
     estate = _home_estate(session, character, lock=True)
     _require_owner_present(character, estate)
-    item = next((item for item in content.items if item.id == body.item_id), None)
-    if item is None or not any(
+    try:
+        item = content.item(body.item_id)
+    except KeyError:
+        raise api_error(409, "NOT_UPKEEP_ITEM", "Unknown upkeep item") from None
+    if not any(
         line.selector.matches(item)
         for line in content.estate_form(estate.form_id).upkeep
     ):
@@ -635,4 +639,11 @@ async def deposit_larder(
         holding.quantity_milli += body.quantity * 1000
     response = _estate_response(session, content, character, estate)
     session.commit()
+    _audit(
+        "larder_deposited",
+        character,
+        estate,
+        item_id=body.item_id,
+        quantity=str(body.quantity),
+    )
     return response

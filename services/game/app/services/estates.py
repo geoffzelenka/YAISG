@@ -11,12 +11,10 @@ from app.models import Estate, EstateUpgrade
 def persisted_estate_value(
     session: Session, estate: Estate, content: ContentIndex
 ) -> Valuation:
-    """Value installed assets and record the selected rebuild path."""
+    """Value installed assets without mutating their persisted state."""
     upgrades = list(
         session.scalars(
             select(EstateUpgrade.upgrade_id).where(EstateUpgrade.estate_id == estate.id)
         )
     )
-    value = estate_value(estate.form_id, upgrades, estate.realm_id, content)
-    estate.data = {**estate.data, "valuation_path": list(value.path)}
-    return value
+    return estate_value(estate.form_id, upgrades, estate.realm_id, content)

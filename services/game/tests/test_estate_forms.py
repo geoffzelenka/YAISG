@@ -5,12 +5,10 @@ import shutil
 from pathlib import Path
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from app.config import CONTENT_DIR
 from app.content import ContentError, load_content
-from app.engine.estates import estate_value, sale_price, vote_weight
+from app.engine.estates import estate_value, vote_weight
 
 
 @pytest.mark.parametrize(
@@ -138,18 +136,6 @@ def test_valuation_goods_selector_gold_and_provider() -> None:
         entry.qty * content.item(entry.item_id).reference_price
         for entry in upgrade.cost
     )
-
-
-@given(
-    value=st.integers(min_value=1, max_value=10**12),
-    treasury=st.integers(min_value=0, max_value=10**12),
-)
-def test_buy_surrender_always_loses_gold(value: int, treasury: int) -> None:
-    """Positive rebuild values cannot yield a profitable treasury round trip."""
-    paid = sale_price(value, 15)
-    received = min(value, treasury + paid)
-    assert received < paid
-    assert -paid + received + (treasury + paid - received) == treasury
 
 
 def test_valuation_records_cheapest_tier_one_path() -> None:

@@ -20,6 +20,8 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException, Request
 from httpx import ASGITransport, AsyncClient
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 from jwt import PyJWK
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -966,7 +968,7 @@ async def test_realm_owned_estates_listed(
         "owner": "realm-owned",
         "form": "form.orchard",
         "decay_stage": "strained",
-        "sale_price": 44,
+        "sale_price": None,
     }
     assert any(row["owner"] != "realm-owned" for row in rows)
     unknown = await client.get("/realms/missing/estates", headers=headers)
@@ -1237,10 +1239,12 @@ async def test_build_buy_surrender_and_larder(
         AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
     ],
     donate: bool,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Ownership flows conserve gold and preserve one home."""
     from app.models import EstateLarder, EstateOwnershipHistory
 
+    caplog.set_level(logging.INFO, logger="yaisg.audit")
     client, factory, headers, clock = estate_client
     character_id = _give(factory, "item.fake_sprig", 10)
     with factory() as session:
@@ -1310,6 +1314,17 @@ async def test_build_buy_surrender_and_larder(
         assert_world_estate_invariant(session)
     again = await client.post(f"/estates/{fixed_id}/buy", headers=headers)
     assert again.json()["error"]["code"] == "MOBILE_ESTATE_REQUIRED"
+    changes = {
+        json.loads(record.message)["change"]
+        for record in caplog.records
+        if record.name == "yaisg.audit"
+    }
+    assert {
+        "estate_built",
+        "estate_bought",
+        "estate_surrendered",
+        "larder_deposited",
+    } <= changes
 
 
 async def test_postgres_two_buyers_one_estate(
@@ -1427,3 +1442,221 @@ async def test_ownership_flow_preconditions(
         currency = session.scalar(select(Currency))
         assert currency is not None and currency.gold == 100
         assert_world_estate_invariant(session)
+
+
+@settings(
+    deadline=None,
+    max_examples=25,
+    derandomize=True,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+# Keep seeded player balances within PostgreSQL currency.gold's 32-bit range.
+@given(
+    value=st.integers(min_value=1, max_value=10**8),
+    treasury=st.integers(min_value=0, max_value=10**8),
+)
+async def test_buy_surrender_always_loses_gold(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    value: int,
+    treasury: int,
+) -> None:
+    """Real ownership flows charge markup, cap payouts and conserve both balances."""
+    from app.content.schemas import BuildCost
+    from app.engine.estates import sale_price
+    from app.models import EstateOwnershipHistory
+    from app.services.estates import persisted_estate_value
+    from app.services.realms import as_utc
+
+    client, factory, headers, clock = estate_client
+    original = app.state.content
+    form = original.estate_form("form.fake_workshop").model_copy(
+        update={"build_cost": BuildCost(gold=value)}
+    )
+    app.state.content = replace(
+        original,
+        estate_forms=tuple(
+            form if entry.id == form.id else entry for entry in original.estate_forms
+        ),
+        _forms_by_id=MappingProxyType(
+            {
+                **original._forms_by_id,
+                form.id: form,
+            }
+        ),
+    )
+    try:
+        with factory() as session:
+            character = session.scalar(select(Character))
+            assert character is not None
+            character_id = character.id
+            currency = session.get(Currency, character_id)
+            realm = session.get(RealmState, character.current_realm_id)
+            assert currency is not None and realm is not None
+            target = Estate(form_id=form.id, realm_id=realm.id)
+            session.add(target)
+            session.flush()
+            rebuilt = persisted_estate_value(session, target, app.state.content).value
+            assert rebuilt == value
+            price = sale_price(
+                rebuilt, app.state.content.economy.estate.sale_markup_pct
+            )
+            initial_gold = price + value
+            currency.gold = initial_gold
+            realm.treasury = treasury
+            target_id, realm_id = target.id, realm.id
+            session.commit()
+        bought = await client.post(f"/estates/{target_id}/buy", headers=headers)
+        assert bought.status_code == 200, bought.text
+        with factory() as session:
+            currency = session.get(Currency, character_id)
+            realm = session.get(RealmState, realm_id)
+            assert currency is not None and realm is not None
+            assert initial_gold - currency.gold == price
+            assert realm.treasury - treasury == price
+            history = session.scalar(
+                select(EstateOwnershipHistory).where(
+                    EstateOwnershipHistory.estate_id == target_id
+                )
+            )
+            assert history is not None and history.relinquished_at is None
+            first_history_id = history.id
+            assert_world_estate_invariant(session)
+        surrendered = await client.post(
+            "/estates/me/surrender", headers=headers, json={"donate": False}
+        )
+        assert surrendered.status_code == 200, surrendered.text
+        with factory() as session:
+            currency = session.get(Currency, character_id)
+            realm = session.get(RealmState, realm_id)
+            assert currency is not None and realm is not None
+            # The buy proceeds alone exceed value: this exercises the payout cap.
+            assert treasury + price > value
+            assert currency.gold - (initial_gold - price) == value
+            assert treasury + price - realm.treasury == value
+            assert currency.gold < initial_gold
+            assert currency.gold + realm.treasury == initial_gold + treasury
+            history = session.get(EstateOwnershipHistory, first_history_id)
+            assert history is not None and history.relinquished_at is not None
+            assert as_utc(history.relinquished_at) == clock["now"]
+            assert_world_estate_invariant(session)
+        reacquired = await client.post(f"/estates/{target_id}/buy", headers=headers)
+        assert reacquired.status_code == 200, reacquired.text
+        with factory() as session:
+            histories = list(
+                session.scalars(
+                    select(EstateOwnershipHistory).where(
+                        EstateOwnershipHistory.estate_id == target_id
+                    )
+                )
+            )
+            assert len(histories) == 2
+            fresh = next(row for row in histories if row.id != first_history_id)
+            assert fresh.relinquished_at is None
+            assert as_utc(fresh.acquired_at) == clock["now"]
+    finally:
+        # Keep generated examples independent, including during failure shrinking.
+        try:
+            with factory() as session:
+                character = session.scalar(select(Character))
+                assert character is not None
+                home = session.get(Estate, character.home_estate_id)
+                assert home is not None
+                fixed_home = original.estate_form(home.form_id).mobility == "fixed"
+            if fixed_home:
+                cleanup = await client.post(
+                    "/estates/me/surrender", headers=headers, json={"donate": True}
+                )
+                assert cleanup.status_code == 200
+        finally:
+            app.state.content = original
+
+
+@pytest.mark.parametrize("target_kind", ["other_realm", "owned", "mobile"])
+async def test_buy_rejects_targets_not_for_sale(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    target_kind: str,
+) -> None:
+    """Only realm-owned fixed estates in the buyer's realm can be bought."""
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        character = session.scalar(select(Character))
+        assert character is not None
+        target = Estate(
+            form_id="form.camp" if target_kind == "mobile" else "form.fake_workshop",
+            realm_id="realm.ashen_reach"
+            if target_kind == "other_realm"
+            else character.current_realm_id,
+            owner_character_id=character.id if target_kind == "owned" else None,
+        )
+        session.add(target)
+        session.commit()
+        target_id = target.id
+    result = await client.post(f"/estates/{target_id}/buy", headers=headers)
+    assert result.status_code == 409
+    assert result.json()["error"]["code"] == "NOT_FOR_SALE"
+
+
+async def test_estate_listing_prices_only_fixed_and_does_not_write_valuations(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Public listings compute prices without estate locks or persisted paths."""
+    from sqlalchemy import event
+
+    from app.engine.estates import sale_price
+    from app.services.estates import persisted_estate_value
+
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        fixed = Estate(
+            form_id="form.fake_workshop",
+            realm_id="realm.verdant_vale",
+            data={"custom": "retained"},
+        )
+        mobile = Estate(form_id="form.camp", realm_id="realm.verdant_vale")
+        session.add_all([fixed, mobile])
+        session.flush()
+        value = persisted_estate_value(session, fixed, app.state.content)
+        assert fixed.data == {"custom": "retained"}
+        price = sale_price(
+            value.value, app.state.content.economy.estate.sale_markup_pct
+        )
+        fixed_id, mobile_id = fixed.id, mobile.id
+        session.commit()
+    statements: list[str] = []
+
+    def capture(
+        connection: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement.lower())
+
+    engine = factory.kw["bind"]
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        response = await client.get(
+            "/realms/realm.verdant_vale/estates", headers=headers
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert rows[str(fixed_id)]["sale_price"] == price
+    assert rows[str(mobile_id)]["sale_price"] is None
+    assert not any("update estates" in statement for statement in statements)
+    assert not any(
+        "from estates" in statement and "for update" in statement
+        for statement in statements
+    )
+    with factory() as session:
+        saved = session.get(Estate, fixed_id)
+        assert saved is not None and saved.data == {"custom": "retained"}
