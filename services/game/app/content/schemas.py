@@ -1,8 +1,17 @@
 """Validated, immutable schemas for static game content."""
 
 from enum import StrEnum
+from itertools import accumulate
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    RootModel,
+    StrictInt,
+    model_validator,
+)
 
 
 class ContentModel(BaseModel):
@@ -319,6 +328,9 @@ class XpLevel(ContentModel):
 class XpCurve(RootModel[tuple[StrictInt, ...]]):
     """Checked-in per-level XP costs."""
 
+    model_config = ConfigDict(frozen=True)
+    _levels: tuple[XpLevel, ...] = PrivateAttr(default=())
+
     @model_validator(mode="after")
     def validate_costs(self) -> "XpCurve":
         """Validate the complete static table."""
@@ -330,17 +342,16 @@ class XpCurve(RootModel[tuple[StrictInt, ...]]):
             raise ValueError("XP costs must increase after level 1")
         if sum(self.root) != 10_000_000:
             raise ValueError("XP costs must sum to 10000000")
+        self._levels = tuple(
+            XpLevel(level=i, xp=xp)
+            for i, xp in enumerate(accumulate(self.root, initial=0), start=1)
+        )
         return self
 
     @property
     def levels(self) -> tuple[XpLevel, ...]:
-        """Sum costs into cumulative engine thresholds."""
-        from itertools import accumulate
-
-        return tuple(
-            XpLevel(level=i, xp=xp)
-            for i, xp in enumerate(accumulate(self.root, initial=0), start=1)
-        )
+        """Return immutable cumulative thresholds computed during validation."""
+        return self._levels
 
 
 class ProgressionPack(ContentModel):

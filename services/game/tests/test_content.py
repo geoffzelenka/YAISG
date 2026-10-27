@@ -262,13 +262,20 @@ def test_boot_rejects_invalid_xp_table(tmp_path: Path, defect: str) -> None:
     path = directory / "xp_curve.json"
     costs = json.loads(path.read_text())
     if defect == "short":
-        costs.pop()
+        removed = costs.pop()
+        costs[-1] += removed
     elif defect == "unordered":
+        costs[-1] += costs[1] - costs[0]
         costs[1] = costs[0]
     else:
         costs[-1] -= 1
     _write_json(path, costs)
-    with pytest.raises(ContentError):
+    messages = {
+        "short": "must contain 99 entries",
+        "unordered": "must increase after level 1",
+        "total": "must sum to 10000000",
+    }
+    with pytest.raises(ContentError, match=messages[defect]):
         load_content(directory)
 
 
@@ -286,5 +293,20 @@ def test_boot_rejects_invalid_tier_thresholds(
             "tier_titles": ["Placeholder"] * len(thresholds),
         },
     )
-    with pytest.raises(ContentError):
+    message = (
+        "must strictly increase"
+        if thresholds == [1, 50, 50]
+        else "must start at 1 and end at or below 100"
+    )
+    with pytest.raises(ContentError, match=message):
         load_content(directory)
+
+
+def test_xp_thresholds_are_cached_and_curve_is_frozen() -> None:
+    """Reading thresholds reuses the loaded tuple and the source table is frozen."""
+    from pydantic import ValidationError
+
+    curve = load_content(CONTENT_DIR).xp_curve
+    assert curve.levels is curve.levels
+    with pytest.raises(ValidationError, match="frozen"):
+        curve.root = curve.root

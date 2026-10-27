@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 
 from app.db import Base
@@ -103,3 +104,32 @@ def test_db_reset_rebuilds_both_services(tmp_path: Path) -> None:
                 connection.exec_driver_sql("CREATE TABLE reset_marker (id INTEGER)")
             engine.dispose()
     _alembic(game_url, "upgrade", "head")
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
+def test_db_reset_refuses_shared_database(tmp_path: Path, backend: str) -> None:
+    """A shared target is rejected before either database is touched."""
+    root = Path(__file__).resolve().parents[3]
+    if backend == "sqlite":
+        path = tmp_path / "shared.db"
+        path.write_text("must survive")
+        game_url = f"sqlite:///{path}"
+        auth_url = f"sqlite:///{tmp_path / '.' / 'shared.db'}"
+    else:
+        game_url = "postgresql+psycopg://game:secret@localhost/shared"
+        auth_url = "postgresql+psycopg://auth:other@LOCALHOST:5432/shared"
+    result = subprocess.run(
+        [sys.executable, "scripts/db_reset.py"],
+        cwd=root,
+        env={
+            **os.environ,
+            "GAME_DATABASE_URL": game_url,
+            "AUTH_DATABASE_URL": auth_url,
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "game and auth must use different databases" in result.stderr
+    if backend == "sqlite":
+        assert path.read_text() == "must survive"

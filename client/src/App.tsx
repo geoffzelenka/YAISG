@@ -147,7 +147,7 @@ function CharacterCreation() {
   )
 }
 
-function ProfilePanel({ profile }: { profile: CharacterProfile }) {
+export function ProfilePanel({ profile }: { profile: CharacterProfile }) {
   const realm = useRealm(profile.character.realm_id)
   const content = useContent()
   const currentNode =

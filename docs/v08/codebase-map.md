@@ -17,7 +17,7 @@ v0.5 code, not the intended v0.8 architecture. No scheduler currently exists.
 | Transaction adapters | `services/game/app/services/actions.py`: resolve_character, state load/persist, reward claims, serialization; `services/realms.py`: sorted realm locks, transition finalization, edge awards, relocation finalization. Some orchestration remains in routers |
 | Models | `services/game/app/models/player.py`, `models/character.py`, exported in `models/__init__.py`; character, skills, currency, estate/history/upgrades, realm state/edge progress/projects/contributions, inventory, active action, reward log |
 | Database setup | Each service owns `app/db.py`, config, Alembic ini/env and metadata; game SQLite dialect hooks implement WAL and explicit BEGIN/BEGIN IMMEDIATE; PostgreSQL locks use SQLAlchemy with_for_update |
-| Migration histories | `services/auth/migrations/versions/0001_baseline.py` through `0002_auth_tables.py`; game `0001_baseline.py` through `0006_realm_estate_v05.py`; `0005_reward_feed_tracking.py` adds reward claim tracking |
+| Migration histories | `services/auth/migrations/versions/0001_baseline.py` through `0002_auth_tables.py`; game `v08_0000_baseline.py` creates the current schema including reward claim tracking |
 | Scheduler | None; no APScheduler dependency or lifespan job. Prompt 14 introduces it; later prompts add caravans, order expiry/purge and guest purge |
 | Client entry/routes | `client/src/main.tsx`, `App.tsx`: auth guard, character creation, shared sidebar/action strip; skills, profile, estate, realm and map panels under `features/` |
 | Client data/state | `client/src/api/http.ts`: authenticated transport/refresh; `api/content.tsx`: typed content context/cache; other `api/*.ts`: TanStack Query hooks; `features/auth/AuthProvider.tsx`: session; `features/actions/actionStore.ts`: shared Zustand cosmetic clock and polling math |
@@ -141,7 +141,9 @@ to head. Defaults are `services/game/data/game.db` and
 `services/auth/data/auth.db`. Override GAME_DATABASE_URL and AUTH_DATABASE_URL
 for separate disposable PostgreSQL databases; reset connects to `postgres`,
 terminates connections to each target, drops/recreates it and upgrades to head.
-The database role needs permission to recreate those databases. Never point this
+Reset rejects game and auth URLs resolving to the same SQLite path or the same
+PostgreSQL host/port/database before touching either target. The database role
+needs permission to recreate those databases. Never point this
 target at a database whose data must survive. TEST_DATABASE_URL selects tests,
 not the reset target. A subsequent `alembic upgrade head` is a no-op.
 

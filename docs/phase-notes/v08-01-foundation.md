@@ -38,6 +38,22 @@
   Scripts also pass separate Ruff formatting/lint and strict mypy checks.
   `git diff --check` is clean.
 
+- Round 1 B1/N1–N8: cache immutable cumulative XP thresholds during validation;
+  freeze the XP RootModel; isolate XP and tier invariant tests with specific
+  error matches; rename baseline file without changing its revision; reject
+  shared game/auth reset targets before mutation; include scripts in CI using
+  game tool configuration; add the maximum-level UI test; refresh migration
+  map and orchestrator verification records.
+- Round 1 tests added: test_xp_thresholds_are_cached_and_curve_is_frozen,
+  test_db_reset_refuses_shared_database (SQLite path and PostgreSQL identity,
+  neither case requires a PostgreSQL connection), and Vitest
+  "shows Maximum level when XP to next is null".
+
+- Round 1 final SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passed: auth 15,
+  game 115 passed / 1 PostgreSQL-only skip, client 23. All formatting, lint,
+  type checks and build passed, including scripts-ci using game configuration.
+  Round 1 PostgreSQL execution remains for the orchestrator.
+
 ## Removed
 
 - Six historical game migrations, replaced by the new baseline; auth unchanged.
@@ -60,11 +76,12 @@
 
 ## Deviations
 
-- Both-database verification: PostgreSQL is inaccessible in this sandbox per
-  orchestrator instructions; no PostgreSQL run or reset was attempted. The
-  orchestrator must verify PostgreSQL migrations, reset and full CI. The
-  baseline migration test honors TEST_DATABASE_URL; the repeat-reset test uses
-  isolated SQLite files and does not drop a PostgreSQL database inside pytest.
+- PostgreSQL cannot be reached from this coding sandbox. Orchestrator verification
+  on committed baseline a79d26a: PostgreSQL 16 make game-ci passed 113 tests;
+  make db-reset passed twice on dedicated yaisg_game_dev/yaisg_auth_dev databases,
+  game revision is v08_0000_baseline (head), and alembic check found no drift.
+  SQLite db-reset also passed and app GET /content/manifest returned 200.
+  Round 1 changes still need orchestrator PostgreSQL verification.
 
 ## Ratification needed
 
@@ -81,8 +98,8 @@ None.
 - Orchestrator: run PostgreSQL 16 make ci with TEST_DATABASE_URL. For db-reset,
   set separate GAME_DATABASE_URL and AUTH_DATABASE_URL disposable databases
   (not TEST_DATABASE_URL); the role needs database creation privileges. Then
-  run each service's alembic upgrade head and verify content boot. No commit
-  was attempted because .git is read-only.
+  run each service's alembic upgrade head and verify content boot. The orchestrator
+  committed the initial implementation as a79d26a; round 1 edits remain uncommitted.
 
 ## New error codes
 

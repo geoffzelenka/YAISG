@@ -6,16 +6,48 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def database_url(service: str) -> URL:
+    """Read the configured database URL for one service."""
+    return make_url(
+        os.environ.get(
+            f"{service.upper()}_DATABASE_URL", f"sqlite:///./data/{service}.db"
+        )
+    )
+
+
+def database_identity(service: str) -> tuple[object, ...]:
+    """Identify a database independently of credentials and driver spelling."""
+    url = database_url(service)
+    if url.get_backend_name() == "sqlite":
+        path = Path(url.database or "")
+        if not path.is_absolute():
+            path = ROOT / "services" / service / path
+        return ("sqlite", path.resolve())
+    return (
+        url.get_backend_name(),
+        (url.host or "localhost").lower(),
+        url.port or 5432,
+        url.database,
+    )
+
+
+def reset_databases() -> None:
+    """Validate distinct targets before destructively resetting either service."""
+    if database_identity("game") == database_identity("auth"):
+        raise ValueError("game and auth must use different databases")
+    for service in ("game", "auth"):
+        reset_database(service)
 
 
 def reset_database(service: str) -> None:
     """Drop the configured service database and rebuild its migration head."""
     directory = ROOT / "services" / service
-    variable = f"{service.upper()}_DATABASE_URL"
-    url = make_url(os.environ.get(variable, f"sqlite:///./data/{service}.db"))
+    url = database_url(service)
     if url.get_backend_name() == "sqlite":
         if not url.database or url.database == ":memory:":
             raise ValueError("db-reset requires a persistent SQLite database")
@@ -58,5 +90,4 @@ def reset_database(service: str) -> None:
 
 
 if __name__ == "__main__":
-    for service in ("game", "auth"):
-        reset_database(service)
+    reset_databases()
