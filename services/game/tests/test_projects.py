@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from httpx import AsyncClient
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from sqlalchemy import event, select
+from sqlalchemy import delete, event, select
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.engine.interfaces import ExecutionContext
 from sqlalchemy.orm import Session, sessionmaker
@@ -867,6 +867,8 @@ def test_first_touch_never_instantiates_isolated_template(
             {r.id: template if r.id == template.id else r for r in CONTENT.realms}
         ),
     )
+    # A virgin world must contain no legacy realm rows before seeding.
+    realm_session.execute(delete(RealmState))
     state = finalize_realm(realm_session, template.id, NOW, content)
     realm_session.flush()
     if isolated:

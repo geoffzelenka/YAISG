@@ -92,6 +92,16 @@ source .venv/bin/activate
 python -m pip install -e "services/auth[dev]" -e "services/game[dev]"
 ```
 
+Before starting either API, apply both migration chains from the repository root:
+
+```bash
+(cd services/game && alembic upgrade head)
+(cd services/auth && alembic upgrade head)
+```
+
+The game API creates the world during boot and requires a migrated database.
+For disposable development data, `make db-reset` rebuilds both databases.
+
 Start the game API:
 
 ```bash

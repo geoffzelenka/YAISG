@@ -2,11 +2,16 @@
 
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.models import Estate, RealmState, RealmStore, WorldState
 from app.services.stores import recompute_lines
+
+
+class WorldStateError(RuntimeError):
+    """World state is inconsistent and requires an operator reset."""
 
 
 def create_world(session: Session, content: ContentIndex, now: datetime) -> bool:
@@ -15,34 +20,35 @@ def create_world(session: Session, content: ContentIndex, now: datetime) -> bool
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     insert = sqlite_insert if session.get_bind().dialect.name == "sqlite" else pg_insert
-    claimed = session.execute(
-        insert(WorldState)
-        .values(
-            id=1,
-            seeded_at=now,
-            last_caravan_pass=now,
-            content_version=content.manifest.version,
-        )
-        .on_conflict_do_nothing(index_elements=["id"])
-        .returning(WorldState.id)
-    ).scalar_one_or_none()
-    if claimed is None:
-        return False
+    with session.begin_nested():
+        claimed = session.execute(
+            insert(WorldState)
+            .values(
+                id=1,
+                seeded_at=now,
+                last_caravan_pass=now,
+                content_version=content.world_seed_version,
+            )
+            .on_conflict_do_nothing(index_elements=["id"])
+            .returning(WorldState.id)
+        ).scalar_one_or_none()
+        if claimed is None:
+            return False
+        if session.scalar(select(RealmState.id).limit(1)) is not None:
+            raise WorldStateError(
+                "Realm rows exist without a world marker; run make db-reset"
+            )
     for seed in sorted(content.world_seed.realms, key=lambda s: s.realm_id):
         template = content.realm(seed.realm_id)
-        realm = session.get(RealmState, template.id)
-        if realm is None:
-            realm = RealmState(
-                id=template.id,
-                template_id=template.id,
-                isolated=False,
-                current_node_id=template.starting_node_id,
-                treasury=seed.treasury,
-                last_tick_at=now,
-            )
-            session.add(realm)
-        else:
-            realm.treasury = seed.treasury
+        realm = RealmState(
+            id=template.id,
+            template_id=template.id,
+            isolated=False,
+            current_node_id=template.starting_node_id,
+            treasury=seed.treasury,
+            last_tick_at=now,
+        )
+        session.add(realm)
         session.flush()
         session.add_all(
             RealmStore(

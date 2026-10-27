@@ -18,8 +18,9 @@
   invalid seed references, duplicate seed goods/realms, missing world realms,
   isolated seed templates, and cap settings that cannot cover maximum reserve.
   Warning-only upkeep overlap lint is included in content-lint text output.
-- Private strict world_seed participates in the overall version hash but is not
-  served. create_world claims its singleton with a conflict-safe insert and
+- Private strict world_seed has a separate private hash recorded in
+  world_state.content_version; neither seed data nor its hash enters the public
+  manifest. create_world claims its singleton with a conflict-safe insert and
   creates all world realms, treasuries, stores and null-owner estates in one
   transaction. Boot, make world-create, character creation and virgin-realm
   first touch share this path. Isolated templates never create shared state.
@@ -51,6 +52,23 @@
   head, make world-create twice and alembic check all succeed. git diff --check
   is clean. No dependencies added.
 
+- Round 1: addressed R1–R8. Seed-only treasury changes leave the public manifest
+  unchanged; world_state stores the private seed hash. Clamped negative reserve
+  days to zero, extended equal-price validation to project cost selectors, and
+  restricted seeded estates to fixed forms. Seeding rejects unmarked realm rows;
+  missing seeded realm state raises WorldStateError and character creation returns
+  WORLD_STATE_INCOMPLETE (503), without creating a character or estate. Normal
+  character creation rejects isolated templates with UNKNOWN_REALM (422), a
+  deliberate behavior change. Boot calls create_world and therefore requires a
+  migrated DB; README now migrates before uvicorn, and missing-table failures log
+  "run alembic upgrade head / make db-reset" before re-raising. Dockerfile remains
+  unchanged because Compose already migrates first. Regression coverage includes
+  private hashing, reserve clamping, project selectors, fixed seed estates, legacy
+  state refusal, missing realm state, isolated starts and the boot migration hint.
+  Round 1 SQLite make ci passes: auth 15, game 367 with nine database-specific
+  skips, client 41; formatting, lint, strict typing, build and content lint pass.
+  No dependencies added.
+
 ## Removed
 
 - Separate first-touch zero-treasury realm inserts in character creation and
@@ -77,9 +95,13 @@
 - §14.9 / §21: seed stores use the existing positive whole-unit ItemQuantity
   schema and are multiplied by 1000 at creation. Estate lists may repeat forms
   because they describe distinct estates. last_caravan_pass starts at seeded_at.
-- §14.9: if pre-release state already has realm rows but no world marker, seed
-  treasuries are installed on those rows; normal fresh-world creation starts
-  empty. Retries after a committed marker never restore any holdings.
+- §14.9 / §23.1 (Round 1): existing realm rows without a world marker fail
+  seeding with WorldStateError and a make db-reset instruction, without changing
+  treasuries or retaining a new marker. Pre-release state must be reset; seeding
+  never repairs or replenishes existing realms.
+- §14.3 (Round 1): clamp effective reserve days to zero after adding all active
+  tag deltas and the full pending transition window. Negative deltas remain
+  valid content but cannot create a negative reserve.
 
 ## Deviations
 
@@ -118,6 +140,8 @@ None.
 
 ## New error codes
 
-None. Reused UNKNOWN_REALM for isolated template selection; invalid content
-raises ContentError and invalid pure inputs raise ValueError. No dependencies
-added.
+- WORLD_STATE_INCOMPLETE (503): character creation cannot find the selected
+  realm in a previously seeded world, or unmarked legacy realm rows prevent
+  safe initialization. The operator log carries the reset instruction.
+- Reused UNKNOWN_REALM for isolated template selection; invalid content raises
+  ContentError and invalid pure inputs raise ValueError. No dependencies added.

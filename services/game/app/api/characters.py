@@ -165,9 +165,17 @@ async def create_character(
         raise api_error(
             422, "UNKNOWN_REALM", "An isolated template is not a starting realm"
         )
-    from app.services.world import create_world
+    from app.services.realms import finalize_realm
+    from app.services.world import WorldStateError, create_world
 
-    create_world(session, content, now)
+    try:
+        create_world(session, content, now)
+        finalize_realm(session, body.realm_id, now, content)
+    except WorldStateError as error:
+        logger.error("Character creation refused: %s", error)
+        raise api_error(
+            503, "WORLD_STATE_INCOMPLETE", "The selected realm is unavailable"
+        ) from error
 
     estate_id = uuid.uuid4()
     character = Character(

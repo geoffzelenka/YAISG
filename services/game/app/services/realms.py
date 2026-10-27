@@ -50,10 +50,15 @@ def _lock_realm(
     if template.isolated:
         # Isolated templates become owned instances through the tutorial lifecycle.
         return None
-    from app.services.world import create_world
+    from app.services.world import WorldStateError, create_world
 
     create_world(session, content, now)
-    return session.scalar(statement)
+    state = session.scalar(statement)
+    if state is None:
+        raise WorldStateError(
+            f"Seeded world is missing realm {realm_id!r}; run make db-reset"
+        )
+    return state
 
 
 def stack_tags(session: Session, realm_id: str) -> tuple[str, ...]:

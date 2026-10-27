@@ -12,7 +12,8 @@ sums this static table; it never regenerates the exponential curve.
 `progression.json` owns skill tier thresholds and placeholder titles. Later
 prompts extend this strict pack for proficiency, taper and rate settings.
 
-`world_seed.json` is private (hashed, never served). Each world realm specifies
+`world_seed.json` is private (hashed separately, never served or included in
+the public manifest version). Each world realm specifies
 `treasury` in gold, `stores` as positive whole-item `qty` values, and `estates`
 as form ids. Seeding converts stores to milli-units and creates estates with
 no character owner. Boot or `make world-create` creates these holdings once;

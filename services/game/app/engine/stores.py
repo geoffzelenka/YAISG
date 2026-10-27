@@ -125,7 +125,7 @@ def derive_lines(
             else node.reserve_days
         )
     ) + sum((Fraction(str(t.effects.reserve_days_delta)) for t in tags), Fraction(0))
-    reserve_days += transition_days
+    reserve_days = max(Fraction(0), reserve_days + transition_days)
     cap_days = Fraction(
         str(content.economy.cap_days if node.cap_days is None else node.cap_days)
     )

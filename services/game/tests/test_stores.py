@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 from test_realms import realm_session as realm_session
 
@@ -23,7 +23,7 @@ from app.db import Base, configure_sqlite_engine
 from app.engine.stores import Demand, derive_lines, due, membership, warehouse_cap
 from app.models import Estate, RealmLine, RealmState, RealmStore, WorldState
 from app.services.stores import recompute_lines
-from app.services.world import create_world
+from app.services.world import WorldStateError, create_world
 
 CONTENT = load_content(CONTENT_DIR)
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -173,6 +173,9 @@ def test_world_creation_twice_creates_once(tmp_path: Path) -> None:
                 owner is None
                 for owner in session.scalars(select(Estate.owner_character_id))
             )
+            marker = session.get(WorldState, 1)
+            assert marker is not None
+            assert marker.content_version == CONTENT.world_seed_version
             assert session.scalar(select(func.count()).select_from(WorldState)) == 1
             assert not create_world(session, CONTENT, NOW)
             session.commit()
@@ -258,6 +261,7 @@ def test_postgres_concurrent_world_creation_once(realm_session: Session) -> None
 
     if realm_session.get_bind().dialect.name != "postgresql":
         pytest.skip("requires PostgreSQL conflict locking")
+    realm_session.execute(delete(RealmState))
     realm_session.commit()
     factory = sessionmaker(bind=realm_session.get_bind())
     ready = threading.Event()
@@ -299,6 +303,7 @@ def test_postgres_concurrent_world_creation_once(realm_session: Session) -> None
         "missing_realm",
         "unknown_item",
         "unknown_form",
+        "mobile_form",
         "duplicate_item",
         "isolated_realm",
     ],
@@ -315,6 +320,8 @@ def test_world_seed_validation(tmp_path: Path, case: str) -> None:
         data["realms"][0]["stores"][0]["item_id"] = "missing"
     elif case == "unknown_form":
         data["realms"][0]["estates"] = ["missing"]
+    elif case == "mobile_form":
+        data["realms"][0]["estates"] = [CONTENT.progression.basic_mobile_form]
     elif case == "duplicate_item":
         data["realms"][0]["stores"].append(data["realms"][0]["stores"][0])
     else:
@@ -328,7 +335,7 @@ def test_world_seed_validation(tmp_path: Path, case: str) -> None:
 
 
 def test_world_seed_is_private_but_versioned(tmp_path: Path) -> None:
-    """Seed changes invalidate the overall version, without adding a served pack."""
+    """Seed treasury changes affect only the private hash, never the manifest."""
     directory = tmp_path / "content"
     shutil.copytree(CONTENT_DIR, directory)
     path = directory / "world_seed.json"
@@ -336,7 +343,8 @@ def test_world_seed_is_private_but_versioned(tmp_path: Path) -> None:
     data["realms"][0]["treasury"] += 1
     path.write_text(json.dumps(data))
     changed = load_content(directory)
-    assert changed.manifest.version != CONTENT.manifest.version
+    assert changed.manifest.as_dict() == CONTENT.manifest.as_dict()
+    assert changed.world_seed_version != CONTENT.world_seed_version
     assert changed.pack_payloads == CONTENT.pack_payloads
     assert "world_seed" not in changed.manifest.packs
 
@@ -363,6 +371,8 @@ def test_cap_validation_includes_transition_and_tag_delta(tmp_path: Path) -> Non
 
 def test_world_creation_rollback_allows_retry(realm_session: Session) -> None:
     """An interrupted seed cannot leave a singleton marker or partial holdings."""
+    realm_session.execute(delete(RealmState))
+    realm_session.commit()
     assert create_world(realm_session, CONTENT, NOW)
     realm_session.rollback()
     assert realm_session.get(WorldState, 1) is None
@@ -391,3 +401,76 @@ def test_pending_reserve_uses_full_recorded_transition(realm_session: Session) -
     }
     line = recompute_lines(realm_session, realm, CONTENT)[0]
     assert line.reserve == 8000
+
+
+@pytest.mark.parametrize("transition_days", [Fraction(0), Fraction(7)])
+def test_negative_effective_reserve_days_clamp_to_zero(
+    transition_days: Fraction,
+) -> None:
+    """Large negative tag deltas never create a negative reserve."""
+    node = CONTENT.development_nodes[0].model_copy(
+        update={
+            "upkeep": (
+                TagUpkeep(selector=Selector(item=CONTENT.items[0].id), per_day=1),
+            )
+        }
+    )
+    tag = CONTENT.tags[0].model_copy(
+        update={
+            "effects": CONTENT.tags[0].effects.model_copy(
+                update={"reserve_days_delta": -20.0}
+            )
+        }
+    )
+    line = derive_lines(node, (tag,), (), (), {}, CONTENT, transition_days)[0]
+    assert line.reserve == 0
+    assert line.draw_per_day == 1000
+    assert line.cap == CONTENT.economy.cap_days * 1000
+
+
+def test_validator_rejects_mixed_price_project_class(tmp_path: Path) -> None:
+    """Project cost selectors become ordinary overlay lines and need equal prices."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "projects.json"
+    data = json.loads(path.read_text())
+    data["projects"][0]["cost"][0]["selector"] = {"class": "fake_plant"}
+    path.write_text(json.dumps(data))
+    with pytest.raises(ContentError, match="mixed reference prices"):
+        load_content(directory)
+
+
+def test_world_creation_rejects_unmarked_existing_realms(
+    realm_session: Session,
+) -> None:
+    """Partial legacy state cannot receive a treasury or a committed seed marker."""
+    realm = realm_session.get(RealmState, "realm.verdant_vale")
+    assert realm is not None
+    realm.treasury = 77
+    realm_session.commit()
+    with pytest.raises(WorldStateError, match="run make db-reset"):
+        create_world(realm_session, CONTENT, NOW)
+    realm_session.commit()
+    realm_session.refresh(realm)
+    assert realm.treasury == 77
+    assert realm_session.get(WorldState, 1) is None
+    assert realm_session.scalar(select(func.count()).select_from(Estate)) == 0
+    assert realm_session.scalar(select(func.count()).select_from(RealmStore)) == 0
+
+
+def test_realm_lock_rejects_missing_seeded_realm(realm_session: Session) -> None:
+    """A committed world marker never permits silent use of a missing realm."""
+    from app.services.realms import finalize_realm
+
+    realm_session.add(
+        WorldState(
+            id=1,
+            seeded_at=NOW,
+            last_caravan_pass=NOW,
+            content_version=CONTENT.world_seed_version,
+        )
+    )
+    realm_session.commit()
+    with pytest.raises(WorldStateError, match="missing realm.*make db-reset"):
+        finalize_realm(realm_session, "realm.ashen_reach", NOW, CONTENT)
+    assert realm_session.get(RealmState, "realm.ashen_reach") is None

@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.middleware.base import RequestResponseEndpoint
 
 from app.api.actions import router as actions_router
@@ -33,8 +34,18 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     from app.db import SessionLocal
     from app.services.world import create_world
 
-    with SessionLocal.begin() as session:
-        create_world(session, application.state.content, datetime.now(UTC))
+    try:
+        with SessionLocal.begin() as session:
+            create_world(session, application.state.content, datetime.now(UTC))
+    except DBAPIError as error:
+        missing_table = getattr(error.orig, "sqlstate", None) == "42P01" or (
+            isinstance(error, OperationalError) and "no such table:" in str(error.orig)
+        )
+        if missing_table:
+            logging.getLogger(__name__).error(
+                "Database not migrated; run alembic upgrade head / make db-reset"
+            )
+        raise
     yield
 
 

@@ -74,6 +74,7 @@ class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
     world_seed: WorldSeedPack
+    world_seed_version: str
     tags: tuple[Tag, ...]
     economy: EconomyPack
     manifest: ContentManifest
@@ -464,10 +465,15 @@ def load_content(content_dir: Path) -> ContentIndex:
     upkeep_selectors = [
         line.selector for holder in upkeep_holders for line in holder.upkeep
     ]
-    for selector in upkeep_selectors:
+    demand_selectors = upkeep_selectors + [
+        line.selector for project in projects.values() for line in project.cost
+    ]
+    for selector in demand_selectors:
         prices = {i.reference_price for i in items.values() if selector.matches(i)}
         if selector.class_ is not None and len(prices) > 1:
-            raise ContentError(f"mixed reference prices in upkeep selector {selector}")
+            raise ContentError(
+                f"mixed reference prices in ordinary demand selector {selector}"
+            )
     for node in nodes.values():
         possible_tags = (
             set(node.inherent_tags)
@@ -499,10 +505,16 @@ def load_content(content_dir: Path) -> ContentIndex:
             raise ContentError("duplicate world_seed store item")
         if set(seed.estates) - set(forms_by_id):
             raise ContentError("unknown world_seed estate form")
+        if any(forms_by_id[form_id].mobility != "fixed" for form_id in seed.estates):
+            raise ContentError("world_seed estates must use fixed forms")
     canonical = {
         name: model.model_dump(mode="json", by_alias=True)
         for name, model in packs.items()
     }
+    # Publishing a hash of seed treasuries would permit offline guessing.
+    seed_version = hashlib.sha256(
+        _canonical_bytes(canonical.pop("world_seed"))
+    ).hexdigest()
     payloads = {name: _canonical_bytes(canonical[name]) for name in PUBLIC_PACKS}
     hashes = {
         name: hashlib.sha256(value).hexdigest() for name, value in payloads.items()
@@ -510,6 +522,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
         world_seed,
+        seed_version,
         tags_pack.tags,
         economy,
         ContentManifest(

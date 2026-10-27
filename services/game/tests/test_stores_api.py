@@ -85,3 +85,75 @@ async def test_boot_seeds_world_once(
                     )
     finally:
         engine.dispose()
+
+
+async def test_boot_missing_tables_logs_migration_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An unmigrated database fails boot with a concise operator instruction."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import OperationalError
+
+    from app import db
+    from app.main import app
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'unmigrated.db'}")
+    monkeypatch.setattr(db, "SessionLocal", sessionmaker(bind=engine))
+    try:
+        with pytest.raises(OperationalError, match="no such table"):
+            async with app.router.lifespan_context(app):
+                pytest.fail("boot must fail without migrations")
+        messages = [record.getMessage() for record in caplog.records]
+        assert (
+            messages.count(
+                "Database not migrated; run alembic upgrade head / make db-reset"
+            )
+            == 1
+        )
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("case", ["missing_state", "isolated_template"])
+async def test_character_creation_rejects_unavailable_realm(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    """Invalid starting realm state cannot create a character or estate."""
+    from dataclasses import replace
+    from types import MappingProxyType
+
+    from sqlalchemy import delete, func
+    from test_actions import _token
+
+    from app.main import app
+    from app.models import Character, RealmState
+
+    client, factory, _, _ = action_client
+    realm_id = "realm.ashen_reach"
+    if case == "missing_state":
+        with factory() as session:
+            session.execute(delete(RealmState).where(RealmState.id == realm_id))
+            session.commit()
+        expected_status, expected_code = 503, "WORLD_STATE_INCOMPLETE"
+    else:
+        content = app.state.content
+        realms = dict(content._realms_by_id)
+        realms[realm_id] = realms[realm_id].model_copy(update={"isolated": True})
+        monkeypatch.setattr(
+            app.state,
+            "content",
+            replace(content, _realms_by_id=MappingProxyType(realms)),
+        )
+        expected_status, expected_code = 422, "UNKNOWN_REALM"
+    response = await client.post(
+        "/characters",
+        headers={"Authorization": f"Bearer {_token()}"},
+        json={"name": "Unavailable Realm", "realm_id": realm_id},
+    )
+    assert response.status_code == expected_status
+    assert response.json()["error"]["code"] == expected_code
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(Character)) == 1
+        assert session.scalar(select(func.count()).select_from(Estate)) == 1
