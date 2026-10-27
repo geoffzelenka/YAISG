@@ -105,3 +105,14 @@ None.
 ## New error codes
 
 None. Existing server codes and messages are preserved. No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on 82262ec: SQLite make ci green (auth 15, game 575 / 18
+  skipped, client 60); PostgreSQL 16 game-ci 592 / 1 skipped; PG db-reset,
+  alembic check and boot green. Review: round 1 CHANGES_REQUESTED (treasury
+  leak via capped surrender payout), round 2 APPROVE.
+- Next client prompt touching MapPanel: `{node.decay_stage}· Gauge:` lacks a
+  space before the middot.
+- Vote cooldown is not in the realm projection; if a later prompt exposes
+  `vote_cooldown_until`, disable "Call vote" and show the reason.
