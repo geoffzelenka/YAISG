@@ -1,6 +1,41 @@
 {
   "upgrades": [
-    {"id": "upgrade.painted_sign", "name": "Painted XP Sign (Fake)", "cost": [{"item_id": "item.demo_crate", "qty": 5}], "modifiers": [{"type": "xp_pct", "value": 5}], "realm_tags": ["*"]},
-    {"id": "upgrade.alarm_clock", "name": "Obviously Fake Alarm Clock", "cost": [{"item_id": "item.prototype_widget", "qty": 3}], "cap_bonuses": [{"cap": "offline_hours", "value": 2}], "realm_tags": ["*"]}
+    {
+      "id": "upgrade.painted_sign",
+      "name": "Painted XP Sign (Fake)",
+      "cost": [
+        {
+          "item_id": "item.demo_crate",
+          "qty": 5
+        }
+      ],
+      "modifiers": [
+        {
+          "type": "xp_pct",
+          "value": 5
+        }
+      ],
+      "tags": [
+        "facility.fake_upgrade"
+      ],
+      "requires_realm_tags": []
+    },
+    {
+      "id": "upgrade.alarm_clock",
+      "name": "Obviously Fake Alarm Clock",
+      "cost": [
+        {
+          "item_id": "item.prototype_widget",
+          "qty": 3
+        }
+      ],
+      "cap_bonuses": [
+        {
+          "cap": "offline_hours",
+          "value": 2
+        }
+      ],
+      "requires_realm_tags": []
+    }
   ]
 }

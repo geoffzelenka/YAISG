@@ -245,7 +245,10 @@ async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
     gathering = {
         action["action_id"]: action for action in groups["gathering"]["actions"]
     }
-    assert "gathering.mock_ore" not in gathering
+    assert gathering["gathering.mock_ore"]["blocked_by"] == [
+        "INSUFFICIENT_LEVEL",
+        "MISSING_REALM_TAG",
+    ]
     assert gathering["gathering.fake_sprigs"]["startable"] is True
     assert gathering["gathering.test_crystal"]["blocked_by"] == ["INSUFFICIENT_LEVEL"]
     for skill_id in (
@@ -397,3 +400,113 @@ async def test_profile_and_available_report_same_effective_values(
         "proficiency_pct": 0,
         "taper_factor": 1,
     }
+
+
+async def test_tag_availability_start_and_estate_presence(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+) -> None:
+    """Both routes use owner-only facilities and reload the estate realm column."""
+    from app.content.schemas import Requirements
+    from app.models import Estate, EstateUpgrade
+
+    client, factory, _, headers = action_client
+    original = app.state.content
+    action = original.action("gathering.fake_sprigs")
+    changed = action.model_copy(
+        update={"requires": Requirements(facility="facility.fake_upgrade")}
+    )
+    app.state.content = original.with_overrides(actions=(changed,))
+    try:
+
+        async def blockers() -> list[str]:
+            response = await client.get("/actions/available", headers=headers)
+            assert response.status_code == 200
+            return response.json()["skills"][0]["actions"][0]["blocked_by"]  # type: ignore[no-any-return]
+
+        assert await blockers() == ["MISSING_FACILITY"]
+        failed = await client.post(
+            "/actions/start", headers=headers, json={"action_id": action.id}
+        )
+        assert failed.json()["error"]["code"] == "MISSING_FACILITY"
+        with factory() as session:
+            estate = session.scalar(select(Estate))
+            assert estate is not None
+            session.add(
+                EstateUpgrade(
+                    estate_id=estate.id,
+                    upgrade_id="upgrade.painted_sign",
+                    slot_index=0,
+                    purchased_at=datetime(2026, 1, 1, tzinfo=UTC),
+                )
+            )
+            session.commit()
+        assert await blockers() == []
+        with factory() as session:
+            estate = session.scalar(select(Estate))
+            assert estate is not None
+            estate.realm_id = "realm.ashen_reach"
+            session.commit()
+        assert await blockers() == ["MISSING_FACILITY"]
+        with factory() as session:
+            estate = session.scalar(select(Estate))
+            assert estate is not None
+            estate.realm_id = "realm.verdant_vale"
+            session.commit()
+        started = await client.post(
+            "/actions/start", headers=headers, json={"action_id": action.id}
+        )
+        assert started.status_code == 200
+    finally:
+        app.state.content = original
+
+
+async def test_requirement_lost_after_realm_node_change(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+) -> None:
+    """Persistent realm tag loss grants accrued rewards once and ends the action."""
+    from app.models import RealmState
+
+    client, factory, clock, headers = action_client
+    started = await client.post(
+        "/actions/start", headers=headers, json={"action_id": "gathering.fake_sprigs"}
+    )
+    assert started.status_code == 200
+    clock.advance(timedelta(seconds=3))
+    initial = await client.get("/characters/me/action", headers=headers)
+    assert initial.json()["since_last"]["cycles_completed"] == 1
+    with factory() as session:
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert realm is not None
+        realm.node_id = "node.verdant_t0_stub"
+        session.commit()
+    clock.advance(timedelta(seconds=3))
+    lost = await client.get("/characters/me/action", headers=headers)
+    assert lost.json()["since_last"]["cycles_completed"] == 1
+    assert lost.json()["stop_reason"] == "REQUIREMENT_LOST"
+    assert lost.json()["active"] is None
+    repeated = await client.get("/characters/me/action", headers=headers)
+    assert repeated.json()["since_last"]["cycles_completed"] == 0
+
+
+async def test_zero_cycle_requirement_loss_survives_availability_read(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+) -> None:
+    """An intervening read cannot swallow a zero-cycle requirement-loss reason."""
+    from app.models import RealmState
+
+    client, factory, _, headers = action_client
+    response = await client.post(
+        "/actions/start", headers=headers, json={"action_id": "gathering.fake_sprigs"}
+    )
+    assert response.status_code == 200
+    with factory() as session:
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert realm is not None
+        realm.node_id = "node.verdant_t0_stub"
+        session.commit()
+    await client.get("/actions/available", headers=headers)
+    feed = await client.get("/characters/me/action", headers=headers)
+    assert feed.json()["stop_reason"] == "REQUIREMENT_LOST"
+    assert feed.json()["since_last"]["cycles_completed"] == 0
+    repeat = await client.get("/characters/me/action", headers=headers)
+    assert repeat.json()["stop_reason"] is None

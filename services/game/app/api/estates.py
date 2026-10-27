@@ -14,8 +14,9 @@ from sqlalchemy import func, select
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
-from app.content.schemas import CapType, ItemQuantity, Modifier
+from app.content.schemas import CapType, DecayStage, ItemQuantity, Modifier
 from app.engine import resolve_caps
+from app.engine.tags import TagHolder, active_tags
 from app.errors import api_error
 from app.models import Character, Estate, EstateUpgrade, Inventory, RealmState
 from app.services.actions import load_character_state, resolve_character
@@ -105,13 +106,16 @@ def _realm_node_id(
 
 
 def _upgrade_inert_reason(
-    content: ContentIndex, node_id: str, upgrade_id: str
+    content: ContentIndex, node_id: str, upgrade_id: str, stage: str
 ) -> str | None:
     upgrade = content.upgrade(upgrade_id)
-    realm_tags = set(content.development_node(node_id).tags)
-    if "*" not in upgrade.realm_tags and not realm_tags.intersection(
-        upgrade.realm_tags
-    ):
+    node = content.development_node(node_id)
+    holder = TagHolder(
+        tuple(tag for tag in content.tags if tag.id in node.inherent_tags),
+        content.economy.decay.faltering_factor,
+    )
+    realm_tags = {tag.id for tag, _ in active_tags(holder, DecayStage(stage))}
+    if not set(upgrade.requires_realm_tags).issubset(realm_tags):
         return "realm requirements not met"
     return None
 
@@ -136,7 +140,10 @@ def _estate_response(
     summaries: list[InstalledUpgradeSummary] = []
     for record in installed:
         upgrade = content.upgrade(record.upgrade_id)
-        reason = _upgrade_inert_reason(content, node_id, upgrade.id)
+        realm = session.get(RealmState, estate.realm_id)
+        reason = _upgrade_inert_reason(
+            content, node_id, upgrade.id, realm.decay_stage if realm else "fed"
+        )
         summaries.append(
             InstalledUpgradeSummary(
                 slot_index=record.slot_index,

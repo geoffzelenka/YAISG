@@ -16,15 +16,19 @@ from app.content.loader import ContentIndex
 from app.content.schemas import (
     Action,
     CapType,
+    DecayStage,
     Drop,
     EstateForm,
+    EstateUpgrade,
     ItemQuantity,
     MapCost,
     Modifier,
     ModifierType,
+    Tag,
 )
 from app.engine.levels import level_for_xp, tier_for_level
 from app.engine.selectors import Shortfall, pay_selector
+from app.engine.tags import TagHolder, active_tags, tags_present
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,9 @@ class CharacterState:
     realm_node_id: str
     realm_id: str = ""
     estate_realm_id: str = ""
+    realm_stage: DecayStage = DecayStage.FED
+    estate_stage: DecayStage = DecayStage.FED
+    realm_stack_tags: tuple[str, ...] = ()
     gear_modifiers: tuple[Modifier, ...] = ()
     consumable_modifiers: tuple[Modifier, ...] = ()
     installed_upgrades: tuple[str, ...] = ()
@@ -69,6 +76,7 @@ class ActiveAction:
 class StopReason(StrEnum):
     """Reasons resolution automatically ends an action."""
 
+    REQUIREMENT_LOST = "REQUIREMENT_LOST"
     INPUTS_EXHAUSTED = "inputs_exhausted"
     OFFLINE_CAP = "offline_cap"
     INVENTORY_FULL = "inventory_full"
@@ -91,7 +99,11 @@ class ErrorCode(StrEnum):
     """Stable error codes returned by action-start validation."""
 
     INSUFFICIENT_LEVEL = "INSUFFICIENT_LEVEL"
-    WRONG_REALM = "WRONG_REALM"
+    NOT_OFFERED_HERE = "NOT_OFFERED_HERE"
+    MISSING_FACILITY = "MISSING_FACILITY"
+    MISSING_REALM_TAG = "MISSING_REALM_TAG"
+    MISSING_SKILL_LEVEL = "MISSING_SKILL_LEVEL"
+    MISSING_TOOL = "MISSING_TOOL"
     MISSING_INPUTS = "MISSING_INPUTS"
 
 
@@ -134,12 +146,70 @@ class CycleRewardStrategy(Protocol):
         """Return rewards for one completed cycle."""
 
 
+def realm_active_tags(
+    state: CharacterState, content: ContentIndex
+) -> tuple[tuple[Tag, float], ...]:
+    """Resolve inherent and supplied stack tags for the current realm."""
+    node = content.development_node(state.realm_node_id)
+    return _activate(
+        node.inherent_tags + state.realm_stack_tags,
+        state.realm_stage,
+        content,
+    )
+
+
+def _activate(
+    ids: Sequence[str], stage: DecayStage, content: ContentIndex
+) -> tuple[tuple[Tag, float], ...]:
+    definitions = {tag.id: tag for tag in content.tags}
+    return active_tags(
+        TagHolder(
+            tuple(definitions[i] for i in dict.fromkeys(ids)),
+            content.economy.decay.faltering_factor,
+        ),
+        stage,
+    )
+
+
 def _realm_tags(state: CharacterState, content: ContentIndex) -> set[str]:
-    return set(content.development_node(state.realm_node_id).tags)
+    return {tag.id for tag, _ in realm_active_tags(state, content)}
 
 
-def _tags_match(required: Sequence[str], actual: set[str]) -> bool:
-    return "*" in required or bool(set(required) & actual)
+def _estate_sources(
+    state: CharacterState, content: ContentIndex
+) -> tuple[EstateForm | EstateUpgrade, ...]:
+    if state.estate_realm_id != state.realm_id:
+        return ()
+    realm = _realm_tags(state, content)
+    form = content.estate_form(state.estate_form_id)
+    sources: list[EstateForm | EstateUpgrade] = []
+    if tags_present(form.requires_realm_tags, realm):
+        sources.append(form)
+    for identifier in state.installed_upgrades:
+        upgrade = content.upgrade(identifier)
+        if tags_present(upgrade.requires_realm_tags, realm):
+            sources.append(upgrade)
+    return tuple(sources)
+
+
+def estate_active_tags(
+    state: CharacterState, content: ContentIndex
+) -> tuple[tuple[Tag, float], ...]:
+    """Resolve only present, non-inert estate emissions."""
+    return _activate(
+        tuple(i for source in _estate_sources(state, content) for i in source.tags),
+        state.estate_stage,
+        content,
+    )
+
+
+def tag_modifiers(tags: tuple[tuple[Tag, float], ...]) -> tuple[Modifier, ...]:
+    """Scale tag modifiers without changing authored content."""
+    return tuple(
+        m.model_copy(update={"value": m.value * factor})
+        for tag, factor in tags
+        for m in tag.modifiers
+    )
 
 
 def tier_distance(action: Action, state: CharacterState, content: ContentIndex) -> int:
@@ -171,17 +241,13 @@ def modifier_groups(
 ) -> tuple[tuple[Modifier, ...], ...]:
     """Provide G, E, R and C, excluding absent estates and inert upgrades."""
     node = content.development_node(state.realm_node_id)
-    estate: list[Modifier] = []
-    if state.estate_realm_id == state.realm_id:
-        estate.extend(content.estate_form(state.estate_form_id).modifiers)
-        for upgrade_id in state.installed_upgrades:
-            upgrade = content.upgrade(upgrade_id)
-            if _tags_match(upgrade.realm_tags, set(node.tags)):
-                estate.extend(upgrade.modifiers)
+    estate = tuple(
+        m for source in _estate_sources(state, content) for m in source.modifiers
+    )
     return (
         state.gear_modifiers,
-        tuple(estate),
-        node.modifiers,
+        estate + tag_modifiers(estate_active_tags(state, content)),
+        node.modifiers + tag_modifiers(realm_active_tags(state, content)),
         state.consumable_modifiers,
     )
 
@@ -286,22 +352,21 @@ STANDARD_REWARDS = StandardCycleRewards()
 def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
     """Resolve global, estate-form, development-node, and upgrade caps."""
     bonuses: defaultdict[CapType, float] = defaultdict(float, state.cap_bonuses)
-    form = content.estate_form(state.estate_form_id)
-    for cap, value in (
-        form.base_caps.items() if state.realm_id == state.estate_realm_id else ()
-    ):
-        bonuses[cap] += value
+    for source in _estate_sources(state, content):
+        if isinstance(source, EstateForm):
+            for cap, value in source.base_caps.items():
+                bonuses[cap] += value
+        else:
+            for bonus in source.cap_bonuses:
+                bonuses[bonus.cap] += bonus.value
     node = content.development_node(state.realm_node_id)
     for bonus in node.cap_bonuses:
         bonuses[bonus.cap] += bonus.value
-    realm_tags = set(node.tags)
-    for upgrade_id in (
-        state.installed_upgrades if state.realm_id == state.estate_realm_id else ()
+    for tag, _ in realm_active_tags(state, content) + estate_active_tags(
+        state, content
     ):
-        upgrade = content.upgrade(upgrade_id)
-        if _tags_match(upgrade.realm_tags, realm_tags):
-            for bonus in upgrade.cap_bonuses:
-                bonuses[bonus.cap] += bonus.value
+        for cap, value in tag.cap_bonuses.items():
+            bonuses[cap] += value
     base = content.caps
     return Caps(
         offline_hours=base.offline_hours + bonuses[CapType.OFFLINE_HOURS],
@@ -401,20 +466,50 @@ def input_payment(
     return dict(payment)
 
 
+def unmet_requirements(
+    action: Action, state: CharacterState, content: ContentIndex
+) -> tuple[ErrorCode, ...]:
+    """Report every failed gate in a stable order for both report and start."""
+    blocked: list[ErrorCode] = []
+    if state.skill_levels.get(action.skill_id, 1) < action.unlock_level:
+        blocked.append(ErrorCode.INSUFFICIENT_LEVEL)
+    category = content.skill(action.skill_id).category
+    if (
+        category in {"gathering", "combat", "exploration"}
+        and action.id not in content.development_node(state.realm_node_id).actions
+    ):
+        blocked.append(ErrorCode.NOT_OFFERED_HERE)
+    realm = realm_active_tags(state, content)
+    facilities = {
+        tag.id
+        for tag, _ in realm + estate_active_tags(state, content)
+        if tag.kind == "facility"
+    }
+    if (
+        action.requires.facility is not None
+        and action.requires.facility not in facilities
+    ):
+        blocked.append(ErrorCode.MISSING_FACILITY)
+    if not tags_present(action.requires.realm_tags, {tag.id for tag, _ in realm}):
+        blocked.append(ErrorCode.MISSING_REALM_TAG)
+    if any(
+        state.skill_levels.get(skill, 1) < level
+        for skill, level in action.requires.skill_levels.items()
+    ):
+        blocked.append(ErrorCode.MISSING_SKILL_LEVEL)
+    if action.requires.tool_class is not None:
+        blocked.append(ErrorCode.MISSING_TOOL)
+    if input_payment(state.inventory, action, content) is None:
+        blocked.append(ErrorCode.MISSING_INPUTS)
+    return tuple(blocked)
+
+
 def can_start(
     action_id: str, state: CharacterState, content: ContentIndex
 ) -> Ok | ErrorCode:
-    """Validate level, realm availability, and one cycle of inputs."""
-    action = content.action(action_id)
-    if state.skill_levels.get(action.skill_id, 1) < action.unlock_level:
-        return ErrorCode.INSUFFICIENT_LEVEL
-    if action.requires.realm_tags and not _tags_match(
-        action.requires.realm_tags, _realm_tags(state, content)
-    ):
-        return ErrorCode.WRONG_REALM
-    if input_payment(state.inventory, action, content) is None:
-        return ErrorCode.MISSING_INPUTS
-    return OK
+    """Use the same requirements as the availability report."""
+    blocked = unmet_requirements(content.action(action_id), state, content)
+    return blocked[0] if blocked else OK
 
 
 def _milliseconds(delta: timedelta) -> int:
@@ -431,11 +526,20 @@ def resolve(
     reward_strategy: CycleRewardStrategy = STANDARD_REWARDS,
 ) -> tuple[CharacterState, ActiveAction | None, ResolveResult]:
     """Resolve every eligible full cycle, preserving any partial remainder."""
+    action = content.action(active.action_id)
+    requirement_lost = any(
+        code != ErrorCode.MISSING_INPUTS
+        for code in unmet_requirements(action, state, content)
+    )
     if now < active.last_resolved_at:
         # A server clock can move backwards slightly during correction. Treat
         # that interval as no elapsed time rather than failing a routine read.
-        return state, active, ResolveResult(0, {}, {}, {}, {}, {}, None)
-    action = content.action(active.action_id)
+        reason = StopReason.REQUIREMENT_LOST if requirement_lost else None
+        return (
+            state,
+            None if requirement_lost else active,
+            ResolveResult(0, {}, {}, {}, {}, {}, reason),
+        )
     caps = resolve_caps(state, content)
     cap_ms = int(caps.offline_hours * 3_600_000)
     elapsed_ms = _milliseconds(now - active.last_resolved_at)
@@ -520,6 +624,8 @@ def resolve(
 
     if stop_reason is None and cycles > 0 and elapsed_ms > cap_ms:
         stop_reason = StopReason.OFFLINE_CAP
+    if requirement_lost:
+        stop_reason = StopReason.REQUIREMENT_LOST
     new_state = replace(state, skills_xp=xp, skill_levels=levels, inventory=inventory)
     xp_delta = xp.get(action.skill_id, 0) - state.skills_xp.get(action.skill_id, 0)
     result = ResolveResult(

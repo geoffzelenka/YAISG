@@ -46,7 +46,8 @@ const contentBodies: Record<string, unknown> = {
         id: 'node.two',
         archetype: 'trade',
         name: 'New Harbor',
-        tags: [],
+        inherent_tags: [],
+        actions: [],
         modifiers: [],
         cap_bonuses: [],
         projects: [],
@@ -55,6 +56,8 @@ const contentBodies: Record<string, unknown> = {
     edges: [],
   },
   projects: { projects: [] },
+  tags: { tags: [] },
+  economy: { decay: { faltering_factor: 0.5 } },
   progression: {
     lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,

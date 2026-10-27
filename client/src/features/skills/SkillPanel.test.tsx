@@ -48,7 +48,7 @@ describe('skill panel', () => {
                         chance: 0.5,
                       },
                     ],
-                    requires: { realm_tags: ['*'] },
+                    requires: { realm_tags: [] },
                   },
                   {
                     id: 'a.locked',
@@ -59,7 +59,7 @@ describe('skill panel', () => {
                     inputs: [],
                     xp: 1,
                     outputs: [],
-                    requires: { realm_tags: ['*'] },
+                    requires: { realm_tags: [] },
                   },
                 ],
               },
@@ -98,6 +98,8 @@ describe('skill panel', () => {
             relocation_classes: {},
           },
           '/content/development': { nodes: [], edges: [] },
+          '/content/tags': { tags: [] },
+          '/content/economy': { decay: { faltering_factor: 0.5 } },
           '/content/projects': { projects: [] },
           '/content/progression': {
             lint: { g: 1.015969, tolerance_pct: 15 },

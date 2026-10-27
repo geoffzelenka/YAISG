@@ -243,7 +243,7 @@ def _realm_response(
         node=NodeIdentity(
             id=node.id,
             name=node.name,
-            tags=node.tags,
+            tags=node.inherent_tags,
             modifiers=node.modifiers,
             cap_bonuses=node.cap_bonuses,
         ),

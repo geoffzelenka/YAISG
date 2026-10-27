@@ -9,14 +9,22 @@ nodes: this relaxation is conservative. See docs/v08/content-lint.md.
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from fractions import Fraction
-from itertools import combinations
+from itertools import combinations, product
 from pathlib import Path
+from types import MappingProxyType
 
 from app.config import CONTENT_DIR
 from app.content.loader import ContentIndex, load_content
-from app.content.schemas import Action, CapType, Modifier, ModifierType, Skill
+from app.content.schemas import Action, DecayStage, Modifier, ModifierType, Skill
+from app.engine.core import (
+    CharacterState,
+    modifier_groups,
+    realm_active_tags,
+    resolve_caps,
+)
+from app.engine.tags import tags_present
 
 
 @dataclass(frozen=True)
@@ -89,41 +97,43 @@ def _group_bound(
 
 def stack_bound(skill: Skill, content: ContentIndex) -> float:
     """Bound uncapped external XP × speed, using distinct upgrades within slots."""
+    content = replace(
+        content,
+        _nodes_by_id=MappingProxyType({n.id: n for n in content.development_nodes}),
+        _forms_by_id=MappingProxyType({f.id: f for f in content.estate_forms}),
+        _upgrades_by_id=MappingProxyType({u.id: u for u in content.upgrades}),
+    )
     realm_best = 1.0
-    estate_best = 1.0  # Visiting without an estate is a legal alternative.
-    slot_cap = CapType.ESTATE_UPGRADE_SLOTS
-    for node in content.development_nodes:
-        realm_best = max(realm_best, _group_bound(node.modifiers, skill, content))
-        upgrades = tuple(
-            u
-            for u in content.upgrades
-            if not u.realm_tags
-            or "*" in u.realm_tags
-            or set(u.realm_tags).intersection(node.tags)
+    estate_best = 1.0
+    stages = (DecayStage.FED, DecayStage.FALTERING)
+    candidates = product(
+        content.development_nodes, content.estate_forms, stages, stages
+    )
+    for node, form, realm_stage, estate_stage in candidates:
+        state = CharacterState(
+            {},
+            {},
+            {},
+            0,
+            form.id,
+            node.id,
+            realm_stage=realm_stage,
+            estate_stage=estate_stage,
         )
-        node_slots = sum(b.value for b in node.cap_bonuses if b.cap == slot_cap)
-        for form in content.estate_forms:
-            base_slots = (
-                content.caps.estate_upgrade_slots
-                + form.base_caps.get(slot_cap, 0)
-                + node_slots
-            )
-            for count in range(len(upgrades) + 1):
-                for chosen in combinations(upgrades, count):
-                    slots = base_slots + sum(
-                        b.value
-                        for u in chosen
-                        for b in u.cap_bonuses
-                        if b.cap == slot_cap
-                    )
-                    if count > int(slots):
-                        continue
-                    modifiers = form.modifiers + tuple(
-                        m for u in chosen for m in u.modifiers
-                    )
-                    estate_best = max(
-                        estate_best, _group_bound(modifiers, skill, content)
-                    )
+        realm = {tag.id for tag, _ in realm_active_tags(state, content)}
+        upgrades = tuple(
+            u for u in content.upgrades if tags_present(u.requires_realm_tags, realm)
+        )
+        for count in range(len(upgrades) + 1):
+            for chosen in combinations(upgrades, count):
+                candidate = replace(
+                    state, installed_upgrades=tuple(u.id for u in chosen)
+                )
+                if count > resolve_caps(candidate, content).estate_upgrade_slots:
+                    continue
+                groups = modifier_groups(candidate, content)
+                realm_best = max(realm_best, _group_bound(groups[2], skill, content))
+                estate_best = max(estate_best, _group_bound(groups[1], skill, content))
     return realm_best * estate_best
 
 

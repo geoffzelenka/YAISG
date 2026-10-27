@@ -181,7 +181,7 @@ async def test_estate_payload_and_inert_annotation(
     content = app.state.content
     painted = content.upgrade("upgrade.painted_sign")
     app.state.content = content.with_overrides(
-        upgrades=(painted.model_copy(update={"realm_tags": ("ashen",)}),)
+        upgrades=(painted.model_copy(update={"requires_realm_tags": ("ashen",)}),)
     )
     with factory() as session:
         estate_id = session.scalar(select(Estate.id))

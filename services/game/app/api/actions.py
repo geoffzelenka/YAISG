@@ -24,8 +24,8 @@ from app.engine import (
     ResolveResult,
     can_start,
     effective_cycle_time,
-    input_payment,
 )
+from app.engine.core import unmet_requirements
 from app.errors import api_error
 from app.models import ActiveActionRecord, Character
 from app.services.actions import (
@@ -36,7 +36,7 @@ from app.services.actions import (
     resolve_character,
 )
 
-router = APIRouter(prefix="/characters/me", tags=["actions"])
+router = APIRouter(tags=["actions"])
 
 
 class StartActionRequest(BaseModel):
@@ -89,7 +89,7 @@ class AvailableSkillGroup(BaseModel):
 
 
 class AvailableActionsResponse(BaseModel):
-    """All realm-visible actions grouped by skill."""
+    """Every character skill action grouped with unmet requirements."""
 
     skills: list[AvailableSkillGroup]
 
@@ -105,10 +105,6 @@ def _character(session: Session, player_id: uuid.UUID) -> Character:
     if character is None:
         raise api_error(404, "NO_CHARACTER", "Create a character to continue")
     return character
-
-
-def _realm_matches(required: tuple[str, ...], realm_tags: set[str]) -> bool:
-    return "*" in required or bool(set(required) & realm_tags)
 
 
 def _rewards(result: ResolveResult) -> RewardsResponse:
@@ -139,32 +135,25 @@ def _active_summary(
 
 
 @router.get("/actions/available", response_model=AvailableActionsResponse)
+@router.get("/characters/me/actions/available", response_model=AvailableActionsResponse)
 async def available_actions(
     request: Request,
     now: ServerNow,
     player: CurrentPlayer,
     session: DatabaseSession,
 ) -> AvailableActionsResponse:
-    """Return every action permitted by the realm with start blockers."""
+    """Return every character skill action with all current start blockers."""
     character = _character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
-    session.commit()
     state = load_character_state(session, character.id)
-    realm_tags = set(content.development_node(state.realm_node_id).tags)
     groups: list[AvailableSkillGroup] = []
     for skill in content.skills:
         actions: list[AvailableAction] = []
         for action in skill.actions:
-            if action.requires.realm_tags and not _realm_matches(
-                action.requires.realm_tags, realm_tags
-            ):
-                continue
-            blocked: list[str] = []
-            if state.skill_levels.get(action.skill_id, 1) < action.unlock_level:
-                blocked.append(ErrorCode.INSUFFICIENT_LEVEL.value)
-            if input_payment(state.inventory, action, content) is None:
-                blocked.append(ErrorCode.MISSING_INPUTS.value)
+            blocked = [
+                code.value for code in unmet_requirements(action, state, content)
+            ]
             actions.append(
                 AvailableAction(
                     action_id=action.id,
@@ -178,10 +167,12 @@ async def available_actions(
         groups.append(
             AvailableSkillGroup(skill_id=skill.id, name=skill.name, actions=actions)
         )
+    session.commit()
     return AvailableActionsResponse(skills=groups)
 
 
-@router.post("/action", response_model=StartedActionResponse)
+@router.post("/actions/start", response_model=StartedActionResponse)
+@router.post("/characters/me/action", response_model=StartedActionResponse)
 async def start_action(
     body: StartActionRequest,
     request: Request,
@@ -225,7 +216,7 @@ async def start_action(
     )
 
 
-@router.get("/action", response_model=ActionFeedResponse)
+@router.get("/characters/me/action", response_model=ActionFeedResponse)
 async def get_action(
     request: Request,
     now: ServerNow,
@@ -254,7 +245,7 @@ async def get_action(
     )
 
 
-@router.delete("/action", response_model=ActionFeedResponse)
+@router.delete("/characters/me/action", response_model=ActionFeedResponse)
 async def stop_action(
     request: Request,
     now: ServerNow,

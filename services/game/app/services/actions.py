@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.content import ContentIndex
 from app.content.runtime import CONTENT
-from app.engine import ActiveAction, CharacterState, ResolveResult, resolve
+from app.content.schemas import DecayStage
+from app.engine import ActiveAction, CharacterState, ResolveResult, StopReason, resolve
 from app.models import (
     ActiveActionRecord,
     Character,
@@ -104,6 +105,10 @@ def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
             if realm_state
             else CONTENT.realm(character.realm_id).starting_node_id
         ),
+        realm_stage=DecayStage(realm_state.decay_stage)
+        if realm_state
+        else DecayStage.FED,
+        estate_stage=DecayStage(estate.decay_stage),
         installed_upgrades=tuple(upgrades),
         cap_bonuses={},
     )
@@ -186,7 +191,7 @@ def resolve_character(
     else:
         record.last_resolved_at = new_active.last_resolved_at
         remaining = record
-    if result.cycles_completed > 0:
+    if result.cycles_completed > 0 or result.stop_reason == StopReason.REQUIREMENT_LOST:
         session.add(
             RewardLog(
                 character_id=character_id,

@@ -362,10 +362,10 @@ def test_source_groups_multiply_and_inert_upgrade_is_excluded(
                 type=ModifierType.EXTRA_DROP_CHANCE_PCT, value=20, skill_id="gathering"
             ),
         ),
-        realm_tags=("verdant",),
+        requires_realm_tags=("verdant",),
     )
     inert_upgrade = active_upgrade.model_copy(
-        update={"id": "upgrade.inert", "realm_tags": ("ashen",)}
+        update={"id": "upgrade.inert", "requires_realm_tags": ("ashen",)}
     )
     custom = content.with_overrides(upgrades=(active_upgrade, inert_upgrade))
     state = make_state(
@@ -388,10 +388,10 @@ def test_caps_include_active_upgrades_and_ignore_inert_ones(
         name="Test Slots",
         cost=(),
         cap_bonuses=(CapBonus(cap=CapType.INVENTORY_SLOTS, value=3),),
-        realm_tags=("verdant",),
+        requires_realm_tags=("verdant",),
     )
     inert = active.model_copy(
-        update={"id": "upgrade.inert_slots", "realm_tags": ("ashen",)}
+        update={"id": "upgrade.inert_slots", "requires_realm_tags": ("ashen",)}
     )
     custom = content.with_overrides(upgrades=(active, inert))
     caps = resolve_caps(make_state(upgrades=(active.id, inert.id)), custom)
@@ -487,7 +487,7 @@ def test_recipe_input_conservation(content: ContentIndex, cycles: int) -> None:
     ("state", "action_id", "expected"),
     [
         (make_state(level=1), "gathering.mock_ore", ErrorCode.INSUFFICIENT_LEVEL),
-        (make_state(level=10), "gathering.mock_ore", ErrorCode.WRONG_REALM),
+        (make_state(level=10), "gathering.mock_ore", ErrorCode.MISSING_REALM_TAG),
         (make_state(), "refining.fake_plank", ErrorCode.MISSING_INPUTS),
         (
             make_state(inventory={"item.fake_sprig": 2}),

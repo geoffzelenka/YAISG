@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 from itertools import accumulate
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -197,7 +197,7 @@ class Modifier(ContentModel):
     """A numeric adjustment to a supported engine mechanic."""
 
     type: ModifierType
-    value: float
+    value: float = Field(allow_inf_nan=False)
     skill_id: str | None = None
     category: SkillCategory | None = None
 
@@ -293,6 +293,8 @@ class EstateForm(ContentModel):
 
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
+    tags: tuple[str, ...] = ()
+    requires_realm_tags: tuple[str, ...] = ()
     specialty_tags: tuple[str, ...] = ()
     relocation_class: str = Field(min_length=1)
     base_caps: dict[CapType, float] = {}
@@ -330,7 +332,8 @@ class DevelopmentNode(ContentModel):
     id: str = Field(min_length=1)
     archetype: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    tags: tuple[str, ...] = ()
+    inherent_tags: tuple[str, ...] = ()
+    actions: tuple[str, ...] = ()
     modifiers: tuple[Modifier, ...] = ()
     cap_bonuses: tuple[CapBonus, ...] = ()
     upkeep_profile: tuple[ProfileItem, ...] = ()
@@ -396,12 +399,13 @@ class EstateUpgrade(ContentModel):
     cost: tuple[ItemQuantity, ...]
     modifiers: tuple[Modifier, ...] = ()
     cap_bonuses: tuple[CapBonus, ...] = ()
-    realm_tags: tuple[str, ...] = ()
+    requires_realm_tags: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_effect(self) -> "EstateUpgrade":
         """Require every upgrade to have at least one mechanical effect."""
-        if not self.modifiers and not self.cap_bonuses:
+        if not self.modifiers and not self.cap_bonuses and not self.tags:
             raise ValueError("estate upgrade needs modifiers and/or cap_bonuses")
         return self
 
@@ -494,3 +498,66 @@ class ProgressionPack(ContentModel):
         if len(t) != len(self.tier_titles) or not all(self.tier_titles):
             raise ValueError("each tier requires a title")
         return self
+
+
+class DecayStage(StrEnum):
+    """Shared realm and estate health stages."""
+
+    FED = "fed"
+    STRAINED = "strained"
+    FALTERING = "faltering"
+    FAILING = "failing"
+    REGRESSED = "regressed"
+
+
+class TagUpkeep(ContentModel):
+    """Daily selector demand added to the holder."""
+
+    selector: Selector
+    per_day: float = Field(gt=0, allow_inf_nan=False)
+
+
+class MintEffect(ContentModel):
+    """Reference value consumed by a mint per day."""
+
+    value_per_day: float = Field(gt=0, allow_inf_nan=False)
+
+
+class TagEffects(ContentModel):
+    """Validated effects consumed by later economy and market phases."""
+
+    market_access: bool = False
+    caravan_access: bool = False
+    mint: MintEffect | None = None
+    edge_loss_reduction_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    reserve_days_delta: float = Field(default=0, allow_inf_nan=False)
+
+
+class Tag(ContentModel):
+    """Facility, numeric bonus, malus or access emitted by a holder."""
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    kind: Literal["facility", "bonus", "malus", "access"]
+    modifiers: tuple[Modifier, ...] = ()
+    cap_bonuses: dict[CapType, Annotated[float, Field(gt=0, allow_inf_nan=False)]] = {}
+    upkeep: tuple[TagUpkeep, ...] = ()
+    effects: TagEffects = TagEffects()
+
+
+class TagsPack(ContentModel):
+    """Definitions of all emitted tags."""
+
+    tags: tuple[Tag, ...]
+
+
+class DecayConfig(ContentModel):
+    """Stage settings; later phases add gauges and thresholds."""
+
+    faltering_factor: float = Field(ge=0, le=1)
+
+
+class EconomyPack(ContentModel):
+    """Shared economy settings."""
+
+    decay: DecayConfig

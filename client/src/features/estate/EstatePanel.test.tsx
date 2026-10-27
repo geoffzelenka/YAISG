@@ -20,7 +20,8 @@ const packs: Record<string, unknown> = {
         cost: [{ item_id: 'item.wood', qty: 3 }],
         modifiers: [],
         cap_bonuses: [],
-        realm_tags: ['*'],
+        requires_realm_tags: [],
+        tags: [],
       },
       {
         id: 'upgrade.two',
@@ -28,7 +29,8 @@ const packs: Record<string, unknown> = {
         cost: [{ item_id: 'item.wood', qty: 20 }],
         modifiers: [],
         cap_bonuses: [],
-        realm_tags: ['*'],
+        requires_realm_tags: [],
+        tags: [],
       },
     ],
   },
@@ -44,6 +46,8 @@ const packs: Record<string, unknown> = {
   estate_forms: { forms: [], transformations: [], relocation_classes: {} },
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
+  tags: { tags: [] },
+  economy: { decay: { faltering_factor: 0.5 } },
   progression: {
     lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,

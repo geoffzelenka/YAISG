@@ -333,7 +333,7 @@ def _profile(
         realm=RealmSummary(
             id=realm.id,
             name=realm.name,
-            tags=node.tags,
+            tags=node.inherent_tags,
             active_modifiers=tuple(active_modifiers),
         ),
         estate=EstateSummary(

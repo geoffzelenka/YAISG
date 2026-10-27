@@ -16,6 +16,7 @@ from app.content.schemas import (
     DevelopmentEdge,
     DevelopmentNode,
     DevelopmentPack,
+    EconomyPack,
     EstateForm,
     EstateFormsPack,
     EstateUpgrade,
@@ -30,6 +31,8 @@ from app.content.schemas import (
     RealmsPack,
     Skill,
     SkillsPack,
+    Tag,
+    TagsPack,
     UpgradesPack,
     XpCurve,
 )
@@ -45,6 +48,8 @@ PUBLIC_PACKS = (
     "development",
     "projects",
     "progression",
+    "tags",
+    "economy",
 )
 _KNOWN_PACKS = {*PUBLIC_PACKS, "xp_curve"}
 
@@ -69,6 +74,8 @@ class ContentManifest:
 class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
+    tags: tuple[Tag, ...]
+    economy: EconomyPack
     manifest: ContentManifest
     skills: tuple[Skill, ...]
     items: tuple[Item, ...]
@@ -236,12 +243,13 @@ def _validate(
     projects: dict[str, Project],
     xp_curve: XpCurve,
     progression: ProgressionPack,
+    tag_definitions: tuple[Tag, ...],
 ) -> None:
     # Keep this local to avoid the loader/engine package import cycle.
     from app.engine.levels import tier_for_level
 
     item_ids = set(items)
-    tags = {tag for node in nodes.values() for tag in node.tags}
+    tags = {tag.id for tag in tag_definitions}
     for action in actions.values():
         if action.skill_id not in skills:
             raise ContentError(
@@ -264,10 +272,16 @@ def _validate(
         ):
             raise ContentError(f"output tier differs in action {action.id}")
         required = action.requires
-        if set(required.realm_tags) - tags - {"*"} or (
+        if set(required.realm_tags) - tags or (
             required.facility is not None and required.facility not in tags
         ):
             raise ContentError(f"unknown requirement tag in action {action.id}")
+        if (
+            required.facility is not None
+            and next(t for t in tag_definitions if t.id == required.facility).kind
+            != "facility"
+        ):
+            raise ContentError(f"non-facility requirement in action {action.id}")
         if set(required.skill_levels) - set(skills):
             raise ContentError(f"unknown required skill in action {action.id}")
         if required.tool_class is not None and not any(
@@ -343,7 +357,7 @@ def _validate(
         _require_items(
             (v.item_id for v in upgrade.cost), item_ids, f"upgrade {upgrade.id}"
         )
-        if set(upgrade.realm_tags) - tags - {"*"}:
+        if set(upgrade.requires_realm_tags) - tags:
             raise ContentError(f"unknown realm tags in upgrade {upgrade.id}")
 
 
@@ -362,8 +376,12 @@ def load_content(content_dir: Path) -> ContentIndex:
     development = _load_model(content_dir, "development", DevelopmentPack)
     projects_pack = _load_model(content_dir, "projects", ProjectsPack)
     xp_curve = _load_model(content_dir, "xp_curve", XpCurve)
+    tags_pack = _load_model(content_dir, "tags", TagsPack)
+    economy = _load_model(content_dir, "economy", EconomyPack)
     progression = _load_model(content_dir, "progression", ProgressionPack)
     packs: dict[str, BaseModel] = {
+        "tags": tags_pack,
+        "economy": economy,
         "skills": skills_pack,
         "items": items_pack,
         "realms": realms_pack,
@@ -384,6 +402,29 @@ def load_content(content_dir: Path) -> ContentIndex:
     nodes = _unique(development.nodes, "development node")
     edges = _unique(development.edges, "development edge")
     projects = _unique(projects_pack.projects, "project")
+    tag_ids = set(_unique(tags_pack.tags, "tag"))
+    holders: tuple[DevelopmentNode | EstateForm | EstateUpgrade, ...] = (
+        *nodes.values(),
+        *forms_pack.forms,
+        *upgrades.values(),
+    )
+    for holder in holders:
+        emitted = (
+            holder.inherent_tags if isinstance(holder, DevelopmentNode) else holder.tags
+        )
+        required = getattr(holder, "requires_realm_tags", ())
+        if (set(emitted) | set(required)) - tag_ids:
+            raise ContentError(f"unknown tag in {holder.id}")
+    for node in nodes.values():
+        if set(node.actions) - set(actions):
+            raise ContentError(f"unknown action in node {node.id}")
+    for tag in tags_pack.tags:
+        for entry in tag.upkeep:
+            if not any(entry.selector.matches(item) for item in items.values()):
+                raise ContentError(f"empty upkeep selector in tag {tag.id}")
+        for modifier in tag.modifiers:
+            if modifier.skill_id is not None and modifier.skill_id not in skills:
+                raise ContentError(f"unknown skill in tag {tag.id}")
     _validate(
         skills,
         actions,
@@ -397,6 +438,7 @@ def load_content(content_dir: Path) -> ContentIndex:
         projects,
         xp_curve,
         progression,
+        tags_pack.tags,
     )
     canonical = {
         name: model.model_dump(mode="json", by_alias=True)
@@ -408,6 +450,8 @@ def load_content(content_dir: Path) -> ContentIndex:
     }
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
+        tags_pack.tags,
+        economy,
         ContentManifest(
             hashlib.sha256(_canonical_bytes(canonical)).hexdigest(),
             MappingProxyType(hashes),
