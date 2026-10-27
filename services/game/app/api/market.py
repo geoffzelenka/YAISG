@@ -142,7 +142,9 @@ async def book(
             .order_by(price.desc() if side == "buy" else price.asc())
             .limit(depth)
         )
-        levels[side] = [{"unit_price": p, "quantity": q} for p, q in rows]
+        # PostgreSQL SUM(bigint) returns Decimal; normalize at the API boundary
+        # just as the economy report does, preserving integer JSON on both DBs.
+        levels[side] = [{"unit_price": int(p), "quantity": int(q)} for p, q in rows]
     return {"item_id": item_id, **levels}
 
 

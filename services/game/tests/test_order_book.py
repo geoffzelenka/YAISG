@@ -248,6 +248,7 @@ async def test_api_access_cancel_visibility_validation_and_ownership(
     ] == order_id
     book = await client.get(f"/market/book/{ITEM}?depth=1", headers=headers)
     assert book.json()["buy"] == [{"unit_price": 3, "quantity": 2}]
+    assert all(type(value) is int for value in book.json()["buy"][0].values())
     denied = await client.post(f"/market/orders/{order_id}/collect", headers=headers)
     assert denied.json()["error"]["code"] == "NO_MARKET_ACCESS"
     cancelled = await client.post(f"/market/orders/{order_id}/cancel", headers=headers)
@@ -290,6 +291,8 @@ async def test_api_access_cancel_visibility_validation_and_ownership(
     assert poor.json()["error"]["code"] == "INSUFFICIENT_GOLD"
     book = await client.get(f"/market/book/{ITEM}", headers=headers)
     assert book.json()["buy"] == []
+    assert book.json()["sell"] == [{"unit_price": 9, "quantity": 1}]
+    assert all(type(value) is int for value in book.json()["sell"][0].values())
     app.state.content = market_content().with_overrides(
         items=[CONTENT.item(ITEM).model_copy(update={"instanced": True})]
     )

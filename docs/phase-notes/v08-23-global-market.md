@@ -39,7 +39,13 @@
   The actual two-thread/two-session taker race and all integration fixtures honor
   TEST_DATABASE_URL, exercising the same behavior on both database dialects.
 
-- SQLite PATH=$PWD/.venv/bin:$PATH make ci passes: auth 15, game 591
+- Pre-review fix 1: normalize book price/quantity values with int(), matching
+  /admin/economy, because PostgreSQL SUM(bigint) returns Decimal. Extended
+  test_api_access_cancel_visibility_validation_and_ownership to assert actual
+  JSON integer types on both buy and sell levels. Audited all new aggregates:
+  economy sums already normalize with int(); order slot COUNT returns an integer.
+- SQLite PATH=$PWD/.venv/bin:$PATH make ci rerun after pre-review fix 1 passes:
+  auth 15, game 591
   with 18 database-specific skips, client 76. Ruff formatting/lint, strict mypy,
   TypeScript, ESLint, Vitest, production build, scripts and content lint pass.
   Migration schema parity, downgrade/rebuild and disposable database reset tests
