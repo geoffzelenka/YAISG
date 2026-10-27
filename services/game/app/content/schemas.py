@@ -184,6 +184,7 @@ class Item(ContentModel):
     classes: tuple[str, ...]
     reference_price: int = Field(gt=0)
     warehouse_cap: int | None = Field(default=None, gt=0)
+    instanced: bool = False
     bullion: bool = False
     spoilage_pct_per_day: float = Field(default=0, ge=0, le=100)
     stack_limit: int = Field(default=2_147_483_647, gt=0)
@@ -640,6 +641,9 @@ class EstateConfig(ContentModel):
 class MarketConfig(ContentModel):
     """Scarcity curve, margin and public treasury health boundaries."""
 
+    tax_pct: float = Field(default=5, ge=0, le=100, allow_inf_nan=False)
+    tax_burn_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    order_days: int = Field(default=14, ge=1)
     f: float = Field(default=0.33, gt=0, allow_inf_nan=False)
     c: float = Field(default=2.1, gt=0, allow_inf_nan=False)
     k: int = Field(default=3, ge=1)

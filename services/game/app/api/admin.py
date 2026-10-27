@@ -6,7 +6,7 @@ from sqlalchemy import func, literal, select, union_all
 from app import config
 from app.auth import DatabaseSession, Identity
 from app.errors import api_error
-from app.models import Currency, GoldLedger, RealmState
+from app.models import Currency, GoldLedger, MarketOrder, RealmState
 
 router = APIRouter()
 
@@ -25,6 +25,14 @@ async def economy(
             select(GoldLedger.cause, func.sum(GoldLedger.amount)).group_by(
                 GoldLedger.cause
             ),
+            select(
+                literal("order_escrow"),
+                func.coalesce(func.sum(MarketOrder.escrow_gold_remaining), 0),
+            ),
+            select(
+                literal("order_slots"),
+                func.coalesce(func.sum(MarketOrder.fill_gold), 0),
+            ),
             select(literal("wallets"), func.coalesce(func.sum(Currency.gold), 0)),
             select(
                 literal("treasuries"), func.coalesce(func.sum(RealmState.treasury), 0)
@@ -33,6 +41,9 @@ async def economy(
     ).all()
     totals = {str(cause): int(amount) for cause, amount in rows}
     return {
-        "holders": {key: totals.pop(key) for key in ("wallets", "treasuries")},
+        "holders": {
+            key: totals.pop(key)
+            for key in ("wallets", "treasuries", "order_escrow", "order_slots")
+        },
         "ledger": totals,
     }

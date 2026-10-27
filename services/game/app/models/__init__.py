@@ -17,6 +17,7 @@ from app.models.character import (
     RewardLog,
 )
 from app.models.gold import GoldLedger
+from app.models.market import MarketMatch, MarketOrder
 from app.models.player import Player
 from app.models.shipments import RealmShipment
 from app.models.votes import RealmVote, RealmVoteEligibility
@@ -49,3 +50,6 @@ __all__ += ["RealmVote", "RealmVoteEligibility"]
 
 
 __all__ += ["RealmShipment"]
+
+
+__all__ += ["MarketMatch", "MarketOrder"]
