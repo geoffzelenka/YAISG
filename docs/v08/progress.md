@@ -26,7 +26,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 16 | `16-realm-pricing` | Realm market pricing and visibility | done | v08/16-realm-pricing | b7b163f | Scarcity curve and integral pricing with margin, budget allocation and bisection, hysteretic band, typed market/quote endpoints hiding treasury |
 | 17 | `17-realm-trade` | Realm trade and treasury gift | done | v08/17-realm-trade | a90289a | Presence-gated realm sell/buy at integral prices with PRICE_MOVED rollback, exact milli transfers, budget+treasury debit, treasury gift |
 | 18 | `18-mint-gold` | Mint and the gold ledger | done | v08/18-mint-gold | 6cbb7c6 | Mint coinage, gold ledger, 64-bit wallets, /admin/economy |
-| 19 | `19-votes` | Realm upgrade votes and transitions | ready for review | `v08/19-votes` | — | Weighted secret ballots, snapshot eligibility, exact close and upgrade transitions. |
+| 19 | `19-votes` | Realm upgrade votes and transitions | done | v08/19-votes | 75380e6 | Weighted secret ballots; RESERVE_SHORT stock gates (human ruling); conflict-safe close |
 | 20 | `20-caravans` | Trade between realms | pending | — | — | — |
 | 21 | `21-client-realm-estate` | Client: realm, projects, votes, estate | pending | — | — | — |
 | 22 | `22-client-realm-market` | Client: realm market and world health | pending | — | — | — |
