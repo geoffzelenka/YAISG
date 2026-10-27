@@ -1,18 +1,27 @@
 """Ordered realm tick extension points (design §14.5). Caller holds realm lock."""
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-
-from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.engine.projects import erode_project
-from app.models import RealmState
-from app.services.projects import active_run
+from app.models import RealmProjectRun, RealmState
 from app.services.realms import as_utc
 
 
+@dataclass
+class RealmTickContext:
+    """Preloaded mutable tick state; load before catch-up and flush after it.
+
+    Steps must use this state without issuing queries. Future stores, estates,
+    and demand lines belong here so database work stays independent of ticks.
+    """
+
+    active_run: RealmProjectRun | None
+
+
 def step_0_arrivals(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 20: receive due caravan shipments; isolated realms have no caravans."""
     if realm.isolated:
@@ -20,13 +29,13 @@ def step_0_arrivals(
 
 
 def step_1_production(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14: add estate production."""
 
 
 def step_2_larder_upkeep(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14: consume estate larders; isolated realms have no upkeep."""
     if realm.isolated:
@@ -34,7 +43,7 @@ def step_2_larder_upkeep(
 
 
 def step_3_estate_upkeep(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14: share upkeep above reserve; isolated realms have no upkeep."""
     if realm.isolated:
@@ -42,7 +51,7 @@ def step_3_estate_upkeep(
 
 
 def step_4_realm_upkeep(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14/18: consume upkeep and coin bullion; skip isolated realm upkeep."""
     if realm.isolated:
@@ -50,10 +59,10 @@ def step_4_realm_upkeep(
 
 
 def step_5_projects(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Erode idle funding; Prompt 14 adds realm contributions before erosion."""
-    run = active_run(session, realm.id)
+    run = context.active_run
     if run is None or run.status != "funding":
         return
     run.contributed = erode_project(
@@ -72,19 +81,19 @@ def step_5_projects(
 
 
 def step_6_spoilage(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14: spoil stores and larders."""
 
 
 def step_7_caps(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14: discard excess stock."""
 
 
 def step_8_gauges(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 15: update deficit gauges; isolated realms have no upkeep or decay."""
     if realm.isolated:
@@ -92,7 +101,7 @@ def step_8_gauges(
 
 
 def step_9_decay(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 15: advance or recover decay; isolated realms have no decay."""
     if realm.isolated:
@@ -100,7 +109,7 @@ def step_9_decay(
 
 
 def step_10_lines(
-    session: Session, realm: RealmState, now: datetime, content: ContentIndex
+    context: RealmTickContext, realm: RealmState, now: datetime, content: ContentIndex
 ) -> None:
     """Prompt 14/16: recompute lines, including isolated realms' project lines.
 

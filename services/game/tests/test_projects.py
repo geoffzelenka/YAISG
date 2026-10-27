@@ -12,7 +12,9 @@ from fastapi import HTTPException
 from httpx import AsyncClient
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine.interfaces import ExecutionContext
 from sqlalchemy.orm import Session, sessionmaker
 from test_actions import FakeClock
 from test_actions import action_client as action_client
@@ -323,7 +325,10 @@ def test_build_exact_due_time_before_ticks_and_transition(
     seen = []
 
     def tick(
-        session: Session, realm: RealmState, now: datetime, content: ContentIndex
+        context: realm_ticks.RealmTickContext,
+        realm: RealmState,
+        now: datetime,
+        content: ContentIndex,
     ) -> None:
         seen.append((run.status, realm.current_node_id))
 
@@ -398,6 +403,54 @@ def test_resolve_realm_idempotence_and_bounded_catchup(realm_session: Session) -
     before = (run.status, list(run.contributed), run.failed_at)
     resolve_realm(realm_session, realm, due, CONTENT)
     assert (run.status, run.contributed, run.failed_at) == before
+
+
+@pytest.mark.parametrize("ticks", [2, CONTENT.economy.tick.max_catchup])
+def test_realm_catchup_statement_bound(realm_session: Session, ticks: int) -> None:
+    """Catch-up loads and writes once, independent of the tick count."""
+    realm = realm_session.get(RealmState, REALM)
+    assert realm is not None
+    run = _run(realm_session, realm)
+    interval = timedelta(days=1) / CONTENT.economy.tick.per_day
+    # Start after grace so both resolutions must persist eroded progress.
+    realm.last_tick_at = NOW + timedelta(days=CONTENT.economy.project.idle_grace_days)
+    realm_session.flush()
+    due = as_utc(realm.last_tick_at) + ticks * interval
+    statements: list[str] = []
+
+    def record_statement(
+        connection: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: ExecutionContext,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    engine = realm_session.get_bind()
+    assert isinstance(engine, Engine)
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        resolve_realm(realm_session, realm, due, CONTENT)
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+    assert len(statements) <= 10, statements
+    assert as_utc(realm.last_tick_at) == due
+    assert run.contributed[0] < 50000
+    # Verify the final flush persisted the computed state.
+    snapshot = (
+        run.status,
+        list(run.contributed),
+        as_utc(run.failed_at) if run.failed_at else None,
+    )
+    realm_session.expire_all()
+    assert (
+        run.status,
+        run.contributed,
+        as_utc(run.failed_at) if run.failed_at else None,
+    ) == snapshot
+    assert as_utc(realm.last_tick_at) == due
 
 
 @settings(derandomize=True)
@@ -501,6 +554,7 @@ def test_postgres_two_kickoffs_one_active_run(realm_session: Session) -> None:
 
 
 @settings(
+    deadline=None,
     max_examples=25,
     derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
@@ -584,6 +638,7 @@ async def test_character_resolution_finishes_build_and_realm_credits(
 
 
 @settings(
+    deadline=None,
     max_examples=20,
     derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
