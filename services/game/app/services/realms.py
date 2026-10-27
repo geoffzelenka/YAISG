@@ -80,10 +80,24 @@ def push_realm_tag(
     project_run_id: uuid.UUID | None = None,
 ) -> RealmTag:
     """Push a tag under the caller's realm lock, never reusing a removed seq."""
-    if session.get(RealmTag, (realm.id, tag_id)) is not None:
+    existing = {tag_id} if session.get(RealmTag, (realm.id, tag_id)) else set()
+    tag = build_realm_tag(realm, tag_id, existing, now, project_run_id)
+    session.add(tag)
+    return tag
+
+
+def build_realm_tag(
+    realm: RealmState,
+    tag_id: str,
+    existing: set[str],
+    now: datetime,
+    project_run_id: uuid.UUID | None = None,
+) -> RealmTag:
+    """Build a stack entry from loaded state, rejecting duplicate acquisitions."""
+    if tag_id in existing:
         raise ValueError(f"realm {realm.id!r} already holds tag {tag_id!r}")
     realm.tag_seq += 1
-    tag = RealmTag(
+    return RealmTag(
         realm_id=realm.id,
         tag_id=tag_id,
         seq=realm.tag_seq,
@@ -91,8 +105,6 @@ def push_realm_tag(
         acquired_at=now,
         project_run_id=project_run_id,
     )
-    session.add(tag)
-    return tag
 
 
 def start_transition(

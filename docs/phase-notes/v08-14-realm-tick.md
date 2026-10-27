@@ -19,14 +19,14 @@
   payments share progress, idle reset, immutable credits and build-start rules
   without issuing per-tick database calls. Required costs use run snapshots.
 - Added an APScheduler lifespan driver at the content tick cadence, with
-  coalescing, one executing job per process and clean shutdown. A transaction
+  coalescing, one executing job per process and clean shutdown. A session
   advisory lock excludes competing PostgreSQL drivers; SQLite uses its single
   process deployment and writer transaction. Jobs visit sorted, non-isolated
   realm ids; ordinary requests retain lazy resolution.
 - Added dependency apscheduler>=3.10,<4, explicitly required by this prompt and
-  design §23.2. The environment has no installed APScheduler and cannot resolve
-  PyPI; its scheduler-construction test skips when the package is unavailable.
-  The existing world-seeding lifespan test isolates the scheduler with a mock.
+  design §23.2. The human approved it on 2026-10-27; APScheduler 3.11.3 is
+  installed for Round 1 verification. The world-seeding lifespan test now
+  exercises real scheduler startup and shutdown.
 - Added test_golden_reserve_estates_first_then_realm,
   test_estates_share_shortfall_pro_rata,
   test_production_realm_owned_player_owned_and_inert,
@@ -40,14 +40,30 @@
   The PostgreSQL contention test uses two independent scheduled driver calls,
   bounded thread synchronization, and asserts production is credited once.
 - Tightened test_realm_catchup_statement_bound to exactly nine statements for
-  both two ticks and max_catchup, with a persistent node line to keep final write
-  shapes comparable. Added explicit failed status and exact failed_at checks.
+  both two ticks and max_catchup (eleven for paying realms), with a persistent
+  node line to keep final write shapes comparable. Added explicit failed status and exact failed_at checks.
 
 - Validation: full SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passes: auth 15,
   game 375 with 11 skips, client 41. Formatting, lint, strict typing, client
   build, scripts and content lint pass. Existing migration/reset tests rebuild
   both services, upgrade to head, check schema parity and exercise downgrade.
   `git diff --check` is clean.
+
+- Round 1: added a resolver-driven multi-tick golden, hourly Hypothesis split /
+  idempotence / per-step payment conservation with fractional daily rates,
+  geometric overlay and reserve-boundary regressions, fractional spoilage,
+  warehouse cap, isolated scheduler filtering, failed-realm continuation and
+  final-now build completion tests. Both tag acquisition paths share the
+  session-free duplicate-guarded builder. The scheduler holds a session advisory
+  lock across the pass but commits each realm separately, logs the realm id on
+  failure and continues. The golden kills all four reported tick-order swaps;
+  the hourly property kills constant tick_index. Separate mutation checks kill
+  spoilage ceiling, missing warehouse cap, missing isolation filter and missing
+  overlay spreading. SQL-count coverage now includes paying realms;
+  RealmContribution rows grow with ticks × paid items even though their inserts
+  are batched. Dependency approval: human, 2026-10-27 (APScheduler 3.11.3).
+  Round 1 full SQLite `make ci` passes: auth 15, game 387 with 10 skips,
+  client 41; formatting, lint, typing, builds, scripts and content lint pass.
 
 ## Removed
 
@@ -84,6 +100,10 @@
   than zero. Integer rounding can also leave a small remainder receiving no
   payment until idle erosion resumes. General completion in about D days needs
   a different formula or a completion rule. No such rule was invented.
+  For D > 1, int(remaining / D) reaches zero once remaining < D milli-units:
+  realm payments stop, the idle clock stops resetting, and erosion resumes.
+  On the overlay alone the project cycles and never completes. Round 1 pins
+  the present geometric behavior at the default hourly cadence.
 
 ## Hand-offs
 

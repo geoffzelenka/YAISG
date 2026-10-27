@@ -1,5 +1,6 @@
 """Scheduled liveness driver; requests remain authoritative lazy resolvers."""
 
+import logging
 from datetime import UTC, datetime
 from typing import Protocol, cast
 
@@ -18,26 +19,38 @@ def run_realm_ticks(
     factory: sessionmaker[Session], content: ContentIndex, now: datetime
 ) -> bool:
     """Advance all shared realms once, excluding concurrent PostgreSQL drivers."""
-    with factory() as session:
-        if session.get_bind().dialect.name == "postgresql":
-            acquired = session.scalar(
-                text("SELECT pg_try_advisory_xact_lock(:key)"),
-                {"key": REALM_TICK_LOCK},
+    # A dedicated connection holds a session lock across per-realm transactions.
+    # Always unlock before returning the connection to the pool.
+    with factory() as guard:
+        connection = guard.connection()
+        postgres = connection.dialect.name == "postgresql"
+        if postgres and not connection.scalar(
+            text("SELECT pg_try_advisory_lock(:key)"), {"key": REALM_TICK_LOCK}
+        ):
+            return False
+        try:
+            realm_ids = list(
+                connection.scalars(
+                    select(RealmState.id)
+                    .where(RealmState.isolated.is_(False))
+                    .order_by(RealmState.id)
+                )
             )
-            if not acquired:
-                return False
-        else:
-            prepare_sqlite_write(session)
-        realm_ids = list(
-            session.scalars(
-                select(RealmState.id)
-                .where(RealmState.isolated.is_(False))
-                .order_by(RealmState.id)
-            )
-        )
-        for realm_id in realm_ids:
-            finalize_realm(session, realm_id, now, content)
-        session.commit()
+            for realm_id in realm_ids:
+                try:
+                    with factory() as session:
+                        prepare_sqlite_write(session)
+                        finalize_realm(session, realm_id, now, content)
+                        session.commit()
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Realm tick failed: realm_id=%s", realm_id
+                    )
+        finally:
+            if postgres:
+                connection.execute(
+                    text("SELECT pg_advisory_unlock(:key)"), {"key": REALM_TICK_LOCK}
+                )
         return True
 
 

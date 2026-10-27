@@ -33,7 +33,7 @@ from app.models import (
     RealmTag,
 )
 from app.services.projects import apply_project_payment, begin_build
-from app.services.realms import as_utc
+from app.services.realms import as_utc, build_realm_tag
 from app.services.stores import replace_lines, transition_days
 
 
@@ -52,6 +52,7 @@ class RealmTickContext:
     larder_rows: list[EstateLarder] = field(default_factory=list)
     larders: dict[uuid.UUID, dict[str, int]] = field(default_factory=dict)
     tags: tuple[Tag, ...] = ()
+    stack_tag_ids: set[str] = field(default_factory=set)
     lines: tuple[Line, ...] = ()
     owed: dict[str, list[tuple[uuid.UUID, int]]] = field(default_factory=dict)
     realm_due: dict[str, int] = field(default_factory=dict)
@@ -100,9 +101,10 @@ def load_context(
         if row.estate_id in context.larders:
             context.larders[row.estate_id][row.item_id] = row.quantity_milli
     ids = set(content.development_node(realm.current_node_id).inherent_tags)
-    ids.update(
+    context.stack_tag_ids = set(
         session.scalars(select(RealmTag.tag_id).where(RealmTag.realm_id == realm.id))
     )
+    ids.update(context.stack_tag_ids)
     context.tags = tuple(
         t
         for t, _ in active_tags(
@@ -391,17 +393,12 @@ def complete_tick_build(
     if as_utc(run.build_completes_at) > now:
         return
     tag_id = content.project(run.project_id).grants_tag
-    realm.tag_seq += 1
     context.acquired_tags.append(
-        RealmTag(
-            realm_id=realm.id,
-            tag_id=tag_id,
-            seq=realm.tag_seq,
-            node_id=realm.current_node_id,
-            acquired_at=run.build_completes_at,
-            project_run_id=run.id,
+        build_realm_tag(
+            realm, tag_id, context.stack_tag_ids, run.build_completes_at, run.id
         )
     )
+    context.stack_tag_ids.add(tag_id)
     context.tags = (*context.tags, next(t for t in content.tags if t.id == tag_id))
     run.status = "complete"
     step_10_lines(context, realm, now, content)
