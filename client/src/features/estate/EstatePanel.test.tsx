@@ -45,6 +45,7 @@ const packs: Record<string, unknown> = {
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
   progression: {
+    lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,
     min_cycle_ms: 1,
     xp_bonus_cap_pct: 45,

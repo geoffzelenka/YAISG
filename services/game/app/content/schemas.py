@@ -459,9 +459,17 @@ class XpCurve(RootModel[tuple[StrictInt, ...]]):
         return self._levels
 
 
+class LintConfig(ContentModel):
+    """Designer-selected rate curve and warning tolerance."""
+
+    g: float = Field(gt=1, allow_inf_nan=False)
+    tolerance_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+
+
 class ProgressionPack(ContentModel):
     """Content-defined tier thresholds and titles."""
 
+    lint: LintConfig
     tier_thresholds: tuple[StrictInt, ...]
     tier_titles: tuple[str, ...]
     min_factor: float = Field(gt=0, le=1)

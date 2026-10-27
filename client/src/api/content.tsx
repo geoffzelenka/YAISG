@@ -159,6 +159,7 @@ type ContentPacks = {
   }
   development: { nodes: DevelopmentNode[]; edges: DevelopmentEdge[] }
   progression: {
+    lint: { g: number; tolerance_pct: number }
     tier_thresholds: number[]
     tier_titles: string[]
     min_factor: number
