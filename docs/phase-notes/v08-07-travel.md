@@ -1,5 +1,11 @@
 ## Built
 
+- Round 1 follow-up: generic action availability and start use one shared gate
+  list, reporting TRAVEL_DESTINATION_REQUIRED for travel-resolver actions.
+  Added test_journey_report_and_generic_start_share_destination_gate.
+  Round 1 SQLite make ci passed: auth 15; game 257 with four PostgreSQL-only
+  skips; client 21. All formatting, lint, type, build and script checks passed.
+
 - Strict map edges with ids, endpoints, terrain, positive base seconds, selector
   supplies, Travel level gates, bounded loss percentages and one-way traversal.
   Mobile forms require a travel profile; fixed forms forbid one. Progression
@@ -90,6 +96,14 @@
 
 ## Design ambiguities resolved
 
+- §6.4 vs §11.3: journeys end with OFFLINE_CAP when an absence exceeds the
+  offline budget and no further step fits, including when no step fits at all.
+  Unlike uniform actions' pending partial-cycle reading, the unfinished travel
+  step is discarded, including supplies already paid for it.
+- §8.3: each tier_benefits.travel row is the absolute benefit at that tier,
+  not a sum of benefits from earlier tiers. The current tier's row supplies
+  group P, keeping the authored row equal to the effective tier benefit.
+
 - §11.4: effective time is rounded upward to whole milliseconds, with one
   millisecond as the representation's smallest unit. This never completes an
   edge before its effective duration. Supply quantities use ceil; XP uses floor.
@@ -109,13 +123,21 @@
 
 ## Deviations
 
-None.
+- §6.3: dropped ResolveContext.modifier_groups although the design says ctx
+  carries resolved bonuses. Neither resolver consumed that initial snapshot;
+  Travel recomputes groups at each step so arrival sources and tier changes
+  apply, while uniform retains its existing level-boundary calculations.
 
 ## Ratification needed
 
 None.
 
 ## Hand-offs
+
+- 36-hardening: travel preview/start and public, unauthenticated GET /map
+  row-lock every realm row. Lock order is correct, but this serialises travel
+  starts world-wide. Narrow journey locks to reachable realms, or remove locks
+  from a read-only map path while preserving safe lazy transition resolution.
 
 - 08-client-skills-travel: build journey controls against GET /travel/preview
   (destination_realm_id and mode query parameters) and POST /travel/start

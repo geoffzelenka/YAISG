@@ -19,10 +19,10 @@ from app.api.schemas import (
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
+from app.content.schemas import Action
 from app.engine import (
-    ErrorCode,
+    CharacterState,
     ResolveResult,
-    can_start,
     effective_cycle_time,
 )
 from app.engine.core import unmet_requirements
@@ -134,6 +134,16 @@ def _active_summary(
     )
 
 
+def _start_blockers(
+    action: Action, state: CharacterState, content: ContentIndex
+) -> list[str]:
+    """Share generic endpoint gates between the availability report and start."""
+    blocked = [code.value for code in unmet_requirements(action, state, content)]
+    if action.resolver == "travel":
+        blocked.insert(0, "TRAVEL_DESTINATION_REQUIRED")
+    return blocked
+
+
 @router.get("/actions/available", response_model=AvailableActionsResponse)
 @router.get("/characters/me/actions/available", response_model=AvailableActionsResponse)
 async def available_actions(
@@ -151,9 +161,7 @@ async def available_actions(
     for skill in content.skills:
         actions: list[AvailableAction] = []
         for action in skill.actions:
-            blocked = [
-                code.value for code in unmet_requirements(action, state, content)
-            ]
+            blocked = _start_blockers(action, state, content)
             actions.append(
                 AvailableAction(
                     action_id=action.id,
@@ -189,13 +197,14 @@ async def start_action(
         action = content.action(body.action_id)
     except KeyError:
         raise api_error(404, "UNKNOWN_ACTION", "The action does not exist") from None
-    if action.resolver == "travel":
-        raise api_error(
-            409, "TRAVEL_DESTINATION_REQUIRED", "Start a journey through /travel/start"
+    blocked = _start_blockers(action, state, content)
+    if blocked:
+        message = (
+            "Start a journey through /travel/start"
+            if blocked[0] == "TRAVEL_DESTINATION_REQUIRED"
+            else "The action cannot currently be started"
         )
-    validation = can_start(action.id, state, content)
-    if isinstance(validation, ErrorCode):
-        raise api_error(409, validation.value, "The action cannot currently be started")
+        raise api_error(409, blocked[0], message)
     clear_active_action(session, character.id)
     session.add(
         ActiveActionRecord(
