@@ -122,7 +122,12 @@
           "per_day": 1
         }
       ],
-      "production": [],
+      "production": [
+        {
+          "item_id": "item.fake_sprig",
+          "per_day": 2
+        }
+      ],
       "transforms_to": [],
       "regresses_to": null,
       "build_cost": {

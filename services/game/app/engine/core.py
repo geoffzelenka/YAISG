@@ -268,13 +268,23 @@ def taper_factor(action: Action, state: CharacterState, content: ContentIndex) -
     return content.progression.taper[category][tier_distance(action, state, content)]
 
 
+def estate_bonus_factor(state: CharacterState, content: ContentIndex) -> float:
+    """Keep Strained cosmetic while weakening Faltering estate bonuses."""
+    if state.estate_stage in (DecayStage.FED, DecayStage.STRAINED):
+        return 1.0
+    return content.economy.decay.faltering_factor
+
+
 def modifier_groups(
     state: CharacterState, content: ContentIndex
 ) -> tuple[tuple[Modifier, ...], ...]:
     """Provide G, E, R and C, excluding absent estates and inert upgrades."""
     node = content.development_node(state.realm_node_id)
+    factor = estate_bonus_factor(state, content)
     estate = tuple(
-        m for source in _estate_sources(state, content) for m in source.modifiers
+        m.model_copy(update={"value": m.value * factor})
+        for source in _estate_sources(state, content)
+        for m in source.modifiers
     )
     return (
         state.gear_modifiers,
@@ -380,15 +390,15 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
     bonuses: defaultdict[CapType, float] = defaultdict(float, state.cap_bonuses)
     for source in _estate_sources(state, content):
         for bonus in source.cap_bonuses:
-            bonuses[bonus.cap] += bonus.value
+            bonuses[bonus.cap] += bonus.value * estate_bonus_factor(state, content)
     node = content.development_node(state.realm_node_id)
     for bonus in node.cap_bonuses:
         bonuses[bonus.cap] += bonus.value
-    for tag, _ in realm_active_tags(state, content) + estate_active_tags(
+    for tag, factor in realm_active_tags(state, content) + estate_active_tags(
         state, content
     ):
         for cap, value in tag.cap_bonuses.items():
-            bonuses[cap] += value
+            bonuses[cap] += value * factor
     base = content.caps
     return Caps(
         offline_hours=base.offline_hours + bonuses[CapType.OFFLINE_HOURS],

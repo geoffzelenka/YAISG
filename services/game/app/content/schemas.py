@@ -568,9 +568,39 @@ class TagsPack(ContentModel):
 
 
 class DecayConfig(ContentModel):
-    """Stage settings; later phases add gauges and thresholds."""
+    """Stage weakening shared by realms and estates."""
 
     faltering_factor: float = Field(ge=0, le=1)
+
+
+class GaugeConfig(ContentModel):
+    """Hunger measured in equivalent days of missing upkeep."""
+
+    max: float = Field(default=10, gt=0, allow_inf_nan=False)
+    recovery_per_day: float = Field(default=1, ge=0, allow_inf_nan=False)
+    strained_threshold: float = Field(default=0.5, ge=0, allow_inf_nan=False)
+    faltering_threshold: float = Field(default=2, gt=0, allow_inf_nan=False)
+    failing_threshold: float = Field(default=4, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def ordered_thresholds(self) -> "GaugeConfig":
+        """Require stages to be reachable in their advertised order."""
+        if not (
+            self.strained_threshold
+            < self.faltering_threshold
+            < self.failing_threshold
+            < self.max
+        ):
+            raise ValueError("gauge thresholds must increase below gauge.max")
+        return self
+
+
+class ShedConfig(ContentModel):
+    """Asset loss and recovery rates per day."""
+
+    base_per_day: float = Field(default=0.5, ge=0, allow_inf_nan=False)
+    per_gauge_day: float = Field(default=0.5, ge=0, allow_inf_nan=False)
+    recovery_per_day: float = Field(default=1, ge=0, allow_inf_nan=False)
 
 
 class TransitionConfig(ContentModel):
@@ -607,6 +637,8 @@ class EconomyPack(ContentModel):
     cap_days: float = Field(default=10, gt=0, allow_inf_nan=False)
     warehouse_value_cap: int = Field(gt=0)
     decay: DecayConfig
+    gauge: GaugeConfig = GaugeConfig()
+    shed: ShedConfig = ShedConfig()
     estate: EstateConfig = EstateConfig()
     transition: TransitionConfig = TransitionConfig()
     project: ProjectConfig = ProjectConfig()

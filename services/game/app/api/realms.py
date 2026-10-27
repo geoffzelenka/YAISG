@@ -258,6 +258,7 @@ async def get_map(
                 "node": node_id,
                 "tier": content.development_node(node_id).tier,
                 "decay_stage": state.decay_stage if state else "fed",
+                "gauge": state.gauge if state else 0,
                 "treasury_band": state.treasury_band if state else None,
                 "transition_pending": bool(state and state.pending_transition),
             }
@@ -403,6 +404,7 @@ class RealmEstateResponse(BaseModel):
     owner: uuid.UUID | Literal["realm-owned"]
     form: str
     decay_stage: str
+    gauge: float
     sale_price: int | None = None
 
 
@@ -428,9 +430,12 @@ async def get_realm_estates(
             else None,
             form=estate.form_id,
             decay_stage=estate.decay_stage,
+            gauge=estate.gauge,
         )
         for estate in session.scalars(
-            select(Estate).where(Estate.realm_id == realm_id).order_by(Estate.id)
+            select(Estate)
+            .where(Estate.realm_id == realm_id, Estate.status == "active")
+            .order_by(Estate.id)
         )
     ]
     session.commit()

@@ -134,6 +134,8 @@ def test_finalize_exact_boundary_idempotent_stamps_and_filters(
         ),
     )
     due = NOW + timedelta(days=7)
+    # This test isolates transition finalization from upkeep and gauge recovery.
+    state.last_tick_at = due
     finalize_realm(realm_session, state.id, due - timedelta(microseconds=1), content)
     assert state.current_node_id == source_id
     assert state.pending_transition is not None

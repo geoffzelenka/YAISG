@@ -412,8 +412,9 @@ def test_resolve_realm_idempotence_and_bounded_catchup(realm_session: Session) -
 
 @pytest.mark.parametrize("ticks", [2, CONTENT.economy.tick.max_catchup])
 @pytest.mark.parametrize("paying", [False, True])
+@pytest.mark.parametrize("decaying", [False, True])
 def test_realm_catchup_statement_bound(
-    realm_session: Session, ticks: int, paying: bool
+    realm_session: Session, ticks: int, paying: bool, decaying: bool
 ) -> None:
     """Catch-up loads and writes once, independent of the tick count."""
     realm = realm_session.get(RealmState, REALM)
@@ -440,6 +441,47 @@ def test_realm_catchup_statement_bound(
                 )
             )
 
+    if decaying:
+        from app.models import EstateLarder, EstateUpgrade
+
+        form = content.estate_form("form.fake_workshop").model_copy(
+            update={"production": ()}
+        )
+        content = replace(
+            content,
+            _forms_by_id=MappingProxyType(
+                {
+                    **content._forms_by_id,
+                    form.id: form,
+                }
+            ),
+        )
+        doomed = Estate(
+            id=uuid.uuid4(),
+            realm_id=REALM,
+            form_id=form.id,
+            gauge=10,
+            shed_progress=2,
+            decay_stage="failing",
+        )
+        realm_session.add(doomed)
+        realm_session.flush()
+        realm_session.add_all(
+            [
+                EstateUpgrade(
+                    estate_id=doomed.id,
+                    slot_index=slot,
+                    upgrade_id=content.upgrades[0].id,
+                    purchased_at=NOW,
+                )
+                for slot in range(2)
+            ]
+        )
+        realm_session.add(
+            EstateLarder(
+                estate_id=doomed.id, item_id="item.fake_plank", quantity_milli=1000
+            )
+        )
     interval = timedelta(days=1) / CONTENT.economy.tick.per_day
     # Start after grace so both resolutions must persist eroded progress.
     realm.last_tick_at = NOW + timedelta(days=CONTENT.economy.project.idle_grace_days)
@@ -464,7 +506,22 @@ def test_realm_catchup_statement_bound(
         resolve_realm(realm_session, realm, due, content)
     finally:
         event.remove(engine, "before_cursor_execute", record_statement)
-    assert len(statements) == (11 if paying else 9), statements
+    # A destroyed estate, batched upgrade losses and a lost larder add three
+    # writes total, equally for two ticks and full catch-up.
+    assert len(statements) == (14 if paying else 12) + (3 if decaying else 0), (
+        statements
+    )
+    if decaying:
+        assert doomed.status == "destroyed" and doomed.owner_character_id is None
+        assert realm_session.get(EstateLarder, (doomed.id, "item.fake_plank")) is None
+        assert (
+            list(
+                realm_session.scalars(
+                    select(EstateUpgrade).where(EstateUpgrade.estate_id == doomed.id)
+                )
+            )
+            == []
+        )
     if paying:
         assert run.contributed[0] > 50000
         assert list(realm_session.scalars(select(RealmContribution)))
