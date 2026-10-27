@@ -270,7 +270,7 @@ def resolve_realm(
     """
     from app.services.realm_ticks import (
         TICK_STEPS,
-        complete_tick_build,
+        complete_tick_events,
         load_context,
         persist_context,
     )
@@ -289,11 +289,11 @@ def resolve_realm(
     context = load_context(session, realm, run, content)
     for _ in range(max(0, ticks)):
         tick_at = as_utc(realm.last_tick_at) + interval
-        complete_tick_build(context, realm, tick_at, content)
+        complete_tick_events(context, realm, tick_at, content)
         for step in TICK_STEPS:
             step(context, realm, tick_at, content)
         realm.last_tick_at = tick_at
-    complete_tick_build(context, realm, now, content)
+    complete_tick_events(context, realm, now, content)
     persist_context(session, realm, context)
     session.flush()
     return realm

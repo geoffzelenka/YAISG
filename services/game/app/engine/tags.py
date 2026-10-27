@@ -32,3 +32,21 @@ def active_tags(holder: TagHolder, stage: DecayStage) -> tuple[tuple[Tag, float]
 def tags_present(required: Iterable[str], actual: Iterable[str]) -> bool:
     """Require every declared tag; an empty requirement is unrestricted."""
     return set(required).issubset(actual)
+
+
+def economy_tags(holder: TagHolder, stage: DecayStage) -> tuple[Tag, ...]:
+    """Apply activation and numeric effect weakening to economy consumers."""
+    return tuple(
+        tag.model_copy(
+            update={
+                "effects": tag.effects.model_copy(
+                    update={
+                        "reserve_days_delta": tag.effects.reserve_days_delta * factor,
+                        "edge_loss_reduction_pct": tag.effects.edge_loss_reduction_pct
+                        * factor,
+                    }
+                )
+            }
+        )
+        for tag, factor in active_tags(holder, stage)
+    )

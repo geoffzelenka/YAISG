@@ -79,6 +79,7 @@ class EstateResponse(BaseModel):
     mobility: str
     tags: tuple[str, ...]
     decay_stage: str
+    gauge: float
     status: str
     upgrade_slots: int
     installed_upgrades: list[InstalledUpgradeSummary]
@@ -186,6 +187,7 @@ def _estate_response(
         mobility=form.mobility,
         tags=form.tags,
         decay_stage=estate.decay_stage,
+        gauge=estate.gauge,
         status=estate.status,
         upgrade_slots=slots,
         installed_upgrades=summaries,
@@ -531,6 +533,7 @@ async def buy_estate(
     )
     if (
         estate is None
+        or estate.status != "active"
         or estate.owner_character_id is not None
         or estate.realm_id != character.current_realm_id
         or content.estate_form(estate.form_id).mobility != "fixed"

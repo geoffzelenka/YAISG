@@ -64,7 +64,9 @@ def _lock_character_and_load_action(
     session.scalar(
         select(Character)
         .where(Character.id == character_id)
-        .with_for_update()
+        # Serialize character changes without blocking foreign-key KEY SHARE locks
+        # when a realm tick creates a replacement estate for this owner.
+        .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     )
     return session.scalar(
@@ -205,6 +207,10 @@ def resolve_locked_character(
             step["destination_realm_id"] for step in record.meta.get("route", [])
         )
     realms = finalize_realms(session, realm_ids, now, resolved_content)
+    home = session.get(Estate, character.home_estate_id)
+    while home is not None and home.status == "destroyed":
+        character.home_estate_id = uuid.UUID(home.data["replacement_id"])
+        home = session.get(Estate, character.home_estate_id)
     session.scalar(
         select(Estate).where(Estate.id == character.home_estate_id).with_for_update()
     )

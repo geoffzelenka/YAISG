@@ -586,11 +586,12 @@ async def test_profile_and_available_share_decay_stage_state(
         report = profile["actions"][action["action_id"]]
         assert report == {key: action[key] for key in report}
         assert report["xp_bonus_uncapped"] == pytest.approx(
-            (1 + realm_bonus / 100) * 1.05 * 100 - 100
+            (1 + realm_bonus / 100) * (1 + (5 if stage == "fed" else 2.5) / 100) * 100
+            - 100
         )
         assert sorted(m["value"] for m in profile["realm"]["active_modifiers"]) == [
             realm_bonus,
-            5,
+            5 if stage == "fed" else 2.5,
         ]
         assert (
             profile["caps"]["inventory_slots"]["effective"]

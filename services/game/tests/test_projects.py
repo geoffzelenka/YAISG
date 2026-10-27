@@ -464,7 +464,7 @@ def test_realm_catchup_statement_bound(
         resolve_realm(realm_session, realm, due, content)
     finally:
         event.remove(engine, "before_cursor_execute", record_statement)
-    assert len(statements) == (11 if paying else 9), statements
+    assert len(statements) == (14 if paying else 12), statements
     if paying:
         assert run.contributed[0] > 50000
         assert list(realm_session.scalars(select(RealmContribution)))

@@ -973,6 +973,7 @@ async def test_realm_owned_estates_listed(
         "owner": "realm-owned",
         "form": "form.orchard",
         "decay_stage": "strained",
+        "gauge": 0.0,
         "sale_price": None,
     }
     assert any(row["owner"] != "realm-owned" for row in rows)
@@ -1665,3 +1666,74 @@ async def test_estate_listing_prices_only_fixed_and_does_not_write_valuations(
     with factory() as session:
         saved = session.get(Estate, fixed_id)
         assert saved is not None and saved.data == {"custom": "retained"}
+
+
+async def test_decay_gauge_visible_on_map_realm_and_estates(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Strained days remain visible publicly and on the owner's home estate."""
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        character = session.scalar(select(Character))
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert character is not None and realm is not None
+        home = session.get(Estate, character.home_estate_id)
+        assert home is not None
+        realm.gauge = home.gauge = 0.75
+        realm.decay_stage = home.decay_stage = "strained"
+        session.commit()
+    responses = [
+        await client.get(path, headers=headers)
+        for path in (
+            "/map",
+            "/realms/realm.verdant_vale",
+            "/realms/realm.verdant_vale/estates",
+            "/estates/me",
+        )
+    ]
+    assert all(response.status_code == 200 for response in responses)
+    graph, realm_json, estates, home_json = [response.json() for response in responses]
+    node = next(n for n in graph["nodes"] if n["realm_id"] == "realm.verdant_vale")
+    for row in (node, realm_json, estates[0], home_json):
+        assert row["decay_stage"] == "strained" and row["gauge"] == 0.75
+        assert "treasury" not in row
+
+
+async def test_destroyed_estate_is_hidden_and_cannot_be_bought(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """History tombstones cannot reenter gameplay through the buy endpoint."""
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        tombstone = Estate(
+            realm_id="realm.verdant_vale",
+            form_id="form.fake_workshop",
+            status="destroyed",
+        )
+        session.add(tombstone)
+        currency = session.scalar(select(Currency))
+        character = session.scalar(select(Character))
+        assert currency is not None and character is not None
+        currency.gold = 1000
+        home_id = character.home_estate_id
+        session.commit()
+        tombstone_id = tombstone.id
+    listed = await client.get("/realms/realm.verdant_vale/estates", headers=headers)
+    assert str(tombstone_id) not in {row["id"] for row in listed.json()}
+    response = await client.post(f"/estates/{tombstone_id}/buy", headers=headers)
+    assert (
+        response.status_code == 409
+        and response.json()["error"]["code"] == "NOT_FOR_SALE"
+    )
+    with factory() as session:
+        character = session.scalar(select(Character))
+        currency = session.scalar(select(Currency))
+        assert character is not None and character.home_estate_id == home_id
+        assert currency is not None and currency.gold == 1000
+        destroyed = session.get(Estate, tombstone_id)
+        assert destroyed is not None and destroyed.owner_character_id is None
+        assert destroyed.status == "destroyed"

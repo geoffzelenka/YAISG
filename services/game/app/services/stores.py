@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.content.loader import ContentIndex
 from app.content.schemas import ActionInput, DecayStage
 from app.engine.stores import Demand, Line, derive_lines, mint_demands, project_demands
-from app.engine.tags import TagHolder, active_tags
+from app.engine.tags import TagHolder, economy_tags
 from app.models import Estate, RealmLine, RealmState, RealmStore, RealmTag
 from app.services.projects import active_run
 
@@ -33,19 +33,18 @@ def recompute_lines(
     ids = set(node.inherent_tags) | set(
         session.scalars(select(RealmTag.tag_id).where(RealmTag.realm_id == realm.id))
     )
-    tags = tuple(
-        t
-        for t, _ in active_tags(
-            TagHolder(
-                tuple(t for t in content.tags if t.id in ids),
-                content.economy.decay.faltering_factor,
-            ),
-            DecayStage(realm.decay_stage),
-        )
+    tags = economy_tags(
+        TagHolder(
+            tuple(t for t in content.tags if t.id in ids),
+            content.economy.decay.faltering_factor,
+        ),
+        DecayStage(realm.decay_stage),
     )
     estates = tuple(
         content.estate_form(e.form_id)
-        for e in session.scalars(select(Estate).where(Estate.realm_id == realm.id))
+        for e in session.scalars(
+            select(Estate).where(Estate.realm_id == realm.id, Estate.status == "active")
+        )
     )
     stores = {
         s.item_id: s.quantity_milli

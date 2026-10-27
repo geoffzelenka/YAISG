@@ -19,5 +19,17 @@
   },
   "reserve_days": 3,
   "cap_days": 11,
-  "warehouse_value_cap": 10000
+  "warehouse_value_cap": 10000,
+  "gauge": {
+    "max": 10,
+    "recovery_per_day": 1,
+    "strained_threshold": 0.5,
+    "faltering_threshold": 2,
+    "failing_threshold": 4
+  },
+  "shed": {
+    "base_per_day": 0.5,
+    "per_gauge_day": 0.5,
+    "recovery_per_day": 1
+  }
 }
