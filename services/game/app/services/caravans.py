@@ -21,7 +21,7 @@ def run_caravan_pass(session: Session, content: ContentIndex, now: datetime) -> 
     Realm locks precede the singleton lock, so realm-first request handlers
     retain the global lock order. The cursor and dispatches commit together.
     """
-    if not session.in_transaction():
+    if session.get_bind().dialect.name == "sqlite" and not session.in_transaction():
         session.connection(execution_options={"sqlite_write_intent": True})
     realms = list(
         session.scalars(

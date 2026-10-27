@@ -35,8 +35,22 @@
   test_multiedge_loss_and_capped_adjoining_road_tags, and
   test_arrival_on_first_due_tick.
 
+- Pre-review fix 1: the shared realm fixture configures SQLite listeners even
+  for PostgreSQL. The old begin listener had no dialect guard; the caravan
+  service's unconditional write-intent option changed its otherwise accepted
+  BEGIN into PostgreSQL-invalid BEGIN IMMEDIATE. Configuration now ignores
+  non-SQLite engines, the begin listener independently checks its connection
+  dialect, and caravan write intent is requested only for SQLite. Fixtures
+  remain unchanged so they continue exercising this production boundary.
+- Added test_transaction_configuration_on_selected_database (ordinary and
+  write-intent transactions, honoring TEST_DATABASE_URL) and
+  test_non_sqlite_dialect_never_emits_sqlite_begin (guard checked before and
+  after listener setup without needing a PostgreSQL server). Both local guard
+  cases failed on BEGIN IMMEDIATE before the fix and pass after it. Focused
+  database/caravan/scheduler tests pass: 34 passed, two dialect-specific skips.
+
 - Validation: SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passes (auth 15,
-  game 557 with 18 database-specific skips, client 41). Lint, formatting,
+  game 561 with 18 database-specific skips, client 41). Lint, formatting,
   strict typing, client build, scripts and content lint pass. A disposable
   SQLite make db-reset, subsequent upgrade to head, alembic check and world
   creation pass. git diff --check is clean.
