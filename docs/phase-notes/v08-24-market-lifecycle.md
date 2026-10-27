@@ -161,3 +161,16 @@ matching behavior unchanged. The world property now trades between two owners.
 - INVALID_CURSOR (422): malformed market-history before cursor, including a
   timestamp without a timezone. Query bounds retain INVALID_REQUEST.
 - No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on 56dc6f7: SQLite make ci green (auth 15, game 615 / 20
+  skipped, client 76); PostgreSQL 16 game-ci 634 / 1 skipped; PG db-reset,
+  alembic check and boot green. World suite ~14s SQLite / ~25s PG. Review:
+  round 1 CHANGES_REQUESTED (lifecycle no-op and thin interleaving in the
+  conservation suite), round 2 APPROVE (nits applied), round 3 APPROVE.
+- 26-equipment / 27-consumables-hp: add equipment and belt holders to
+  tests/world_scenario.py, extend the hand-written `required` op set and
+  OPERATIONS together.
+- maker_order_id / taker_order_id are still returned in fills and history;
+  revisit if order ids are ever treated as private.
