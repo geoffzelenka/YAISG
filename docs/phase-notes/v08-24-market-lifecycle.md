@@ -15,20 +15,24 @@
   History is paginated by (matched_at, id), newest first. Both history and
   immediate fills return the caller's side and omit participant character ids.
   Both identities remain stored in market_matches.
-- Reworked the world conservation suite after review round 1. Each of eight
-  deterministic, deadline-free Hypothesis examples generates a permutation of
-  21 operations. Every generated intent must succeed; 409s fail the test.
-  Per-operation success counts exclude the mandatory prefix and all preparation,
-  and the fixture asserts positive random-position coverage for every operation.
+- Reworked the world conservation suite after review round 1, then extended it
+  after review round 2. Each of eight deterministic, deadline-free Hypothesis
+  examples generates a permutation of 21 operations followed by 2-4 sampled
+  operations, allowing adjacent repeats and further state-dependent orderings.
+  Every generated intent must succeed; 409s fail the test. A test-local per-op
+  counter excludes the mandatory prefix and preparation. Each example asserts
+  positive coverage against an independently written specification set rather
+  than deriving the requirements from the generator's OPERATIONS list. Requiring
+  coverage in every example is stronger than requiring it across the whole run.
 - Fresh disposable database state per example supplies two separately
   authenticated characters in two realms. All buy orders belong to one owner
   and sell orders to the other; fills are checked in the receiving owner's slot.
   The world suite does not depend on self-matching.
 - Preparation uses real, checked game operations: build before larder/surrender,
   surrender before build/buy, finish active projects through contributions before
-  another kickoff, and honor kickoff cooldowns. Three synthetic project/tag
-  definitions let an eroded or completed attempt give way to another offered
-  project. Realm purchases select an actual above-reserve offer; caravan supply
+  another kickoff, and honor kickoff cooldowns. Seven synthetic project/tag
+  definitions let eroded or completed attempts give way to another offered
+  project, including up to four additional kickoff attempts in the sampled tail. Realm purchases select an actual above-reserve offer; caravan supply
   comes from the second character's real trades when replenishment is needed.
 - The mandatory prefix now expires occupied buy and sell escrow and asserts the
   open-to-collectable transitions. It purges actual closed rows and asserts their
@@ -74,7 +78,7 @@
   collectable rows alongside old closed rows fails its gold invariant. All three
   mutations were restored. Earlier extra-withdrawal mutations also failed the
   world goods and gold assertions. No mutation remains in runtime code.
-- Focused world suite: 8 examples, 168 successful generated operations, 8 for
+- Review round 1 focused world suite: 8 examples, 168 generated successes, 8 for
   each operation (buy, sell, gift, kickoff, contribute, larder, build, estate_buy,
   surrender, caravan, arrive, order_trade, open_buy, open_sell, collect, cancel,
   tick, expiry, purge, action, transform). The focused SQLite run took 13.32s.
@@ -85,11 +89,22 @@
   property retains ordinary Hypothesis generation and shrinking settings,
   deadline=None, and deterministic inputs; no scratch mutation profile remains.
 
+- Review round 2: removed the file-writing success_tally fixture. The property
+  keeps its own success counter and writes no tally artifact. A scratch mutation
+  removed gift only from the generator, leaving the mandatory prefix's gift
+  intact: the independent coverage assertion failed with missing {'gift'}.
+  The generator was restored. The permutation plus sampled-tail property passed
+  on SQLite in 14.47s total (13.40s test call), within the requested roughly
+  19.5s budget. PATH=$PWD/.venv/bin:$PATH make ci passes: auth 15, game 615
+  with 20 database-specific skips, client 76; formatting, lint, strict typing,
+  production build, scripts and content lint pass.
+
 ## Removed
 
 - Removed participant character ids from history and immediate-fill projections;
   durable stored identities remain. Replaced the ineffective random tail and
-  lifecycle no-op in the world property. No existing test behavior was weakened.
+  lifecycle no-op in the world property. Removed the shared temporary tally file
+  write and its fixture in review round 2. No existing test behavior was weakened.
 
 ## Design ambiguities resolved
 
@@ -134,7 +149,8 @@ matching behavior unchanged. The world property now trades between two owners.
   content types alongside Prompt 23's pending tax/duration fields.
 - 26-equipment / 27-consumables-hp: extend tests/world_accounting.py holders
   with equipped and belt/utility stacks and tests/world_scenario.py operations
-  with their transfers/consumption when those models exist.
+  with their transfers/consumption when those models exist. Extend the test's
+  independent required-operation set alongside new generator operations.
 - 36-hardening: lifecycle retains coarse sorted realm serialization, matching
   Prompt 23's strategy. Preserve exclusion, order and transaction guarantees
   when narrowing locks; evaluate expiry/closed_at and history tuple indexes if

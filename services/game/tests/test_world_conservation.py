@@ -1,9 +1,6 @@
 """Random successful interleavings check every physical holder after every step."""
 
-import json
 from collections import Counter
-from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -42,17 +39,6 @@ from app.models import (
 )
 from app.services.realm_ticks import load_context, step_10_lines
 from app.services.stores import replace_lines
-
-
-@pytest.fixture
-def success_tally() -> Iterator[Counter[str]]:
-    """Count only completed generated intents, excluding prefix and preparation."""
-    tally: Counter[str] = Counter()
-    yield tally
-    Path("/tmp/yaisg-24-success-tally.json").write_text(
-        json.dumps(dict(sorted(tally.items())))
-    )
-    assert all(tally[operation] > 0 for operation in OPERATIONS), tally
 
 
 async def setup_scenario(
@@ -140,14 +126,19 @@ async def setup_scenario(
     derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-@given(operations=st.permutations(OPERATIONS))
+@given(
+    operations=st.tuples(
+        st.permutations(OPERATIONS),
+        st.lists(st.sampled_from(OPERATIONS), min_size=2, max_size=4),
+    ).map(lambda parts: [*parts[0], *parts[1]])
+)
 async def test_random_world_operations_conserve_goods_and_gold(
     estate_client: ApiFixture,
     operations: list[str],
     monkeypatch: pytest.MonkeyPatch,
-    success_tally: Counter[str],
 ) -> None:
-    """Every required operation succeeds in a random position in every example."""
+    """Required intents succeed outside the prefix, including repeated operations."""
+    success_tally: Counter[str] = Counter()
     # Scope observers to one example so Hypothesis never nests earlier spies.
     with monkeypatch.context() as scoped:
         audit = GoodsAccounting()
@@ -183,6 +174,33 @@ async def test_random_world_operations_conserve_goods_and_gold(
         for operation in operations:
             await scenario.run(operation)
             success_tally[operation] += 1
+        # Keep the specification independent of the generator: deleting an
+        # operation from OPERATIONS must not silently delete its coverage check.
+        required = {
+            "buy",
+            "sell",
+            "gift",
+            "kickoff",
+            "contribute",
+            "larder",
+            "build",
+            "estate_buy",
+            "surrender",
+            "caravan",
+            "arrive",
+            "order_trade",
+            "open_buy",
+            "open_sell",
+            "collect",
+            "cancel",
+            "tick",
+            "expiry",
+            "purge",
+            "action",
+            "transform",
+        }
+        missing = required - {op for op, count in success_tally.items() if count > 0}
+        assert not missing, (missing, success_tally)
         for cause in (
             "production",
             "step_2_larder_upkeep",

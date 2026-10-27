@@ -37,6 +37,12 @@ from app.services.realms import as_utc, resolve_realm
 SPRIG = "item.fake_sprig"
 PLANK = "item.fake_plank"
 OTHER_REALM = "realm.ashen_reach"
+# Allow the covering permutation plus four further kickoff attempts in the tail.
+EXTRA_PROJECT_NAMES = ("other", "third", "fourth", "fifth", "sixth", "seventh")
+PROJECT_IDS = (
+    "project.verdant_cardboard",
+    *(f"project.{name}" for name in EXTRA_PROJECT_NAMES),
+)
 OPERATIONS = (
     "buy",
     "sell",
@@ -168,13 +174,13 @@ def world_content() -> ContentIndex:
         project.model_copy(
             update={"id": f"project.{name}", "grants_tag": f"bonus.{name}"}
         )
-        for name in ("other", "third")
+        for name in EXTRA_PROJECT_NAMES
     )
     extra_tags = tuple(
         next(tag for tag in content.tags if tag.id == "bonus.fake").model_copy(
             update={"id": f"bonus.{name}"}
         )
-        for name in ("other", "third")
+        for name in EXTRA_PROJECT_NAMES
     )
     nodes = {
         key: value.model_copy(
@@ -450,11 +456,7 @@ class WorldScenario:
             completed = set(session.scalars(select(RealmProjectRun.project_id)))
         if last is not None and self.now < as_utc(last) + timedelta(days=1):
             await self.advance_realms(as_utc(last) + timedelta(days=1) - self.now)
-        project = next(
-            p
-            for p in ("project.verdant_cardboard", "project.other", "project.third")
-            if p not in completed
-        )
+        project = next(p for p in PROJECT_IDS if p not in completed)
         await self.post(f"/realms/{REALM}/projects/{project}/kickoff", {})
         await self.check()
 
