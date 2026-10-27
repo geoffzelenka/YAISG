@@ -166,3 +166,15 @@ None.
 ## New error codes
 
 None. No new dependencies.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on f3ad0c2: SQLite make ci green (auth 15, game 574 / 18
+  skipped, client 41); PostgreSQL 16 game-ci 591 passed / 1 SQLite-only skip;
+  PG db-reset green; alembic check clean; boot 200. Review: round 1
+  CHANGES_REQUESTED (tie-break and scheduler tests), round 2
+  CHANGES_REQUESTED (SQLite write intent after the early cursor read), round 3
+  APPROVE.
+- 36-hardening: `prepare_sqlite_write` commits any open transaction on the
+  session; document that on the helper so future callers do not lose pending
+  work (only fresh scheduler sessions call it from the caravan pass today).
