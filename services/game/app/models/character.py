@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -36,6 +37,7 @@ class Character(Base):
     name_normalized: Mapped[str] = mapped_column(
         String(20), unique=True, nullable=False
     )
+    last_kickoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     current_realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
     # Residence is derived from this estate, independently of current presence.
     home_estate_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
@@ -158,8 +160,9 @@ class RealmTag(Base):
     acquired_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    # Prompt 10 introduces the referenced project-run table.
-    project_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    project_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("realm_project_runs.id")
+    )
     __table_args__ = (
         UniqueConstraint("realm_id", "seq", name="uq_realm_tags_seq"),
         CheckConstraint("seq > 0", name="ck_realm_tags_seq_positive"),
@@ -238,4 +241,53 @@ class RewardLog(Base):
     )
     __table_args__ = (
         CheckConstraint("cycles >= 0", name="ck_reward_log_cycles_nonnegative"),
+    )
+
+
+class RealmProjectRun(Base):
+    """One project attempt; progress is stored in integer milli-units per line."""
+
+    __tablename__ = "realm_project_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    realm_id: Mapped[str] = mapped_column(ForeignKey("realm_state.id"), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    kicked_off_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id"))
+    kicked_off_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    required: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    contributed: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    last_contribution_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    build_completes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('funding', 'building', 'complete', 'failed')",
+            name="ck_project_run_status",
+        ),
+        Index(
+            "uq_realm_active_project",
+            "realm_id",
+            unique=True,
+            sqlite_where=text("status IN ('funding', 'building')"),
+            postgresql_where=text("status IN ('funding', 'building')"),
+        ),
+    )
+
+
+class RealmContribution(Base):
+    """Immutable consumed goods, including the realm's own (null) contributor."""
+
+    __tablename__ = "realm_contributions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("realm_project_runs.id"), nullable=False, index=True
+    )
+    character_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("characters.id"))
+    item_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    quantity_milli: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    contributed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("quantity_milli > 0", name="ck_contribution_positive"),
     )

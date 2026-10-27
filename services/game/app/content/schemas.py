@@ -583,8 +583,25 @@ class TransitionConfig(ContentModel):
     duration_days: float = Field(default=7, gt=0, allow_inf_nan=False)
 
 
+class ProjectConfig(ContentModel):
+    """Idle erosion and retry settings for project attempts."""
+
+    idle_grace_days: float = Field(default=2, ge=0, allow_inf_nan=False)
+    erosion_pct_per_day: float = Field(default=20, gt=0, le=100, allow_inf_nan=False)
+    fail_cooldown_hours: float = Field(default=36, ge=0, allow_inf_nan=False)
+
+
+class TickConfig(ContentModel):
+    """Realm tick cadence and bounded lazy catch-up."""
+
+    per_day: int = Field(default=24, gt=0, le=86400)
+    max_catchup: int = Field(default=72, gt=0)
+
+
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
     decay: DecayConfig
     transition: TransitionConfig = TransitionConfig()
+    project: ProjectConfig = ProjectConfig()
+    tick: TickConfig = TickConfig()

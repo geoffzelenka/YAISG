@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
-from app.api.actions import ActionFeedResponse, _active_summary, _character
+from app.api.actions import ActionFeedResponse, _active_summary, get_character
 from app.api.schemas import rewards_response
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
@@ -73,7 +73,7 @@ async def preview(
 ) -> dict[str, object]:
     """Resolve prior work and return current terms without starting travel."""
     content: ContentIndex = request.app.state.content
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     # Lock all route candidates before the estate, including on first touch.
     resolve_character(
         session,
@@ -118,7 +118,7 @@ async def start(
 ) -> ActionFeedResponse:
     """Replace prior work with a fixed route and pay the first step immediately."""
     content: ContentIndex = request.app.state.content
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     resolve_character(
         session,
         character.id,

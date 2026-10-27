@@ -42,6 +42,12 @@ const packBodies = {
   economy: {
     decay: { faltering_factor: 0.5 },
     transition: { duration_days: 7 },
+    project: {
+      idle_grace_days: 2,
+      erosion_pct_per_day: 20,
+      fail_cooldown_hours: 36,
+    },
+    tick: { per_day: 24, max_catchup: 72 },
   },
   progression: {
     visit_profile: {

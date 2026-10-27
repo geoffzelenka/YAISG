@@ -100,7 +100,8 @@ def _content(request: Request) -> ContentIndex:
     return request.app.state.content  # type: ignore[no-any-return]
 
 
-def _character(session: Session, player_id: uuid.UUID) -> Character:
+def get_character(session: Session, player_id: uuid.UUID) -> Character:
+    """Load the player's character or raise the shared missing-character error."""
     character = session.scalar(
         select(Character).where(Character.player_id == player_id)
     )
@@ -156,7 +157,7 @@ async def available_actions(
     session: DatabaseSession,
 ) -> AvailableActionsResponse:
     """Return every character skill action with all current start blockers."""
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
     state = load_character_state(session, character.id)
@@ -192,7 +193,7 @@ async def start_action(
     session: DatabaseSession,
 ) -> StartedActionResponse:
     """Resolve the prior action and atomically replace it with a validated one."""
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
     state = load_character_state(session, character.id)
@@ -241,7 +242,7 @@ async def get_action(
     session: DatabaseSession,
 ) -> ActionFeedResponse:
     """Resolve the active action and return this request's reward feed."""
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     content = _content(request)
     resolution = resolve_character(session, character.id, now, content)
     state = load_character_state(session, character.id)
@@ -276,7 +277,7 @@ async def stop_action(
     session: DatabaseSession,
 ) -> ActionFeedResponse:
     """Resolve final rewards, then stop the current action."""
-    character = _character(session, player.id)
+    character = get_character(session, player.id)
     resolution = resolve_character(session, character.id, now, _content(request))
     feed = claim_rewards(session, character.id, now)
     feed = _prefer_current_stop_reason(feed, resolution.result)
