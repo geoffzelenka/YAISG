@@ -97,6 +97,8 @@ def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
         inventory={stack.item_id: stack.quantity for stack in inventory},
         gold=currency.gold,
         estate_form_id=estate.form_id,
+        realm_id=character.realm_id,
+        estate_realm_id=estate.realm_id,
         realm_node_id=(
             realm_state.node_id
             if realm_state

@@ -289,6 +289,7 @@ def test_boot_rejects_invalid_tier_thresholds(
     _write_json(
         directory / "progression.json",
         {
+            **json.loads((CONTENT_DIR / "progression.json").read_text()),
             "tier_thresholds": thresholds,
             "tier_titles": ["Placeholder"] * len(thresholds),
         },
@@ -421,3 +422,14 @@ def test_category_defaults_resolver(category: str, resolver: str) -> None:
         )
     )
     assert skill.actions[0].resolver == resolver
+
+
+@pytest.mark.parametrize("retired", ["cycle_time_pct", "market_tax_pct"])
+def test_retired_modifier_types_are_rejected(retired: str) -> None:
+    """Retired mechanics cannot sneak back into strict content packs."""
+    from pydantic import ValidationError
+
+    from app.content.schemas import Modifier
+
+    with pytest.raises(ValidationError):
+        Modifier.model_validate_json(json.dumps({"type": retired, "value": 5}))

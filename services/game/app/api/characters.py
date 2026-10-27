@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.api.schemas import ActionValues, action_values
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
@@ -104,6 +105,7 @@ class ProfileResponse(BaseModel):
     realm: RealmSummary
     estate: EstateSummary
     caps: dict[CapType, CapSummary]
+    actions: dict[str, ActionValues]
 
 
 class InventoryStack(BaseModel):
@@ -301,6 +303,8 @@ def _profile(
         inventory={},
         gold=currency.gold,
         estate_form_id=estate.form_id,
+        realm_id=character.realm_id,
+        estate_realm_id=estate.realm_id,
         realm_node_id=node.id,
         installed_upgrades=tuple(upgrade.upgrade_id for upgrade in upgrades),
     )
@@ -320,6 +324,11 @@ def _profile(
         CapType.ESTATE_UPGRADE_SLOTS: resolved.estate_upgrade_slots,
     }
     return ProfileResponse(
+        actions={
+            action.id: action_values(action, state, content)
+            for skill in content.skills
+            for action in skill.actions
+        },
         character=CharacterSummary.model_validate(character, from_attributes=True),
         skills=skills,
         gold=currency.gold,

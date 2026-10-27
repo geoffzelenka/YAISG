@@ -36,7 +36,29 @@ const packBodies = {
   estate_forms: { forms: [], transformations: [], relocation_classes: {} },
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
-  progression: { tier_thresholds: [1], tier_titles: ['Placeholder'] },
+  progression: {
+    min_factor: 0.25,
+    min_cycle_ms: 1,
+    xp_bonus_cap_pct: 45,
+    proficiency: {
+      gathering: [0],
+      refining: [0],
+      manufacturing: [0],
+      combat: [0],
+      travel: [0],
+      exploration: [0],
+    },
+    taper: {
+      gathering: [1],
+      refining: [1],
+      manufacturing: [1],
+      combat: [1],
+      travel: [1],
+      exploration: [1],
+    },
+    tier_thresholds: [1],
+    tier_titles: ['Placeholder'],
+  },
 }
 
 function wrapper({ children }: PropsWithChildren) {

@@ -1,1 +1,107 @@
-{"tier_thresholds": [1, 50, 75, 90, 95], "tier_titles": ["Placeholder I", "Placeholder II", "Placeholder III", "Placeholder IV", "Placeholder V"]}
+{
+  "tier_thresholds": [
+    1,
+    50,
+    75,
+    90,
+    95
+  ],
+  "tier_titles": [
+    "Placeholder I",
+    "Placeholder II",
+    "Placeholder III",
+    "Placeholder IV",
+    "Placeholder V"
+  ],
+  "min_factor": 0.25,
+  "min_cycle_ms": 1,
+  "xp_bonus_cap_pct": 45,
+  "proficiency": {
+    "gathering": [
+      0,
+      5,
+      10,
+      15,
+      20
+    ],
+    "refining": [
+      0,
+      0,
+      5,
+      10,
+      20
+    ],
+    "manufacturing": [
+      0,
+      0,
+      10,
+      20,
+      30
+    ],
+    "combat": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "travel": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "exploration": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "taper": {
+    "gathering": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "refining": [
+      1,
+      1,
+      0.5,
+      0,
+      0
+    ],
+    "manufacturing": [
+      1,
+      0.5,
+      0,
+      0,
+      0
+    ],
+    "combat": [
+      1,
+      0.75,
+      0.5,
+      0.25,
+      0
+    ],
+    "travel": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "exploration": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}

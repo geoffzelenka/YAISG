@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 from itertools import accumulate
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -15,6 +15,10 @@ from pydantic import (
     model_validator,
 )
 
+SkillCategory = Literal[
+    "gathering", "refining", "manufacturing", "combat", "travel", "exploration"
+]
+
 
 class ContentModel(BaseModel):
     """Base class that rejects unknown content fields and prevents mutation."""
@@ -25,10 +29,9 @@ class ContentModel(BaseModel):
 class ModifierType(StrEnum):
     """Modifier mechanics understood by the game engine."""
 
-    CYCLE_TIME_PCT = "cycle_time_pct"
+    CYCLE_SPEED_PCT = "cycle_speed_pct"
     XP_PCT = "xp_pct"
     EXTRA_DROP_CHANCE_PCT = "extra_drop_chance_pct"
-    MARKET_TAX_PCT = "market_tax_pct"
 
 
 class CapType(StrEnum):
@@ -198,6 +201,7 @@ class Modifier(ContentModel):
     type: ModifierType
     value: float
     skill_id: str | None = None
+    category: SkillCategory | None = None
 
 
 class MarketOffer(ContentModel):
@@ -449,10 +453,20 @@ class ProgressionPack(ContentModel):
 
     tier_thresholds: tuple[StrictInt, ...]
     tier_titles: tuple[str, ...]
+    min_factor: float = Field(gt=0, le=1)
+    min_cycle_ms: int = Field(gt=0)
+    xp_bonus_cap_pct: float = Field(ge=0)
+    proficiency: dict[SkillCategory, tuple[float, float, float, float, float]]
+    taper: dict[SkillCategory, tuple[float, float, float, float, float]]
 
     @model_validator(mode="after")
     def validate_tiers(self) -> "ProgressionPack":
         """Require increasing thresholds and matching titles."""
+        for table in (self.proficiency, self.taper):
+            if set(table) != set(get_args(SkillCategory)):
+                raise ValueError("bonus tables require every skill category")
+        if any(value < 0 or value > 1 for row in self.taper.values() for value in row):
+            raise ValueError("taper factors must be between zero and one")
         t = self.tier_thresholds
         if not t or t[0] != 1 or t[-1] > 100:
             raise ValueError("thresholds must start at 1 and end at or below 100")
