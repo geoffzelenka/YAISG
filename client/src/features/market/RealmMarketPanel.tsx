@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CharacterProfile } from '../../api/characters'
-import { useRealmMap, RealmApiError } from '../../api/realms'
+import { ApiError } from '../../api/http'
+import { useRealmMap } from '../../api/realms'
 import {
   quoteMarket,
   useMarket,
@@ -12,7 +13,7 @@ import {
 import { selectorLabel } from '../realm/presentation'
 
 function formatMarketError(cause: unknown): string {
-  if (cause instanceof RealmApiError) return `${cause.message} (${cause.code})`
+  if (cause instanceof ApiError) return `${cause.message} (${cause.code})`
   return cause instanceof Error ? cause.message : 'Market request failed.'
 }
 
@@ -90,7 +91,7 @@ function MarketView({ id, present }: { id: string; present: boolean }) {
       setQuote(null)
     } catch (cause) {
       setQuote(null)
-      if (cause instanceof RealmApiError && cause.code === 'PRICE_MOVED') {
+      if (cause instanceof ApiError && cause.code === 'PRICE_MOVED') {
         setError(
           `${formatMarketError(cause)} Review the new quote and confirm again.`,
         )

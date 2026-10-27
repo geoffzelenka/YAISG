@@ -12,6 +12,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { CharacterProfile } from '../../api/characters'
 import { GlobalMarketPanel } from './GlobalMarketPanel'
 
+const marketContent = vi.hoisted(() => ({
+  settings: { tax_pct: 5, order_days: 14 } as
+    | { tax_pct?: number; order_days?: number }
+    | undefined,
+}))
+
 vi.mock('../../api/content', () => ({
   useContent: () => ({
     status: 'ready',
@@ -23,7 +29,7 @@ vi.mock('../../api/content', () => ({
           { id: 'key', name: 'Key', instanced: true },
         ],
       },
-      economy: { market: { tax_pct: 5, order_days: 14 } },
+      economy: { market: marketContent.settings },
     },
   }),
 }))
@@ -116,6 +122,7 @@ function setup(access = true) {
 }
 afterEach(() => {
   cleanup()
+  marketContent.settings = { tax_pct: 5, order_days: 14 }
   vi.unstubAllGlobals()
 })
 async function choose() {
@@ -125,12 +132,24 @@ async function choose() {
 it('access-gated controls leave books, history and cancellation available', async () => {
   const { mock } = setup(false)
   await screen.findByText(/No market access in your current realm/)
-  expect(screen.getByRole('button', { name: 'Place order' })).toBeDisabled()
   for (const button of screen.getAllByRole('button', { name: 'Collect' }))
     expect(button).toBeDisabled()
   expect(screen.queryByRole('option', { name: 'Key' })).not.toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('Good'), { target: { value: 'twig' } })
   await screen.findByText('12')
+  const place = screen.getByRole('button', { name: 'Place order' })
+  expect(place).toBeDisabled()
+  for (const label of ['Side', 'Quantity', 'Unit price'])
+    expect(screen.getByLabelText(label)).toBeDisabled()
+  fireEvent.submit(place.closest('form')!)
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(
+    mock.mock.calls.filter(
+      ([path, init]) => path === '/market/orders' && init?.method === 'POST',
+    ),
+  ).toHaveLength(0)
   fireEvent.click(
     within(screen.getByRole('article', { name: 'Order slot' })).getByText(
       'Cancel order',
@@ -143,7 +162,13 @@ it('slot state rendering and partial collection report actual transfers and inva
   const { invalidate } = setup()
   await choose()
   expect(await screen.findByText('Slots used: 2 / 4')).toBeInTheDocument()
-  expect(screen.getByText('buy twig · collectable')).toBeInTheDocument()
+  const open = within(screen.getByRole('article', { name: 'Order slot' }))
+  expect(open.getByText('buy Twig · open')).toBeInTheDocument()
+  expect(open.getByText(/Waiting: 2 items and 4 gold/)).toBeInTheDocument()
+  expect(open.getByText('Cancel order')).toBeEnabled()
+  const expired = within(screen.getByRole('article', { name: 'Order expired' }))
+  expect(expired.getByText('buy Twig · collectable')).toBeInTheDocument()
+  expect(expired.getByText('Cancel order')).toBeDisabled()
   const closed = within(screen.getByRole('article', { name: 'Order closed' }))
   expect(closed.getByText('Collect')).toBeDisabled()
   expect(closed.getByText('Cancel order')).toBeDisabled()
@@ -153,7 +178,7 @@ it('slot state rendering and partial collection report actual transfers and inva
     ),
   )
   expect(await screen.findByRole('status')).toHaveTextContent(
-    'Collected 1 items and 4 gold. Partial collection:',
+    'Collected 1 item and 4 gold. Partial collection: 1 item and 0 gold remain in the slot',
   )
   for (const key of ['characters', 'realms', 'estates', 'map', 'global-market'])
     expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] })
@@ -172,7 +197,7 @@ it('immediate-fill report uses server execution and leaves proceeds in slots', a
   expect(screen.getByRole('status')).toHaveTextContent(
     'Slot holds 2 items and 4 gold. Collect to move',
   )
-  expect(screen.getAllByText(/buy 2 twig at 7 gold each/)).toHaveLength(2)
+  expect(screen.getAllByText(/buy 2 Twig at 7 gold each/)).toHaveLength(2)
   expect(
     JSON.parse(
       String(
@@ -274,3 +299,66 @@ it('sell intent and a resting order do not imply an immediate fill', async () =>
     ),
   ).toMatchObject({ side: 'sell' })
 })
+
+it.each(['NO_MARKET_ACCESS', 'MARKET_RETRY', 'INSUFFICIENT_GOLD'])(
+  '%s refreshes current realm access after mutation failure',
+  async (code) => {
+    const { mock, invalidate } = setup()
+    await choose()
+    const original = mock.getMockImplementation()!
+    mock.mockImplementation((path, init) => {
+      if (path === '/market/orders')
+        return Promise.resolve(
+          Response.json(
+            { error: { code, message: 'Order rejected' } },
+            { status: 409 },
+          ),
+        )
+      if (path === '/realms/home')
+        return Promise.resolve(Response.json({ active_tags: [] }))
+      return original(path, init)
+    })
+    fireEvent.click(screen.getByText('Place order'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `Order rejected (${code})`,
+    )
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['realms', 'home'] })
+    await screen.findByText(/No market access in your current realm/)
+    expect(screen.getByText('Place order')).toBeDisabled()
+  },
+)
+
+it('collecting all waiting holdings from an open order reports nothing waiting right now', async () => {
+  const { mock } = setup()
+  await choose()
+  const original = mock.getMockImplementation()!
+  mock.mockImplementation((path, init) =>
+    path.endsWith('/collect')
+      ? Promise.resolve(
+          Response.json({
+            order: { ...order, fill_items: 0, fill_gold: 0 },
+            collected: { items: 2, gold: 4 },
+          }),
+        )
+      : original(path, init),
+  )
+  fireEvent.click(
+    within(screen.getByRole('article', { name: 'Order slot' })).getByText(
+      'Collect',
+    ),
+  )
+  expect(await screen.findByRole('status')).toHaveTextContent(
+    'Collected 2 items and 4 gold. Nothing is waiting right now.',
+  )
+})
+
+it.each([undefined, { tax_pct: 5 }, { order_days: 14 }])(
+  'omits incomplete tax and expiry settings %j',
+  async (settings) => {
+    marketContent.settings = settings
+    setup()
+    await choose()
+    expect(screen.queryByText(/Seller tax: 5%/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Orders expire after/)).not.toBeInTheDocument()
+  },
+)

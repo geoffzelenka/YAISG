@@ -1,3 +1,12 @@
+export class ApiError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
 const authUrl = String(import.meta.env.VITE_AUTH_URL ?? 'http://localhost:8001')
 const gameUrl = String(import.meta.env.VITE_GAME_URL ?? 'http://localhost:8000')
 

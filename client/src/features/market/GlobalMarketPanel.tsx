@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import type { CharacterProfile } from '../../api/characters'
 import { useContent } from '../../api/content'
-import { RealmApiError, useRealm } from '../../api/realms'
+import { ApiError } from '../../api/http'
+import { useRealm } from '../../api/realms'
 import {
   useBook,
   useHistory,
@@ -11,13 +12,24 @@ import {
   type OrderIntent,
 } from '../../api/globalMarket'
 
-function Executions({ fills }: { fills: Fill[] }) {
+function itemCount(quantity: number): string {
+  return `${quantity} ${quantity === 1 ? 'item' : 'items'}`
+}
+
+function Executions({
+  fills,
+  itemName,
+}: {
+  fills: Fill[]
+  itemName: (id: string) => string
+}) {
   return (
     <ul>
       {fills.map((fill) => (
         <li key={fill.id}>
-          {fill.side} {fill.quantity} {fill.item_id} at {fill.unit_price} gold
-          each · Seller tax: {fill.tax_gold} gold · {fill.matched_at}
+          {fill.side} {fill.quantity} {itemName(fill.item_id)} at{' '}
+          {fill.unit_price} gold each · Seller tax: {fill.tax_gold} gold ·{' '}
+          {fill.matched_at}
         </li>
       ))}
     </ul>
@@ -37,7 +49,7 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
   const book = useBook(item, depth)
   const orders = useOrders()
   const history = useHistory()
-  const transfer = useOrderTransfer()
+  const transfer = useOrderTransfer(profile.character.current_realm_id)
   const inFlight = useRef(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -62,8 +74,14 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
     try {
       const result = await transfer.mutateAsync(value)
       if (result.collected) {
+        const remaining = result.order.fill_items || result.order.fill_gold
+        const waiting = remaining
+          ? `Partial collection: ${itemCount(result.order.fill_items)} and ${result.order.fill_gold} gold remain in the slot until capacity is available.`
+          : result.order.status === 'open'
+            ? 'Nothing is waiting right now.'
+            : 'No holdings remain to collect.'
         setMessage(
-          `Collected ${result.collected.items} items and ${result.collected.gold} gold. ${result.order.fill_items || result.order.fill_gold ? 'Partial collection: remaining holdings stay in the slot until capacity is available.' : 'No holdings remain to collect.'}`,
+          `Collected ${itemCount(result.collected.items)} and ${result.collected.gold} gold. ${waiting}`,
         )
       } else if ('action' in value)
         setMessage(
@@ -72,12 +90,12 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
       else {
         setFills(result.fills ?? [])
         setMessage(
-          `Order placed. Remaining on book: ${result.order.quantity_remaining}. Slot holds ${result.order.fill_items} items and ${result.order.fill_gold} gold. Collect to move holdings into inventory and wallet.`,
+          `Order placed. Remaining on book: ${result.order.quantity_remaining}. Slot holds ${itemCount(result.order.fill_items)} and ${result.order.fill_gold} gold. Collect to move holdings into inventory and wallet.`,
         )
       }
     } catch (cause) {
       setError(
-        cause instanceof RealmApiError
+        cause instanceof ApiError
           ? `${cause.message} (${cause.code})${cause.code === 'MARKET_RETRY' ? ' Please retry the request.' : ''}`
           : cause instanceof Error
             ? cause.message
@@ -95,6 +113,9 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
           : 'Loading market content…'}
       </p>
     )
+  const itemName = (id: string) =>
+    content.content.items.items.find((good) => good.id === id)?.name ?? id
+  const marketSettings = content.content.economy.market
   return (
     <section>
       <h2 className="text-3xl font-bold">Player market</h2>
@@ -208,17 +229,20 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
           <button disabled={!item}>Place order</button>
         </fieldset>
       </form>
-      <p>
-        Orders escrow their full goods or gold. Seller tax:{' '}
-        {content.content.economy.market?.tax_pct}%. Orders expire after{' '}
-        {content.content.economy.market?.order_days} days.
-      </p>
+      {marketSettings?.tax_pct !== undefined &&
+        marketSettings.order_days !== undefined && (
+          <p>
+            Orders escrow their full goods or gold. Seller tax:{' '}
+            {marketSettings.tax_pct}%. Orders expire after{' '}
+            {marketSettings.order_days} days.
+          </p>
+        )}
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
       {!!fills.length && (
         <div>
           <h3>Immediate fills</h3>
-          <Executions fills={fills} />
+          <Executions fills={fills} itemName={itemName} />
         </div>
       )}
       <h3>Order slots</h3>
@@ -237,7 +261,7 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
           {orders.data.orders.map((order) => (
             <article key={order.id} aria-label={`Order ${order.id}`}>
               <h4>
-                {order.side} {order.item_id} · {order.status}
+                {order.side} {itemName(order.item_id)} · {order.status}
               </h4>
               <p>
                 Limit: {order.unit_price} gold · Remaining:{' '}
@@ -245,8 +269,8 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
                 {order.escrow_gold_remaining}
               </p>
               <p>
-                Waiting: {order.fill_items} items and {order.fill_gold} gold ·
-                Expires: {order.expires_at}
+                Waiting: {itemCount(order.fill_items)} and {order.fill_gold}{' '}
+                gold · Expires: {order.expires_at}
               </p>
               <button
                 disabled={
@@ -280,6 +304,7 @@ export function GlobalMarketPanel({ profile }: { profile: CharacterProfile }) {
             <>
               <Executions
                 fills={history.data.pages.flatMap((page) => page.matches)}
+                itemName={itemName}
               />
               {!history.data.pages[0].matches.length && <p>No trades yet.</p>}
             </>

@@ -4,8 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { gameRequest, readApiError } from './http'
-import { RealmApiError } from './realms'
+import { ApiError, gameRequest, readApiError } from './http'
 
 export type OrderIntent = {
   side: 'buy' | 'sell'
@@ -54,10 +53,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   )
   if (!response.ok) {
     const error = await readApiError(response, 'Market request failed')
-    throw new RealmApiError(
-      error.code ?? 'MARKET_REQUEST_FAILED',
-      error.message,
-    )
+    throw new ApiError(error.code ?? 'MARKET_REQUEST_FAILED', error.message)
   }
   return response.json() as Promise<T>
 }
@@ -91,7 +87,7 @@ export function useHistory() {
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   })
 }
-export function useOrderTransfer() {
+export function useOrderTransfer(currentRealmId: string) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (
@@ -104,6 +100,9 @@ export function useOrderTransfer() {
           )
         : request<MarketResult>('orders', intent),
     retry: false,
+    onError: async () => {
+      await client.invalidateQueries({ queryKey: ['realms', currentRealmId] })
+    },
     onSuccess: async () => {
       await Promise.all(
         ['global-market', 'characters', 'realms', 'estates', 'map'].map((key) =>

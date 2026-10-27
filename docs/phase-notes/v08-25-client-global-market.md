@@ -37,6 +37,35 @@
 - Disposable SQLite `make db-reset` and subsequent game/auth Alembic upgrades
   to head succeeded. No schema or server behavior changed.
 
+- Review round 1: strengthened the access test to choose a good before checking
+  disabled creation, assert Side/Quantity/Unit price are disabled, submit the
+  form directly, and assert no creation POST. A scratch mutation removing only
+  the fieldset access gate fails at the disabled Place order assertion; the gate
+  was restored. No scratch mutation remains.
+- Review round 1: partial collection reports actual transferred and remaining
+  item/gold amounts with singular/plural item labels. An open order with all
+  current fills collected says “Nothing is waiting right now.” Slot tests now
+  assert open status, waiting balances, enabled cancellation, collectable status
+  and disabled cancellation, plus the partial remainder.
+- Review round 1: every global-market mutation failure invalidates the current
+  realm query so stale access is refreshed, including NO_MARKET_ACCESS. Global
+  and realm market callers now use shared ApiError from api/http.ts, preserving
+  error codes. Tax/expiry copy renders only when both content values exist.
+  Fills, durable history and slot headings show authored item names.
+- Review round 1 tests added in GlobalMarketPanel.test.tsx:
+  `%s refreshes current realm access after mutation failure`
+  (NO_MARKET_ACCESS, MARKET_RETRY, INSUFFICIENT_GOLD);
+  `collecting all waiting holdings from an open order reports nothing waiting right now`;
+  `omits incomplete tax and expiry settings %j` (three incomplete settings).
+  Changed `access-gated controls leave books, history and cancellation available`,
+  `slot state rendering and partial collection report actual transfers and invalidate holders`,
+  and `immediate-fill report uses server execution and leaves proceeds in slots`.
+
+- Review round 1 validation: SQLite
+  `PATH=$PWD/.venv/bin:$PATH make ci` passes: auth 15, game 615 with 20
+  database-specific skips, client 90. Formatting, lint, strict typing,
+  production build, scripts and content lint pass.
+
 ## Removed
 
 - Removed the Player Market placeholder. No tests removed or weakened.
