@@ -14,7 +14,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 05 | `05-tags` | Tags, action requirements, availability report | done | v08/05-tags | b75ded2 | Tags and economy packs; pure active_tags with D11 stage effects; all-of realm tags; one unmet_requirements for start/resolve/availability incl. REQUIREMENT_LOST; profile shares the state loader. |
 | 06 | `06-resolver-presence` | Resolver seam, current_realm_id, presence | done | v08/06-resolver-presence | 4d41518 | ActionResolver protocol + registry with UniformResolver (golden-verified against pre-refactor engine); current_realm_id; presence helpers; character-row lock on every resolve; /actions/poll and /actions/stop. |
 | 07 | `07-travel` | Map edges, journeys, the Travel skill | done | v08/07-travel | b6a2192 | Map edges with terrain/level/one-way; Dijkstra routing with exact tie-breaks; step-wise journeys (TravelResolver) with supplies via pay_selector and flat Travel XP; relocation removed; offline equals online. |
-| 08 | `08-client-skills-travel` | Client: skills, tiers, travel | pending | — | — | — |
+| 08 | `08-client-skills-travel` | Client: skills, tiers, travel | ready for review | v08/08-client-skills-travel | — | Server skill tiers/effective rates and lock reasons; journey preview/start, meta progress and generic travel reward summaries. |
 | 09 | `09-development-graph` | Nodes, tag stack, transitions | pending | — | — | — |
 | 10 | `10-project-runs` | Project runs and resolve_realm | pending | — | — | — |
 | 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | pending | — | — | — |

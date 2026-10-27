@@ -7,6 +7,11 @@ export type AvailableAction = {
   name: string
   unlock_level: number
   cycle_ms: number
+  xp_per_cycle: number
+  xp_bonus_uncapped: number
+  xp_bonus_capped: number
+  proficiency_pct: number
+  taper_factor: number
   startable: boolean
   blocked_by: string[]
 }
@@ -30,6 +35,7 @@ export type ActiveAction = {
   cycle_ms: number
   started_at: string
   last_resolved_at: string
+  meta?: Record<string, unknown>
 }
 export type ActionFeedResponse = {
   active: ActiveAction | null

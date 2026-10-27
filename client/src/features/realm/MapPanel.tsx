@@ -1,5 +1,6 @@
 import type { CharacterProfile } from '../../api/characters'
 import { useRealmMap } from '../../api/realms'
+import { TravelForm } from './TravelForm'
 
 export function MapPanel({ profile }: { profile: CharacterProfile }) {
   const map = useRealmMap()
@@ -8,7 +9,21 @@ export function MapPanel({ profile }: { profile: CharacterProfile }) {
   return (
     <section>
       <h2 className="text-3xl font-bold">Realm map</h2>
+      <TravelForm
+        key={profile.character.current_realm_id}
+        profile={profile}
+        nodes={map.data.nodes}
+      />
       <p className="mt-2 text-slate-400">Travel routes connect the realms.</p>
+      <ul className="mt-4">
+        {map.data.nodes.map((node) => (
+          <li key={node.realm_id}>
+            {node.name} · Tier {node.tier} · {node.decay_stage}
+            {node.treasury_band && ` · Treasury: ${node.treasury_band}`}
+            {node.transition_pending && ' · Transition pending'}
+          </li>
+        ))}
+      </ul>
       <svg
         aria-label="Realm graph"
         className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-900"

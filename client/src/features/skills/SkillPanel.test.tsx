@@ -25,6 +25,17 @@ describe('skill panel', () => {
       vi.fn((input: string | URL | Request) => {
         const path = new URL(String(input), 'http://test').pathname
         const bodies: Record<string, unknown> = {
+          '/characters/me': {
+            skills: [
+              {
+                id: 'gathering',
+                level: 30,
+                tier: 3,
+                tier_title: 'Test tier',
+                xp_to_next: 123,
+              },
+            ],
+          },
           '/content/manifest': { version: 'test', packs: {} },
           '/content/skills': {
             skills: [
@@ -134,6 +145,11 @@ describe('skill panel', () => {
                     action_id: 'a.open',
                     name: 'Open Node',
                     unlock_level: 1,
+                    xp_per_cycle: 17,
+                    xp_bonus_uncapped: 60,
+                    xp_bonus_capped: 45,
+                    proficiency_pct: 20,
+                    taper_factor: 0.5,
                     cycle_ms: 1000,
                     startable: true,
                     blocked_by: [],
@@ -142,9 +158,22 @@ describe('skill panel', () => {
                     action_id: 'a.locked',
                     name: 'Locked Node',
                     unlock_level: 5,
+                    xp_per_cycle: 17,
+                    xp_bonus_uncapped: 60,
+                    xp_bonus_capped: 45,
+                    proficiency_pct: 20,
+                    taper_factor: 0.5,
                     cycle_ms: 1000,
                     startable: false,
-                    blocked_by: ['INSUFFICIENT_LEVEL'],
+                    blocked_by: [
+                      'INSUFFICIENT_LEVEL',
+                      'NOT_OFFERED_HERE',
+                      'MISSING_FACILITY',
+                      'MISSING_REALM_TAG',
+                      'MISSING_SKILL_LEVEL',
+                      'MISSING_TOOL',
+                      'MISSING_INPUTS',
+                    ],
                   },
                 ],
               },
@@ -164,7 +193,18 @@ describe('skill panel', () => {
       await screen.findByRole('heading', { name: 'Open Node' }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Start' })[0]).toBeEnabled()
-    expect(screen.getByText('Locked: insufficient level')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /Locked: insufficient level, Not offered in this realm, Required facility is unavailable, Required realm feature is unavailable, Required skill level has not been reached, Required tool is not equipped, Not enough supplies/,
+      ),
+    ).toBeInTheDocument()
+    expect(await screen.findByLabelText('Skill tier')).toHaveTextContent(
+      'Tier 3: Test tier',
+    )
+    expect(screen.getAllByText('XP capped')).toHaveLength(2)
+    expect(
+      screen.getAllByText(/17 XP per cycle · Proficiency 20.0% · Taper ×0.5/),
+    ).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Start' })[1]).toBeDisabled()
     expect(screen.getByText('2× Input Item')).toBeInTheDocument()
     expect(screen.getByText('1–3× Output Item (50%)')).toBeInTheDocument()

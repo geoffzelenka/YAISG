@@ -197,7 +197,9 @@ export function ProfilePanel({ profile }: { profile: CharacterProfile }) {
             >
               <div className="flex justify-between">
                 <h3 className="font-semibold">{skill.name}</h3>
-                <span>Level {skill.level}</span>
+                <span>
+                  Level {skill.level} · Tier {skill.tier}: {skill.tier_title}
+                </span>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded bg-slate-700">
                 <div
@@ -235,6 +237,7 @@ function Shell({ profile }: { profile: CharacterProfile }) {
       { name: 'Gathering', path: '/skills/gathering' },
       { name: 'Refining', path: '/skills/refining' },
       { name: 'Manufacturing', path: '/skills/manufacturing' },
+      { name: 'Travel', path: '/skills/travel' },
     ],
   ]
   return (
@@ -304,6 +307,10 @@ function Shell({ profile }: { profile: CharacterProfile }) {
             <Route
               path="skills/manufacturing"
               element={<SkillPanel skillId="manufacturing" />}
+            />
+            <Route
+              path="skills/travel"
+              element={<SkillPanel skillId="travel" />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

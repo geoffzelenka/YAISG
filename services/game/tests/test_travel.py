@@ -268,6 +268,12 @@ async def test_travel_preview_start_stop_and_removed_routes(
     assert started.status_code == 200
     assert started.json()["since_last"]["items_consumed"] == {"item.fake_sprig": 2}
     clock["now"] += timedelta(seconds=30)
+    poll = await client.get("/actions/poll", headers=headers)
+    meta = poll.json()["active"]["meta"]
+    assert meta["step_index"] == 0
+    assert meta["remaining_ms"] == 30_000
+    assert meta["duration_ms"] == 60_000
+    assert meta["route"][0]["destination_realm_id"] == DESTINATION
     blocked = await client.post(
         "/estates/me/transform", headers=headers, json={"form_id": "form.homestead"}
     )

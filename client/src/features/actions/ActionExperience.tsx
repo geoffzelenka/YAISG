@@ -10,10 +10,13 @@ import {
 import { useContent } from '../../api/content'
 import {
   cycleProgress,
+  journeyProgress,
   nextCycleDelay,
   startActionClock,
   useActionClock,
 } from './actionStore'
+import { JourneyProgress, ResolverDetails } from './ResolverDetails'
+import { journeyStep } from './journey'
 import { shouldShowWelcomeBack } from './rewardPresentation'
 
 type FeedEntry = {
@@ -55,7 +58,11 @@ export function ActionExperience() {
       client.setQueryData(['characters', 'me', 'action'], next)
       const isWelcomeBack = shouldShowWelcomeBack(next.since_last)
       if (isWelcomeBack) setWelcome(next.since_last)
-      if (next.since_last.cycles_completed > 0 || next.stop_reason !== null) {
+      if (
+        hasAuthoritativeChanges(next) ||
+        Object.keys(next.since_last.details ?? {}).length > 0 ||
+        next.stop_reason !== null
+      ) {
         setFeed((current) =>
           [
             ...current,
@@ -70,6 +77,7 @@ export function ActionExperience() {
         )
       }
       if (hasAuthoritativeChanges(next)) {
+        void client.invalidateQueries({ queryKey: ['estates', 'me'] })
         void client.invalidateQueries({
           queryKey: ['characters', 'me'],
           exact: true,
@@ -97,7 +105,13 @@ export function ActionExperience() {
         lastActive
           ? nextCycleDelay(
               Date.now(),
-              lastActive.started_at,
+              journeyStep(lastActive)
+                ? new Date(
+                    Date.parse(lastActive.last_resolved_at) -
+                      lastActive.cycle_ms +
+                      (journeyStep(lastActive)?.remaining ?? 0),
+                  ).toISOString()
+                : lastActive.started_at,
               lastActive.cycle_ms,
             )
           : 30_000,
@@ -134,12 +148,19 @@ export function ActionExperience() {
       })
       void poll()
     }
+    const travelStarted = (event: Event) => {
+      mergeResponse((event as CustomEvent<ActionFeedResponse>).detail)
+      refresh()
+      void client.invalidateQueries({ queryKey: ['estates', 'me'] })
+    }
+    window.addEventListener('yaisg:travel-started', travelStarted)
     window.addEventListener('focus', refresh)
     window.addEventListener('online', refresh)
     window.addEventListener('yaisg:action-changed', refresh)
     return () => {
       cancelled = true
       if (timeout !== undefined) clearTimeout(timeout)
+      window.removeEventListener('yaisg:travel-started', travelStarted)
       window.removeEventListener('focus', refresh)
       window.removeEventListener('online', refresh)
       window.removeEventListener('yaisg:action-changed', refresh)
@@ -153,8 +174,16 @@ export function ActionExperience() {
           .flatMap((skill) => skill.actions)
           .find((candidate) => candidate.id === active.action_id)
       : undefined
+  const step = active ? journeyStep(active) : null
   const progress = active
-    ? cycleProgress(now, active.started_at, active.cycle_ms)
+    ? step
+      ? journeyProgress(
+          now,
+          active.last_resolved_at,
+          active.cycle_ms,
+          step.remaining,
+        )
+      : cycleProgress(now, active.started_at, active.cycle_ms)
     : 0
   const itemNames =
     content.status === 'ready'
@@ -190,6 +219,7 @@ export function ActionExperience() {
               </strong>
               <span className="text-xs text-slate-400">Cosmetic timer</span>
             </div>
+            {active && <JourneyProgress active={active} />}
             <div className="mt-2 h-2 overflow-hidden rounded bg-slate-700">
               <div
                 className="h-full bg-emerald-400 transition-[width] duration-200"
@@ -296,6 +326,7 @@ function RewardSummary({
   return (
     <div className="rounded border border-slate-700 bg-slate-950 p-3 text-sm">
       {text || 'Action ended.'}
+      <ResolverDetails details={entry.rewards.details} />
       {entry.reason && (
         <p className="text-amber-300">
           Stopped: {entry.reason.replaceAll('_', ' ')}
@@ -310,6 +341,9 @@ function summarize(rewards: Rewards, names: DisplayNames): string {
     ([id, qty]) => `+${qty} ${names.itemNames.get(id) ?? id}`,
   )
   parts.push(
+    ...Object.entries(rewards.items_consumed).map(
+      ([id, qty]) => `−${qty} ${names.itemNames.get(id) ?? id} consumed`,
+    ),
     ...Object.entries(rewards.xp_gained).map(
       ([id, xp]) => `+${xp} ${names.skillNames.get(id) ?? id} XP`,
     ),
@@ -352,7 +386,13 @@ export function WelcomeBack({
           Welcome back
         </h2>
         <p className="mt-2">{rewards.cycles_completed} cycles completed.</p>
+        <ResolverDetails details={rewards.details} />
         <dl className="mt-4 space-y-2">
+          {Object.entries(rewards.items_consumed).map(([id, qty]) => (
+            <div key={id}>
+              {qty} {names.itemNames.get(id) ?? id} consumed
+            </div>
+          ))}
           {Object.entries(rewards.xp_gained).map(([skill, xp]) => (
             <div key={skill}>
               <dt className="inline">
