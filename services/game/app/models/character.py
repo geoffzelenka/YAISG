@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -49,7 +50,7 @@ class CharacterSkill(Base):
         ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
     )
     skill_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    xp: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __table_args__ = (
         CheckConstraint("xp >= 0", name="ck_character_skills_xp_nonnegative"),

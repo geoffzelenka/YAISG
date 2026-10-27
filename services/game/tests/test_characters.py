@@ -116,7 +116,7 @@ async def test_creation_builds_complete_profile(
     assert response.status_code == 201
     profile = response.json()
     assert profile["character"]["name"] == "Demo Hero"
-    assert profile["gold"] == 100
+    assert profile["gold"] == 0
     assert profile["realm"]["name"] == "Verdant Vale"
     assert profile["estate"]["upgrade_slots"] == 2
     assert profile["estate"]["installed_upgrades"] == []
@@ -126,8 +126,7 @@ async def test_creation_builds_complete_profile(
         "effective": 4.0,
     }
     assert all(
-        skill["level"] == 1 and skill["xp_to_next"] == 100
-        for skill in profile["skills"]
+        skill["level"] == 1 and skill["xp_to_next"] == 57 for skill in profile["skills"]
     )
     with client[1]() as session:
         assert session.scalar(select(func.count()).select_from(CharacterSkill)) == 4
@@ -264,7 +263,7 @@ async def test_profile_xp_to_next_and_repairs_cached_level(
     with client[1]() as session:
         skill = session.get(CharacterSkill, (character_id, "gathering"))
         assert skill is not None
-        skill.xp = 100
+        skill.xp = 57
         skill.level = 99
         session.commit()
 
@@ -276,7 +275,7 @@ async def test_profile_xp_to_next_and_repairs_cached_level(
     )
     assert gathering["level"] == 2
     assert gathering["xp_into_level"] == 0
-    assert gathering["xp_to_next"] == 112
+    assert gathering["xp_to_next"] == 63
     with client[1]() as session:
         repaired = session.get(CharacterSkill, (character_id, "gathering"))
         assert repaired is not None
@@ -310,3 +309,26 @@ async def test_profile_seeds_a_missing_content_skill_row(
     assert crafting["xp"] == 0
     with client[1]() as session:
         assert session.get(CharacterSkill, (character_id, "crafting")) is not None
+
+
+async def test_profile_max_level_retains_64_bit_xp(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """XP beyond a 32-bit integer is retained with max-level tier and null progress."""
+    token = _token()
+    created = await _post(client[0], token, "Max Hero", "realm.verdant_vale")
+    character_id = uuid.UUID(created.json()["character"]["id"])
+    with client[1]() as session:
+        skill = session.get(CharacterSkill, (character_id, "gathering"))
+        assert skill is not None
+        skill.xp = 2**40
+        session.commit()
+    response = await client[0].get(
+        "/characters/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    skill_data = next(s for s in response.json()["skills"] if s["id"] == "gathering")
+    assert skill_data["xp"] == 2**40
+    assert skill_data["level"] == 100
+    assert skill_data["xp_to_next"] is None
+    assert skill_data["tier"] == 5
+    assert skill_data["tier_title"] == app.state.content.progression.tier_titles[4]

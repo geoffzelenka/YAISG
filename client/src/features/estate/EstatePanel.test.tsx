@@ -42,6 +42,7 @@ const packs: Record<string, unknown> = {
   estate_forms: { forms: [], transformations: [], relocation_classes: {} },
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
+  progression: { tier_thresholds: [1], tier_titles: ['Placeholder'] },
 }
 
 function wrapper({ children }: PropsWithChildren) {

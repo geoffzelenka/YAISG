@@ -16,7 +16,9 @@ export type CharacterProfile = {
     xp: number
     level: number
     xp_into_level: number
-    xp_to_next: number
+    xp_to_next: number | null
+    tier: number
+    tier_title: string
   }[]
   gold: number
   realm: {

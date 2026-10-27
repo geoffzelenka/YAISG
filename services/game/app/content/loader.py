@@ -23,6 +23,7 @@ from app.content.schemas import (
     Item,
     ItemsPack,
     MapPack,
+    ProgressionPack,
     Project,
     ProjectsPack,
     Realm,
@@ -43,6 +44,7 @@ PUBLIC_PACKS = (
     "estate_forms",
     "development",
     "projects",
+    "progression",
 )
 _KNOWN_PACKS = {*PUBLIC_PACKS, "xp_curve"}
 
@@ -80,6 +82,7 @@ class ContentIndex:
     projects: tuple[Project, ...]
     caps: CapsConfig
     xp_curve: XpCurve
+    progression: ProgressionPack
     relocation_classes: MappingProxyType[str, Any]
     pack_payloads: MappingProxyType[str, bytes]
     _skills_by_id: MappingProxyType[str, Skill]
@@ -323,12 +326,6 @@ def _validate(
         )
         if set(upgrade.realm_tags) - tags - {"*"}:
             raise ContentError(f"unknown realm tags in upgrade {upgrade.id}")
-    if [v.level for v in xp_curve.levels] != list(range(1, 100)):
-        raise ContentError("XP curve must contain ordered levels 1 through 99")
-    if any(
-        b.xp <= a.xp for a, b in zip(xp_curve.levels, xp_curve.levels[1:], strict=False)
-    ):
-        raise ContentError("XP requirements must increase after level 1")
 
 
 def load_content(content_dir: Path) -> ContentIndex:
@@ -346,6 +343,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     development = _load_model(content_dir, "development", DevelopmentPack)
     projects_pack = _load_model(content_dir, "projects", ProjectsPack)
     xp_curve = _load_model(content_dir, "xp_curve", XpCurve)
+    progression = _load_model(content_dir, "progression", ProgressionPack)
     packs: dict[str, BaseModel] = {
         "skills": skills_pack,
         "items": items_pack,
@@ -357,6 +355,7 @@ def load_content(content_dir: Path) -> ContentIndex:
         "development": development,
         "projects": projects_pack,
         "xp_curve": xp_curve,
+        "progression": progression,
     }
     skills = _unique(skills_pack.skills, "skill")
     actions = _unique((a for s in skills.values() for a in s.actions), "action")
@@ -405,6 +404,7 @@ def load_content(content_dir: Path) -> ContentIndex:
         tuple(projects.values()),
         caps,
         xp_curve,
+        progression,
         MappingProxyType(forms_pack.relocation_classes),
         MappingProxyType(payloads),
         MappingProxyType(skills),

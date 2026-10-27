@@ -104,7 +104,7 @@ def test_placeholder_content_loads() -> None:
     assert content.realm("realm.verdant_vale").starting_node_id == "node.verdant_t1"
     assert content.development_node("node.verdant_t1").tags == ("verdant",)
     assert content.upgrade("upgrade.alarm_clock").cap_bonuses[0].value == 2
-    assert len(content.xp_curve.levels) == 99
+    assert len(content.xp_curve.levels) == 100
 
 
 @pytest.mark.parametrize(
@@ -153,7 +153,8 @@ def test_manifest_version_changes_with_content(tmp_path: Path) -> None:
     original = load_content(fixture_dir)
     xp_path = fixture_dir / "xp_curve.json"
     value = json.loads(xp_path.read_text())
-    value["formula"] += " (equivalent placeholder note)"
+    value[0] += 1
+    value[-1] -= 1
     _write_json(xp_path, value)
 
     changed = load_content(fixture_dir)
@@ -185,7 +186,7 @@ def test_xp_curve_must_increase_from_level_one(tmp_path: Path) -> None:
     shutil.copytree(CONTENT_DIR, fixture_dir)
     xp_path = fixture_dir / "xp_curve.json"
     value = json.loads(xp_path.read_text())
-    value["levels"][1]["xp"] = value["levels"][0]["xp"]
+    value[1] = value[0]
     _write_json(xp_path, value)
 
     with pytest.raises(ContentError, match="must increase after level 1"):
@@ -247,6 +248,43 @@ def test_only_known_content_routes_are_public() -> None:
         "estate_forms",
         "development",
         "projects",
+        "progression",
     }
     assert missing.status_code == 401
     assert missing.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+@pytest.mark.parametrize("defect", ["short", "unordered", "total"])
+def test_boot_rejects_invalid_xp_table(tmp_path: Path, defect: str) -> None:
+    """Each required XP table invariant is checked at load time."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "xp_curve.json"
+    costs = json.loads(path.read_text())
+    if defect == "short":
+        costs.pop()
+    elif defect == "unordered":
+        costs[1] = costs[0]
+    else:
+        costs[-1] -= 1
+    _write_json(path, costs)
+    with pytest.raises(ContentError):
+        load_content(directory)
+
+
+@pytest.mark.parametrize("thresholds", [[2, 50], [1, 50, 50], [1, 101], []])
+def test_boot_rejects_invalid_tier_thresholds(
+    tmp_path: Path, thresholds: list[int]
+) -> None:
+    """Tier thresholds are validated independently of skill mechanics."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    _write_json(
+        directory / "progression.json",
+        {
+            "tier_thresholds": thresholds,
+            "tier_titles": ["Placeholder"] * len(thresholds),
+        },
+    )
+    with pytest.raises(ContentError):
+        load_content(directory)

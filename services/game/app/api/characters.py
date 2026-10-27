@@ -12,11 +12,10 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
-from app.config import STARTING_GOLD
 from app.content.loader import ContentIndex
 from app.content.schemas import CapType, Modifier
 from app.engine import CharacterState, resolve_caps
-from app.engine.levels import level_for_xp, xp_progress
+from app.engine.levels import level_for_xp, tier_for_level, xp_progress
 from app.errors import api_error
 from app.models import (
     Character,
@@ -59,7 +58,9 @@ class SkillSummary(BaseModel):
     xp: int
     level: int
     xp_into_level: int
-    xp_to_next: int
+    xp_to_next: int | None
+    tier: int
+    tier_title: str
 
 
 class RealmSummary(BaseModel):
@@ -195,7 +196,7 @@ async def create_character(
                 level=level_for_xp(xp, content.xp_curve.levels),
             )
         )
-    session.add(Currency(character_id=character.id, gold=STARTING_GOLD, premium=0))
+    session.add(Currency(character_id=character.id, gold=0, premium=0))
     session.add(
         Estate(
             id=estate_id,
@@ -272,6 +273,7 @@ def _profile(
             stored.level = derived_level
             profile_changed = True
         xp_into_level, xp_to_next = xp_progress(stored.xp, content.xp_curve.levels)
+        tier = tier_for_level(derived_level, content.progression.tier_thresholds)
         skills.append(
             SkillSummary(
                 id=definition.id,
@@ -280,6 +282,8 @@ def _profile(
                 level=derived_level,
                 xp_into_level=xp_into_level,
                 xp_to_next=xp_to_next,
+                tier=tier,
+                tier_title=content.progression.tier_titles[tier - 1],
             )
         )
     if profile_changed:

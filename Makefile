@@ -21,3 +21,7 @@ client-ci:
 	cd client && npm test
 	cd client && npm run build
 
+
+.PHONY: db-reset
+db-reset:
+	python scripts/db_reset.py
