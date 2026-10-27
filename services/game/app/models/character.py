@@ -95,8 +95,12 @@ class Estate(Base):
     realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
     form_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    upgrade_slots: Mapped[int] = mapped_column(Integer, nullable=False)
+    gauge: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0, server_default="0"
+    )
+    shed_progress: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0, server_default="0"
+    )
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 

@@ -3,13 +3,7 @@
     {
       "id": "form.camp",
       "name": "Camp",
-      "specialty_tags": [],
-      "base_caps": {
-        "estate_upgrade_slots": 2
-      },
       "modifiers": [],
-      "upkeep_profile": [],
-      "production_profile": [],
       "mobility": "mobile",
       "travel_profile": {
         "time_mult": 1,
@@ -17,54 +11,66 @@
         "terrains": [
           "land"
         ]
+      },
+      "tier": 1,
+      "upgrade_slots": 4,
+      "cap_bonuses": [],
+      "upkeep": [],
+      "production": [],
+      "transforms_to": [
+        "form.homestead"
+      ],
+      "regresses_to": null,
+      "build_cost": {
+        "gold": 0,
+        "goods": []
       }
     },
     {
       "id": "form.homestead",
       "name": "Homestead",
-      "specialty_tags": [
-        "farming"
-      ],
-      "base_caps": {
-        "estate_upgrade_slots": 4
-      },
       "modifiers": [
         {
           "type": "xp_pct",
           "value": 5
         }
       ],
-      "upkeep_profile": [],
-      "production_profile": [],
       "mobility": "mobile",
       "travel_profile": {
         "time_mult": 1,
         "supply_mult": 1,
         "terrains": [
           "land"
+        ]
+      },
+      "tier": 2,
+      "upgrade_slots": 6,
+      "cap_bonuses": [],
+      "upkeep": [],
+      "production": [],
+      "transforms_to": [
+        "form.orchard"
+      ],
+      "regresses_to": "form.camp",
+      "build_cost": {
+        "gold": 0,
+        "goods": [
+          {
+            "selector": {
+              "item": "item.fake_plank"
+            },
+            "quantity": 5
+          }
         ]
       }
     },
     {
       "id": "form.orchard",
       "name": "Orchard",
-      "specialty_tags": [
-        "farming"
-      ],
-      "base_caps": {
-        "estate_upgrade_slots": 5
-      },
       "modifiers": [
         {
           "type": "xp_pct",
           "value": 5
-        }
-      ],
-      "upkeep_profile": [],
-      "production_profile": [
-        {
-          "item_id": "item.fake_sprig",
-          "per_day": 10
         }
       ],
       "mobility": "mobile",
@@ -74,29 +80,30 @@
         "terrains": [
           "land"
         ]
+      },
+      "tier": 3,
+      "upgrade_slots": 7,
+      "cap_bonuses": [],
+      "upkeep": [],
+      "production": [
+        {
+          "item_id": "item.fake_sprig",
+          "per_day": 10
+        }
+      ],
+      "transforms_to": [],
+      "regresses_to": "form.homestead",
+      "build_cost": {
+        "gold": 0,
+        "goods": [
+          {
+            "selector": {
+              "item": "item.demo_crate"
+            },
+            "quantity": 3
+          }
+        ]
       }
-    }
-  ],
-  "transformations": [
-    {
-      "from": "form.camp",
-      "to": "form.homestead",
-      "cost": [
-        {
-          "item_id": "item.fake_plank",
-          "qty": 5
-        }
-      ]
-    },
-    {
-      "from": "form.homestead",
-      "to": "form.orchard",
-      "cost": [
-        {
-          "item_id": "item.demo_crate",
-          "qty": 3
-        }
-      ]
     }
   ]
 }

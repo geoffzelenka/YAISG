@@ -282,18 +282,25 @@ class MapPack(ContentModel):
     positions: dict[str, MapPosition] = {}
 
 
-class ProfileItem(ContentModel):
-    """A dormant upkeep quantity."""
+class BuildCost(ContentModel):
+    """Gold and selector goods paid to acquire a form."""
 
-    item_id: str = Field(min_length=1)
-    qty: int = Field(gt=0)
+    gold: int = Field(ge=0)
+    goods: tuple[ActionInput, ...] = ()
+
+
+class TagUpkeep(ContentModel):
+    """Daily selector demand added to the holder."""
+
+    selector: Selector
+    per_day: float = Field(gt=0, allow_inf_nan=False)
 
 
 class ProductionItem(ContentModel):
-    """A dormant daily production quantity."""
+    """Daily production credited to realm stores."""
 
     item_id: str = Field(min_length=1)
-    per_day: int = Field(gt=0)
+    per_day: float = Field(gt=0, allow_inf_nan=False)
 
 
 class EstateForm(ContentModel):
@@ -303,7 +310,11 @@ class EstateForm(ContentModel):
     name: str = Field(min_length=1)
     tags: tuple[str, ...] = ()
     requires_realm_tags: tuple[str, ...] = ()
-    specialty_tags: tuple[str, ...] = ()
+    tier: int = Field(ge=1, le=5)
+    build_cost: BuildCost
+    upgrade_slots: int = Field(ge=0)
+    transforms_to: tuple[str, ...] = ()
+    regresses_to: str | None = None
     mobility: Literal["mobile", "fixed"]
     travel_profile: TravelProfile | None
 
@@ -314,32 +325,16 @@ class EstateForm(ContentModel):
             raise ValueError("mobile forms require a profile; fixed forms forbid it")
         return self
 
-    base_caps: dict[CapType, float] = {}
+    cap_bonuses: tuple[CapBonus, ...] = ()
     modifiers: tuple[Modifier, ...] = ()
-    upkeep_profile: tuple[ProfileItem, ...] = ()
-    production_profile: tuple[ProductionItem, ...] = ()
-
-
-class FormTransformation(ContentModel):
-    """A directed estate-form transformation and its item cost."""
-
-    from_form: str = Field(alias="from", min_length=1)
-    to_form: str = Field(alias="to", min_length=1)
-    cost: tuple[ItemQuantity, ...]
+    upkeep: tuple[TagUpkeep, ...] = ()
+    production: tuple[ProductionItem, ...] = ()
 
 
 class EstateFormsPack(ContentModel):
-    """Estate forms and transformations."""
+    """Estate forms and their upgrade graph."""
 
     forms: tuple[EstateForm, ...]
-    transformations: tuple[FormTransformation, ...]
-
-
-class TagUpkeep(ContentModel):
-    """Daily selector demand added to the holder."""
-
-    selector: Selector
-    per_day: float = Field(gt=0, allow_inf_nan=False)
 
 
 class NodeRegression(ContentModel):
@@ -495,6 +490,7 @@ class LintConfig(ContentModel):
 class ProgressionPack(ContentModel):
     """Content-defined tier thresholds and titles."""
 
+    basic_mobile_form: str = Field(min_length=1)
     visit_profile: TravelProfile
     travel_xp_per_second: float = Field(gt=0, allow_inf_nan=False)
     tier_benefits: dict[Literal["travel"], tuple[TravelTierBenefit, ...]]

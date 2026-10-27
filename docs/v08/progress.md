@@ -18,7 +18,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 09 | `09-development-graph` | Nodes, tag stack, transitions | done | v08/09-development-graph | defeb6e | Development nodes, realm tag stack with persistent seq, timed transitions; old edges/projects/contributions removed |
 | 10 | `10-project-runs` | Project runs and resolve_realm | done | v08/10-project-runs | ddc37f1 | Project runs (kickoff/contribute/build/erosion/failure), realm_contributions with run id, resolve_realm bounded catch-up; main PG flake fixed by 10a |
 | 10a | `10a-tick-batching` | Realm tick catch-up batching | done | v08/10a-tick-batching | 3805505 | Tick catch-up preloads RealmTickContext and flushes once (4 statements for 72 ticks); deadline=None on DB Hypothesis tests |
-| 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | pending | — | — | — |
+| 11 | `11-estate-forms` | Estate forms, transforms, realm-owned estates | ready for review | `v08/11-estate-forms` | — | Form graph, selector transforms, treasury transfer, realm-owned reads and vote weights |
 | 12 | `12-estate-ownership` | Build, buy, surrender, valuation, larder | pending | — | — | — |
 | 13 | `13-stores-lines` | Stores, demand lines, world seed | pending | — | — | — |
 | 14 | `14-realm-tick` | The realm tick and the scheduled job | pending | — | — | — |

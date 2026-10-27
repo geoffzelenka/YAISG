@@ -66,7 +66,7 @@ def _unknown_map_realm(content_dir: Path) -> None:
 def _unknown_transformation_form(content_dir: Path) -> None:
     path = content_dir / "estate_forms.json"
     value = json.loads(path.read_text())
-    value["transformations"][0]["to"] = "form.missing"
+    value["forms"][0]["transforms_to"] = ["form.missing"]
     _write_json(path, value)
 
 

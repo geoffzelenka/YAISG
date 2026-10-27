@@ -10,7 +10,7 @@ from types import MappingProxyType
 from test_engine import START, make_active, make_state
 
 from app.content.loader import load_content
-from app.content.schemas import Action, CapType
+from app.content.schemas import Action, CapBonus, CapType
 from app.engine import (
     CharacterState,
     RandomSource,
@@ -128,7 +128,7 @@ def test_cap_below_usage_keeps_items_and_records_overflow() -> None:
         CONTENT, caps=CONTENT.caps.model_copy(update={"inventory_slots": 1})
     )
     form = content.estate_form("form.camp").model_copy(
-        update={"base_caps": {CapType.INVENTORY_SLOTS: 2}}
+        update={"cap_bonuses": (CapBonus(cap=CapType.INVENTORY_SLOTS, value=2),)}
     )
     content = replace(
         content, _forms_by_id=MappingProxyType({**content._forms_by_id, form.id: form})
@@ -161,7 +161,7 @@ def test_visitor_loses_only_estate_sources() -> None:
         update={
             "modifiers": (Modifier(type=ModifierType.XP_PCT, value=20),),
             "tags": ("facility.fake_upgrade",),
-            "base_caps": {CapType.INVENTORY_SLOTS: 2},
+            "cap_bonuses": (CapBonus(cap=CapType.INVENTORY_SLOTS, value=2),),
         }
     )
     content = replace(
@@ -191,7 +191,7 @@ def test_visitor_loses_only_estate_sources() -> None:
         resolve_caps(away, content).inventory_slots + 2
     )
     neutral_form = form.model_copy(
-        update={"modifiers": (), "tags": (), "base_caps": {}}
+        update={"modifiers": (), "tags": (), "cap_bonuses": ()}
     )
     neutral_content = replace(
         content,

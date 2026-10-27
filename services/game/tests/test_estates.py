@@ -12,6 +12,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import AsyncMock
 
 import jwt
@@ -30,8 +31,6 @@ from app.clock import utc_now
 from app.content.schemas import (
     CapBonus,
     CapType,
-    FormTransformation,
-    ItemQuantity,
 )
 from app.db import Base, configure_sqlite_engine, get_db
 from app.main import app
@@ -414,7 +413,7 @@ async def test_transform_consumes_cost_without_changing_other_estate_state(
     with factory() as session:
         estate = session.scalar(select(Estate))
         assert estate is not None
-        estate.level = 3
+        estate.gauge = 3
         session.add(
             EstateUpgrade(
                 estate_id=estate.id,
@@ -431,7 +430,7 @@ async def test_transform_consumes_cost_without_changing_other_estate_state(
 
     assert response.status_code == 200
     assert response.json()["form"]["id"] == "form.homestead"
-    assert response.json()["level"] == 3
+    assert response.json()["tier"] == 2
     assert response.json()["installed_upgrades"][0]["slot_index"] == 1
     audit = next(
         json.loads(record.message)
@@ -448,6 +447,7 @@ async def test_transform_consumes_cost_without_changing_other_estate_state(
         estate = session.scalar(select(Estate))
         assert stack is not None and stack.quantity == 2
         assert estate is not None and estate.realm_id == "realm.verdant_vale"
+        assert estate.gauge == 3
 
 
 async def test_transform_errors_and_shrinking_slots(
@@ -496,18 +496,11 @@ async def test_transform_errors_and_shrinking_slots(
             ),
         )
     )
+    form = content.estate_form("form.homestead").model_copy(
+        update={"transforms_to": ("form.camp",)}
+    )
     app.state.content = replace(
-        content,
-        transformations=(
-            *content.transformations,
-            FormTransformation.model_validate(
-                {
-                    "from": "form.homestead",
-                    "to": "form.camp",
-                    "cost": (ItemQuantity(item_id="item.fake_plank", qty=1),),
-                }
-            ),
-        ),
+        content, _forms_by_id=MappingProxyType({**content._forms_by_id, form.id: form})
     )
     shrinking = await client.post(
         "/estates/me/transform", headers=headers, json={"form_id": "form.camp"}
@@ -817,3 +810,322 @@ async def test_absent_owner_estate_uses_stored_realm_stack(
     response = await client.get("/estates/me", headers=headers)
     assert response.status_code == 200
     assert response.json()["installed_upgrades"][0]["status"] == expected_status
+
+
+def assert_world_estate_invariant(session: Session) -> None:
+    """Every world character owns exactly one estate, which is its home pointer."""
+    for character in session.scalars(select(Character)):
+        realm = session.get(RealmState, character.current_realm_id)
+        if realm is not None and realm.isolated:
+            continue
+        owned = list(
+            session.scalars(
+                select(Estate).where(Estate.owner_character_id == character.id)
+            )
+        )
+        assert len(owned) == 1
+        assert owned[0].id == character.home_estate_id
+
+
+@pytest.mark.parametrize("path", ["transform", "upgrades/upgrade.alarm_clock"])
+async def test_estate_mutations_require_owner_presence(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    path: str,
+) -> None:
+    """An owner visiting another realm cannot change the estate or spend goods."""
+    client, factory, headers, _ = estate_client
+    character_id = _give(factory, "item.fake_plank", 20)
+    with factory() as session:
+        character = session.get(Character, character_id)
+        assert character is not None
+        character.current_realm_id = "realm.ashen_reach"
+        session.commit()
+    response = await client.post(
+        f"/estates/me/{path}", headers=headers, json={"form_id": "form.homestead"}
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "NOT_PRESENT"
+    with factory() as session:
+        stack = session.get(Inventory, (character_id, "item.fake_plank"))
+        assert stack is not None and stack.quantity == 20
+        assert_world_estate_invariant(session)
+
+
+async def test_transform_mobility_guard(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Reject mobility-changing edges even in injected content."""
+    client, factory, headers, _ = estate_client
+    _give(factory, "item.fake_plank", 5)
+    content = app.state.content
+    destination = content.estate_form("form.homestead").model_copy(
+        update={"mobility": "fixed", "travel_profile": None}
+    )
+    app.state.content = replace(
+        content,
+        _forms_by_id=MappingProxyType(
+            {**content._forms_by_id, destination.id: destination}
+        ),
+    )
+    response = await client.post(
+        "/estates/me/transform", headers=headers, json={"form_id": destination.id}
+    )
+    assert response.json()["error"]["code"] == "INVALID_TRANSFORMATION"
+    with factory() as session:
+        assert session.scalar(select(Estate.form_id)) == "form.camp"
+        assert session.scalar(select(Inventory.quantity)) == 5
+
+
+@pytest.mark.parametrize(
+    "gold,goods,success", [(17, 5, True), (16, 5, False), (17, 4, False)]
+)
+async def test_transform_selector_payment_and_treasury_conservation(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    gold: int,
+    goods: int,
+    success: bool,
+) -> None:
+    """Transfer gold and consume goods only on full payment."""
+    from app.content.schemas import ActionInput, BuildCost, Selector
+
+    client, factory, headers, _ = estate_client
+    character_id = _give(factory, "item.fake_sprig", goods)
+    original = app.state.content
+    destination = original.estate_form("form.homestead").model_copy(
+        update={
+            "build_cost": BuildCost(
+                gold=17,
+                goods=(
+                    ActionInput(
+                        selector=Selector.model_validate({"class": "fake_plant"}),
+                        quantity=5,
+                    ),
+                ),
+            )
+        }
+    )
+    app.state.content = replace(
+        original,
+        _forms_by_id=MappingProxyType(
+            {**original._forms_by_id, destination.id: destination}
+        ),
+    )
+    with factory() as session:
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert currency is not None and realm is not None
+        currency.gold = gold
+        realm.treasury = 31
+        session.commit()
+    response = await client.post(
+        "/estates/me/transform", headers=headers, json={"form_id": destination.id}
+    )
+    assert response.status_code == (200 if success else 409)
+    if not success:
+        assert response.json()["error"]["code"] == "MISSING_INPUTS"
+    with factory() as session:
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert currency is not None and realm is not None
+        assert currency.gold + realm.treasury == gold + 31
+        assert realm.treasury == (48 if success else 31)
+        stack = session.get(Inventory, (character_id, "item.fake_sprig"))
+        assert (stack.quantity if stack else 0) == (0 if success else goods)
+        assert_world_estate_invariant(session)
+
+
+async def test_realm_owned_estates_listed(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Public reads include realm ownership and condition without treasury balances."""
+    client, factory, headers, _ = estate_client
+    with factory() as session:
+        realm_owned = Estate(
+            realm_id="realm.verdant_vale",
+            form_id="form.orchard",
+            decay_stage="strained",
+        )
+        session.add(realm_owned)
+        session.commit()
+        realm_owned_id = str(realm_owned.id)
+        assert_world_estate_invariant(session)
+    response = await client.get("/realms/realm.verdant_vale/estates", headers=headers)
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    assert next(row for row in rows if row["id"] == realm_owned_id) == {
+        "id": realm_owned_id,
+        "owner": "realm-owned",
+        "form": "form.orchard",
+        "decay_stage": "strained",
+    }
+    assert any(row["owner"] != "realm-owned" for row in rows)
+    unknown = await client.get("/realms/missing/estates", headers=headers)
+    assert unknown.json()["error"]["code"] == "UNKNOWN_REALM"
+    home = await client.get("/estates/me", headers=headers)
+    assert home.json()["tier"] == 1
+    assert home.json()["mobility"] == "mobile"
+    assert home.json()["tags"] == []
+    assert home.json()["decay_stage"] == "fed"
+    assert "level" not in home.json()
+
+
+async def test_transform_requires_destination_realm_tags(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """A transform cannot enter an inert form lacking any authored requirement."""
+    client, factory, headers, _ = estate_client
+    _give(factory, "item.fake_plank", 5)
+    original = app.state.content
+    destination = original.estate_form("form.homestead").model_copy(
+        update={"requires_realm_tags": ("access.fake",)}
+    )
+    app.state.content = replace(
+        original,
+        _forms_by_id=MappingProxyType(
+            {**original._forms_by_id, destination.id: destination}
+        ),
+    )
+    response = await client.post(
+        "/estates/me/transform", headers=headers, json={"form_id": destination.id}
+    )
+    assert response.json()["error"]["code"] == "MISSING_REALM_TAGS"
+    with factory() as session:
+        assert session.scalar(select(Estate.form_id)) == "form.camp"
+        assert session.scalar(select(Inventory.quantity)) == 5
+
+
+async def test_postgres_concurrent_transforms_pay_once(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """Character serialization prevents two transforms from charging one edge twice."""
+    from app.api.estates import TransformRequest, transform_estate
+    from app.content.schemas import BuildCost
+
+    _, factory, _, clock = estate_client
+    if factory.kw["bind"].dialect.name != "postgresql":
+        pytest.skip("Concurrent row locking requires PostgreSQL")
+    character_id = _give(factory, "item.fake_plank", 10)
+    original = app.state.content
+    destination = original.estate_form("form.homestead")
+    destination = destination.model_copy(
+        update={"build_cost": BuildCost(gold=7, goods=destination.build_cost.goods)}
+    )
+    app.state.content = replace(
+        original,
+        _forms_by_id=MappingProxyType(
+            {**original._forms_by_id, destination.id: destination}
+        ),
+    )
+    with factory() as session:
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        assert currency is not None and realm is not None
+        currency.gold = 14
+        realm.treasury = 0
+        session.commit()
+    barrier = threading.Barrier(2, timeout=5)
+
+    def transform_once() -> tuple[int, str | None]:
+        with factory() as session:
+            session.execute(text("SET LOCAL statement_timeout = '5s'"))
+            player = session.scalar(select(Player))
+            assert player is not None
+            barrier.wait()
+            try:
+                asyncio.run(
+                    transform_estate(
+                        TransformRequest(form_id=destination.id),
+                        Request({"type": "http", "app": app}),
+                        clock["now"],
+                        player,
+                        session,
+                    )
+                )
+            except HTTPException as error:
+                assert isinstance(error.detail, dict)
+                return error.status_code, error.detail["error"]["code"]
+            return 200, None
+
+    results = await asyncio.gather(
+        asyncio.to_thread(transform_once), asyncio.to_thread(transform_once)
+    )
+    assert sorted(results, key=lambda result: result[0]) == [
+        (200, None),
+        (409, "INVALID_TRANSFORMATION"),
+    ]
+    with factory() as session:
+        currency = session.get(Currency, character_id)
+        realm = session.get(RealmState, "realm.verdant_vale")
+        stack = session.get(Inventory, (character_id, "item.fake_plank"))
+        assert currency is not None and realm is not None
+        assert currency.gold == realm.treasury == 7
+        assert stack is not None and stack.quantity == 5
+        assert_world_estate_invariant(session)
+
+
+@pytest.mark.parametrize("last_quantity,success", [(1, True), (2, False)])
+async def test_transform_overlapping_selectors_are_atomic(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+    last_quantity: int,
+    success: bool,
+) -> None:
+    """Selectors pay cheapest first from one remainder; late failure spends nothing."""
+    from app.content.schemas import BuildCost
+
+    client, factory, headers, _ = estate_client
+    character_id = _give(factory, "item.fake_sprig", 3)
+    _give(factory, "item.worthless_button", 2)
+    original = app.state.content
+    destination = original.estate_form("form.homestead").model_copy(
+        update={
+            "build_cost": BuildCost.model_validate(
+                {
+                    "gold": 0,
+                    "goods": (
+                        {"selector": {"class": "fake_plant"}, "quantity": 2},
+                        {
+                            "selector": {"item": "item.fake_sprig"},
+                            "quantity": last_quantity,
+                        },
+                    ),
+                }
+            )
+        }
+    )
+    app.state.content = replace(
+        original,
+        _forms_by_id=MappingProxyType(
+            {**original._forms_by_id, destination.id: destination}
+        ),
+    )
+    response = await client.post(
+        "/estates/me/transform", headers=headers, json={"form_id": destination.id}
+    )
+    assert response.status_code == (200 if success else 409)
+    with factory() as session:
+        holdings = {
+            stack.item_id: stack.quantity
+            for stack in session.scalars(
+                select(Inventory).where(Inventory.character_id == character_id)
+            )
+        }
+        assert holdings == (
+            {"item.worthless_button": 2}
+            if success
+            else {"item.fake_sprig": 3, "item.worthless_button": 2}
+        )

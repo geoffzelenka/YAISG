@@ -38,7 +38,7 @@ export type CharacterProfile = {
   >
   estate: {
     id: string
-    level: number
+    tier: number
     upgrade_slots: number
     installed_upgrades: { slot_index: number; upgrade_id: string }[]
   }

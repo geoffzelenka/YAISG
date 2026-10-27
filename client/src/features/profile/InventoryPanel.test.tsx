@@ -33,7 +33,7 @@ it('displays the effective profile inventory cap instead of the content base', a
           estate_upgrade_slots: 2,
         },
         map: { edges: [], positions: {} },
-        estate_forms: { forms: [], transformations: [] },
+        estate_forms: { forms: [] },
         development: { nodes: [] },
         projects: { projects: [] },
         tags: { tags: [] },
@@ -105,7 +105,7 @@ it('displays the effective profile inventory cap instead of the content base', a
                   },
                   estate: {
                     id: 'e',
-                    level: 1,
+                    tier: 1,
                     upgrade_slots: 2,
                     installed_upgrades: [],
                   },

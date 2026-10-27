@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -43,7 +43,20 @@ const packs: Record<string, unknown> = {
     estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },
-  estate_forms: { forms: [], transformations: [] },
+  estate_forms: {
+    forms: [
+      { id: 'form.camp', upgrade_slots: 3, transforms_to: ['form.next'] },
+      {
+        id: 'form.next',
+        name: 'Next Camp',
+        upgrade_slots: 5,
+        build_cost: {
+          gold: 13,
+          goods: [{ selector: { class: 'fake_wood', tier: 1 }, quantity: 7 }],
+        },
+      },
+    ],
+  },
   development: { nodes: [] },
   projects: { projects: [] },
   tags: { tags: [] },
@@ -123,18 +136,19 @@ describe('estate panel', () => {
                     form: {
                       id: 'form.camp',
                       name: 'Camp',
-                      specialty_tags: ['mobile'],
+                      tags: ['mobile'],
                       mobility: 'mobile',
                       travel_profile: {
                         time_mult: 1,
                         supply_mult: 1,
                         terrains: ['land'],
                       },
-                      base_caps: { estate_upgrade_slots: 3 },
+                      upgrade_slots: 3,
+                      cap_bonuses: [],
                       modifiers: [],
                     },
                     realm_id: 'realm.one',
-                    level: 2,
+                    tier: 2,
                     status: 'active',
                     upgrade_slots: 3,
                     installed_upgrades: [
@@ -173,5 +187,15 @@ describe('estate panel', () => {
     expect(screen.getByTestId('estate-slot-2')).toHaveTextContent('Empty')
     expect(screen.getByRole('button', { name: 'Purchase' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Cannot afford' })).toBeDisabled()
+    expect(screen.getByText(/Tier 2/)).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Transform to Next Camp' }),
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Cost: 13 gold, 7 fake_wood',
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Upgrade slots change by +2',
+    )
   })
 })

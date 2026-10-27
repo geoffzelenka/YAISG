@@ -1,7 +1,7 @@
 import type { TravelProfile } from './content'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { Caps, ItemQuantity, Modifier } from './content'
+import type { CapBonus, ItemQuantity, Modifier } from './content'
 import { gameRequest, readApiError } from './http'
 
 export type Estate = {
@@ -9,14 +9,19 @@ export type Estate = {
   form: {
     id: string
     name: string
-    specialty_tags: string[]
+    tags: string[]
+    tier: number
+    upgrade_slots: number
     mobility: 'mobile' | 'fixed'
     travel_profile: TravelProfile | null
-    base_caps: Partial<Caps>
+    cap_bonuses: CapBonus[]
     modifiers: Modifier[]
   }
   realm_id: string
-  level: number
+  tier: number
+  mobility: 'mobile' | 'fixed'
+  tags: string[]
+  decay_stage: string
   status: string
   upgrade_slots: number
   installed_upgrades: {

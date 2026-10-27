@@ -30,7 +30,7 @@ const contentBodies: Record<string, unknown> = {
     estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },
-  estate_forms: { forms: [], transformations: [] },
+  estate_forms: { forms: [] },
   development: {
     nodes: [
       {

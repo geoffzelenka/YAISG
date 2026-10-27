@@ -105,7 +105,6 @@ describe('skill panel', () => {
           '/content/map': { edges: [], positions: {} },
           '/content/estate_forms': {
             forms: [],
-            transformations: [],
           },
           '/content/development': { nodes: [], edges: [] },
           '/content/tags': { tags: [] },

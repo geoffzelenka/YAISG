@@ -106,21 +106,27 @@ export type Caps = {
   estate_upgrade_slots: number
 }
 
+export type CapBonus = { cap: keyof Caps; value: number }
+
 export type EstateForm = {
   id: string
   name: string
   tags: string[]
   requires_realm_tags: string[]
-  specialty_tags: string[]
+  tier: number
+  upgrade_slots: number
+  build_cost: {
+    gold: number
+    goods: { selector: Selector; quantity: number }[]
+  }
+  transforms_to: string[]
+  regresses_to: string | null
+  upkeep: { selector: Selector; per_day: number }[]
+  production: { item_id: string; per_day: number }[]
   mobility: 'mobile' | 'fixed'
   travel_profile: TravelProfile | null
-  base_caps: Partial<Caps>
+  cap_bonuses: CapBonus[]
   modifiers: Modifier[]
-}
-export type FormTransformation = {
-  from: string
-  to: string
-  cost: ItemQuantity[]
 }
 export type DevelopmentNode = {
   tier: number
@@ -218,10 +224,10 @@ type ContentPacks = {
   }
   estate_forms: {
     forms: EstateForm[]
-    transformations: FormTransformation[]
   }
   development: { nodes: DevelopmentNode[] }
   progression: {
+    basic_mobile_form: string
     visit_profile: TravelProfile
     travel_xp_per_second: number
     tier_benefits: {

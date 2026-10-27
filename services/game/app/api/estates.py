@@ -14,17 +14,18 @@ from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import (
-    CapType,
+    BuildCost,
+    CapBonus,
     DecayStage,
     ItemQuantity,
     Modifier,
     TravelProfile,
 )
-from app.engine import resolve_caps
+from app.engine import Shortfall, pay_selector, resolve_caps
 from app.engine.core import realm_active_tags
 from app.engine.tags import tags_present
 from app.errors import api_error
-from app.models import Character, Estate, EstateUpgrade, Inventory, RealmState
+from app.models import Character, Currency, Estate, EstateUpgrade, Inventory, RealmState
 from app.services.actions import load_character_state, resolve_character
 from app.services.realms import stack_tags
 
@@ -37,10 +38,12 @@ class EstateFormSummary(BaseModel):
 
     id: str
     name: str
-    specialty_tags: tuple[str, ...]
+    tags: tuple[str, ...]
+    tier: int
+    upgrade_slots: int
     mobility: str
     travel_profile: TravelProfile | None
-    base_caps: dict[CapType, float]
+    cap_bonuses: tuple[CapBonus, ...]
     modifiers: tuple[Modifier, ...]
 
 
@@ -60,7 +63,10 @@ class EstateResponse(BaseModel):
     id: uuid.UUID
     form: EstateFormSummary
     realm_id: str
-    level: int
+    tier: int
+    mobility: str
+    tags: tuple[str, ...]
+    decay_stage: str
     status: str
     upgrade_slots: int
     installed_upgrades: list[InstalledUpgradeSummary]
@@ -155,14 +161,19 @@ def _estate_response(
         form=EstateFormSummary(
             id=form.id,
             name=form.name,
-            specialty_tags=form.specialty_tags,
+            tags=form.tags,
+            tier=form.tier,
+            upgrade_slots=form.upgrade_slots,
             mobility=form.mobility,
             travel_profile=form.travel_profile,
-            base_caps=form.base_caps,
+            cap_bonuses=form.cap_bonuses,
             modifiers=form.modifiers,
         ),
         realm_id=estate.realm_id,
-        level=estate.level,
+        tier=form.tier,
+        mobility=form.mobility,
+        tags=form.tags,
+        decay_stage=estate.decay_stage,
         status=estate.status,
         upgrade_slots=slots,
         installed_upgrades=summaries,
@@ -174,8 +185,7 @@ def _consume_items(
     character_id: uuid.UUID,
     costs: Sequence[ItemQuantity],
 ) -> bool:
-    # Both callers pass validated content tuples. Keeping this helper local makes
-    # checking and charging a single operation within the estate transaction.
+    # Check affordability before applying any withdrawals.
     entries = tuple(costs)
     stacks = {
         stack.item_id: stack
@@ -197,6 +207,45 @@ def _consume_items(
         if stack.quantity == 0:
             session.delete(stack)
     return True
+
+
+def _require_owner_present(character: Character, estate: Estate) -> None:
+    if estate.owner_character_id != character.id:
+        raise api_error(403, "NOT_ESTATE_OWNER", "You do not own this estate")
+    if character.current_realm_id != estate.realm_id:
+        raise api_error(409, "NOT_PRESENT", "You must be in the estate's realm")
+
+
+def _pay_build_cost(
+    session: DatabaseSession,
+    character: Character,
+    estate: Estate,
+    cost: BuildCost,
+    content: ContentIndex,
+) -> None:
+    """Plan all selector payments before transferring goods and gold atomically."""
+    currency = session.get(Currency, character.id)
+    realm = session.get(RealmState, estate.realm_id)
+    if currency is None or realm is None:
+        raise api_error(500, "INCOMPLETE_CHARACTER_STATE", "Missing currency or realm")
+    stacks = list(
+        session.scalars(select(Inventory).where(Inventory.character_id == character.id))
+    )
+    remaining = {stack.item_id: stack.quantity for stack in stacks}
+    if currency.gold < cost.gold:
+        raise api_error(409, "MISSING_INPUTS", "The build cost is not affordable")
+    for line in cost.goods:
+        payment = pay_selector(remaining, line.selector, line.quantity, content)
+        if isinstance(payment, Shortfall):
+            raise api_error(409, "MISSING_INPUTS", "The build cost is not affordable")
+        for item_id, quantity in payment.items():
+            remaining[item_id] -= quantity
+    for stack in stacks:
+        stack.quantity = remaining[stack.item_id]
+        if stack.quantity == 0:
+            session.delete(stack)
+    currency.gold -= cost.gold
+    realm.treasury += cost.gold
 
 
 def _audit(change: str, character: Character, estate: Estate, **details: str) -> None:
@@ -246,6 +295,7 @@ async def purchase_upgrade(
     # On SQLite, resolve_character has already acquired BEGIN IMMEDIATE. This
     # ordering is the SQLite equivalent of the estate row lock below.
     estate = _home_estate(session, character, lock=True)
+    _require_owner_present(character, estate)
     try:
         upgrade = content.upgrade(upgrade_id)
     except KeyError:
@@ -276,9 +326,10 @@ async def purchase_upgrade(
             purchased_at=now,
         )
     )
+    response = _estate_response(session, content, character, estate)
     session.commit()
     _audit("upgrade_installed", character, estate, upgrade_id=upgrade.id)
-    return _estate_response(session, content, character, estate)
+    return response
 
 
 @router.post("/me/transform", response_model=EstateResponse)
@@ -304,40 +355,41 @@ async def transform_estate(
         raise api_error(409, "ESTATE_BUSY", "The estate is on a journey")
     if estate.status != "active":
         raise api_error(409, "ESTATE_BUSY", "The estate is not active")
-    edge = next(
-        (
-            value
-            for value in content.transformations
-            if value.from_form == estate.form_id and value.to_form == body.form_id
-        ),
-        None,
-    )
-    if edge is None:
+    _require_owner_present(character, estate)
+    source = content.estate_form(estate.form_id)
+    try:
+        destination = content.estate_form(body.form_id)
+    except KeyError:
+        raise api_error(
+            409, "INVALID_TRANSFORMATION", "No transformation edge exists"
+        ) from None
+    if (
+        body.form_id not in source.transforms_to
+        or destination.mobility != source.mobility
+    ):
         raise api_error(409, "INVALID_TRANSFORMATION", "No transformation edge exists")
     state = load_character_state(session, character.id)
-    # Installed upgrades cannot justify their own survival when a form shrinks.
-    # Resolve destination capacity from global, form, and realm-node sources.
-    destination_state = replace(
-        state, estate_form_id=body.form_id, installed_upgrades=()
-    )
     installed_count = session.scalar(
         select(func.count())
         .select_from(EstateUpgrade)
         .where(EstateUpgrade.estate_id == estate.id)
     )
-    destination_slots = resolve_caps(destination_state, content).estate_upgrade_slots
+    destination_slots = destination.upgrade_slots
     if (installed_count or 0) > destination_slots:
         raise api_error(
             409,
             "WOULD_ORPHAN_UPGRADES",
             "The destination form has too few upgrade slots",
         )
-    if not _consume_items(session, character.id, edge.cost):
+    realm_tags = {tag.id for tag, _ in realm_active_tags(state, content)}
+    if not tags_present(destination.requires_realm_tags, realm_tags):
         raise api_error(
-            409, "MISSING_INPUTS", "The transformation cost is not affordable"
+            409, "MISSING_REALM_TAGS", "The destination form requires realm tags"
         )
+    _pay_build_cost(session, character, estate, destination.build_cost, content)
     previous_form = estate.form_id
     estate.form_id = body.form_id
+    response = _estate_response(session, content, character, estate)
     session.commit()
     _audit(
         "form_transformed",
@@ -346,4 +398,4 @@ async def transform_estate(
         from_form_id=previous_form,
         to_form_id=body.form_id,
     )
-    return _estate_response(session, content, character, estate)
+    return response
