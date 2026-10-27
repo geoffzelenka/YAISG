@@ -107,6 +107,16 @@ None.
   for progress, XP-by-skill and item deltas for rewards, and details for the
   summary. Uniform rolling is no longer a strategy injection seam.
 
+- 37-conformance (orchestrator, from review): the pre-§22 aliases
+  `/characters/me/actions/available` and GET/POST/DELETE `/characters/me/action`
+  are still registered beside the consolidated routes; the client no longer
+  calls them. Remove them unless a design section still lists them.
+- 07-travel / 29-combat-resolver: `ResolveContext.modifier_groups` is computed
+  per resolve but `UniformResolver` does not read it; it exists for later
+  resolvers. Drop or use it there.
+- Any prompt that touches stop reasons: `resolve_goldens.json` has no
+  INVENTORY_FULL or REQUIREMENT_LOST row; add rows when regenerating.
+
 ## New error codes
 
 None. Missing resolver implementations or invalid resolver state are internal
