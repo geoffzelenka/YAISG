@@ -396,7 +396,7 @@ def test_mint_catchup_batches_ledger_and_is_idempotent(
     finally:
         event.remove(engine, "before_cursor_execute", record)
     assert len([s for s in statements if "INSERT INTO gold_ledger" in s]) == 1
-    assert len(statements) <= 14
+    assert len(statements) <= 15  # Includes the single open-ballot query.
     assert realm.treasury == ticks * 6
     assert realm_session.scalar(select(func.sum(GoldLedger.amount))) == ticks * 6
     before = len(list(realm_session.scalars(select(GoldLedger))))

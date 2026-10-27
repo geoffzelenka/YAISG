@@ -483,3 +483,37 @@ def test_realm_lock_rejects_missing_seeded_realm(realm_session: Session) -> None
     with pytest.raises(WorldStateError, match="missing realm.*make db-reset"):
         finalize_realm(realm_session, "realm.ashen_reach", NOW, CONTENT)
     assert realm_session.get(RealmState, "realm.ashen_reach") is None
+
+
+@pytest.mark.parametrize("scope", ["global", "node"])
+@pytest.mark.parametrize("cap_days", [2.0, 3.0, 4.0])
+def test_cap_days_covers_vote_stock_minimum(
+    tmp_path: Path, scope: str, cap_days: float
+) -> None:
+    """Global defaults and every node override must permit the vote stock gate."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    economy_path = directory / "economy.json"
+    economy = json.loads(economy_path.read_text())
+    # Isolate the minimum stock rule from the stricter transition-reserve bound.
+    economy["reserve_days"] = 0
+    economy["transition"]["duration_days"] = 1
+    economy["vote"]["min_stock_days"] = 3
+    economy["cap_days"] = cap_days if scope == "global" else 11
+    economy_path.write_text(json.dumps(economy))
+    development_path = directory / "development.json"
+    development = json.loads(development_path.read_text())
+    if scope == "global":
+        # Even when all effective caps override it, the default must be valid.
+        for node in development["nodes"]:
+            node["cap_days"] = 11
+    else:
+        development["nodes"][0]["cap_days"] = cap_days
+    development_path.write_text(json.dumps(development))
+    if cap_days < 3:
+        with pytest.raises(
+            ContentError, match=r"cap_days must cover vote.min_stock_days"
+        ):
+            load_content(directory)
+    else:
+        assert load_content(directory).economy.vote.min_stock_days == 3

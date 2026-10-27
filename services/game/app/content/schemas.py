@@ -659,6 +659,14 @@ class MarketConfig(ContentModel):
         return self
 
 
+class VoteConfig(ContentModel):
+    """Authored vote stock requirement, duration and failed-ballot cooldown."""
+
+    min_stock_days: float = Field(default=3, gt=0, allow_inf_nan=False)
+    duration_hours: float = Field(default=72, gt=0, allow_inf_nan=False)
+    fail_cooldown_hours: float = Field(default=72, ge=0, allow_inf_nan=False)
+
+
 class EconomyPack(ContentModel):
     """Shared economy settings."""
 
@@ -672,6 +680,7 @@ class EconomyPack(ContentModel):
     shed: ShedConfig = ShedConfig()
     estate: EstateConfig = EstateConfig()
     transition: TransitionConfig = TransitionConfig()
+    vote: VoteConfig = VoteConfig()
     project: ProjectConfig = ProjectConfig()
     tick: TickConfig = TickConfig()
 

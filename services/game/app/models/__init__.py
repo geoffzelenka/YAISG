@@ -18,6 +18,7 @@ from app.models.character import (
 )
 from app.models.gold import GoldLedger
 from app.models.player import Player
+from app.models.votes import RealmVote, RealmVoteEligibility
 
 __all__ = [
     "ActiveActionRecord",
@@ -42,3 +43,5 @@ from app.models.stores import RealmLine, RealmStore, WorldState
 __all__ += ["RealmLine", "RealmStore", "WorldState"]
 
 __all__ += ["GoldLedger"]
+
+__all__ += ["RealmVote", "RealmVoteEligibility"]

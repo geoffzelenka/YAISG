@@ -33,8 +33,10 @@ def active_run(session: Session, realm_id: str) -> RealmProjectRun | None:
 
 
 def has_open_vote(session: Session, realm: RealmState) -> bool:
-    """Prompt 19 replaces this gate with the open-vote query."""
-    return False
+    """Check the reciprocal vote/project exclusion under the realm lock."""
+    from app.services.votes import open_vote
+
+    return open_vote(session, realm.id) is not None
 
 
 def begin_build(run: RealmProjectRun, now: datetime, content: ContentIndex) -> None:
@@ -145,6 +147,9 @@ def kickoff(
             "KICKOFF_LIMIT",
             "You already kicked off a project in the last 24 hours",
         )
+    from app.services.stores import require_project_stock
+
+    require_project_stock(session, realm, content)
     _pay_kickoff(session, character, realm, project_id, content)
     run = RealmProjectRun(
         realm_id=realm.id,
