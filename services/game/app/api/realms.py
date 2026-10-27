@@ -30,6 +30,7 @@ from app.services.actions import claim_rewards, clear_active_action, resolve_cha
 from app.services.realms import (
     award_edge_progress,
     finalize_realm,
+    finalize_realms,
     finalize_relocation,
     prepare_sqlite_write,
 )
@@ -259,10 +260,12 @@ async def get_realms(
     """Return all realms after lazily finalizing due transitions."""
     content = _content(request)
     prepare_sqlite_write(session)
+    states = finalize_realms(
+        session, {realm.id for realm in content.realms}, now, content
+    )
     result = []
     for realm in content.realms:
-        state = finalize_realm(session, realm.id, now, content)
-        result.append(_realm_response(session, content, realm.id, state))
+        result.append(_realm_response(session, content, realm.id, states[realm.id]))
     session.commit()
     return result
 

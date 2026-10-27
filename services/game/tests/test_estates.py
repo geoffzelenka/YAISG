@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import replace
@@ -20,10 +21,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException, Request
 from httpx import ASGITransport, AsyncClient
 from jwt import PyJWK
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.estates import purchase_upgrade
+from app.api.realms import get_realms
 from app.auth import jwks_cache
 from app.clock import utc_now
 from app.content.schemas import (
@@ -792,3 +794,89 @@ async def test_instant_relocation_and_unreachable_rollback(
         estate = session.scalar(select(Estate))
         assert currency is not None and currency.gold == gold_before
         assert estate is not None and estate.realm_id == "realm.verdant_vale"
+
+
+def _wait_for_postgres_blocker(
+    factory: sessionmaker[Session], blocked_pid: int, blocker_pid: int
+) -> None:
+    """Wait for PostgreSQL to confirm a lock wait, rather than guessing timing."""
+    deadline = time.monotonic() + 5
+    with factory() as observer:
+        while time.monotonic() < deadline:
+            blockers = observer.scalar(
+                text("SELECT pg_blocking_pids(:pid)"), {"pid": blocked_pid}
+            )
+            if blocker_pid in blockers:
+                return
+            threading.Event().wait(0.01)
+    pytest.fail("GET /realms did not block on the lower-id realm within five seconds")
+
+
+async def test_get_realms_locks_in_id_order(
+    estate_client: tuple[
+        AsyncClient, sessionmaker[Session], dict[str, str], dict[str, datetime]
+    ],
+) -> None:
+    """A blocked list request leaves higher-id realms available to other writers."""
+    _, factory, _, clock = estate_client
+    if factory.kw["bind"].dialect.name != "postgresql":
+        pytest.skip("Row lock ordering requires PostgreSQL")
+    content = app.state.content
+    lower_id, higher_id = sorted(realm.id for realm in content.realms)
+    with factory() as setup:
+        for realm in content.realms:
+            if setup.get(RealmState, realm.id) is None:
+                setup.add(RealmState(realm_id=realm.id, node_id=realm.starting_node_id))
+        setup.commit()
+
+    started = threading.Event()
+    worker_pids: list[int] = []
+    returned_ids: list[str] = []
+    thread_errors: list[BaseException] = []
+
+    def list_realms() -> None:
+        try:
+            with factory() as session:
+                session.execute(text("SET LOCAL statement_timeout = '5s'"))
+                worker_pids.append(
+                    session.execute(text("SELECT pg_backend_pid()")).scalar_one()
+                )
+                started.set()
+                request = Request({"type": "http", "app": app})
+                response = asyncio.run(get_realms(request, clock["now"], session))
+                returned_ids.extend(realm.id for realm in response)
+        except BaseException as error:
+            thread_errors.append(error)
+
+    with factory() as blocker:
+        blocker_pid = blocker.execute(text("SELECT pg_backend_pid()")).scalar_one()
+        assert (
+            blocker.scalar(
+                select(RealmState)
+                .where(RealmState.realm_id == lower_id)
+                .with_for_update()
+            )
+            is not None
+        )
+        worker = threading.Thread(target=list_realms)
+        worker.start()
+        try:
+            assert started.wait(timeout=5)
+            _wait_for_postgres_blocker(factory, worker_pids[0], blocker_pid)
+            # Content order is high then low in the baseline. The old route
+            # already held the high row when it blocked, so NOWAIT would fail.
+            with factory() as probe:
+                assert (
+                    probe.scalar(
+                        select(RealmState)
+                        .where(RealmState.realm_id == higher_id)
+                        .with_for_update(nowait=True)
+                    )
+                    is not None
+                )
+        finally:
+            blocker.rollback()
+            worker.join(timeout=6)
+    assert not worker.is_alive()
+    assert thread_errors == []
+    assert returned_ids == [realm.id for realm in content.realms]
