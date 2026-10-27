@@ -103,3 +103,12 @@ None.
 ## New error codes
 
 None. Existing server errors are preserved. No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on 55c228f: SQLite make ci green (auth 15, game 575 / 18
+  skipped, client 76); PostgreSQL 16 game-ci 592 / 1 skipped; PG db-reset,
+  alembic check and boot green. Review: round 1 APPROVE (nits applied at the
+  orchestrator's request), round 2 APPROVE.
+- Next client prompt touching RealmMarketPanel: `loadQuote` should clear the
+  previous success line (`setSuccess('')`).
