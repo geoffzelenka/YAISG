@@ -74,6 +74,27 @@ def test_graph_rejects_invalid_paths_and_requirements(
         load_content(directory)
 
 
+def test_upgrade_requirement_satisfied_only_by_carried_tag(tmp_path: Path) -> None:
+    """A carried tag satisfies an upgrade without any offered project granting it."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "development.json"
+    data = json.loads(path.read_text())
+    node = next(n for n in data["nodes"] if n["upgrades"])
+    node["projects"] = []
+    node["carried_tags"] = ["bonus.fake"]
+    for upgrade in node["upgrades"]:
+        upgrade["required_tags"] = ["bonus.fake"]
+    path.write_text(json.dumps(data))
+
+    content = load_content(directory)
+
+    loaded = content.development_node(node["id"])
+    assert loaded.projects == ()
+    assert loaded.carried_tags == ("bonus.fake",)
+    assert all(upgrade.required_tags == ("bonus.fake",) for upgrade in loaded.upgrades)
+
+
 @pytest.mark.parametrize("cause", ["upgrade", "regression"])
 def test_finalize_exact_boundary_idempotent_stamps_and_filters(
     realm_session: Session, cause: str

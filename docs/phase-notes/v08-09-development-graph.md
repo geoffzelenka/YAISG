@@ -51,6 +51,15 @@
   TypeScript, Vitest, build, scripts and warning-only content lint are green.
   git diff --check is clean. No dependencies added.
 
+- Round 1: refreshed codebase-map realm routes, instance/tag models and explicit
+  transition clock APIs; documented the realm_contributions removal deviation
+  and Prompt 10's recreation with run ids; added tutorial isolation, decay
+  fixture and shared-tag-helper hand-offs. Added
+  test_upgrade_requirement_satisfied_only_by_carried_tag; an in-process mutation
+  removing carried_tags from validation makes this test fail as required.
+  Full SQLite make ci passes: auth 15, game 267 with five database-specific
+  skips, client 41; formatting, lint, type checks and builds are green.
+
 ## Removed
 
 - RealmEdgeProgress/realm_edge_progress, RealmProject/realm_projects and the old
@@ -88,7 +97,11 @@
 
 ## Deviations
 
-None.
+- §12.3 / §14.7: dropped realm_contributions along with the retired contribution
+  endpoint, although the design retains contribution logs and the prompt's
+  Remove list does not include this table. The old schema ties contributions
+  to project definitions rather than attempts; Prompt 10 recreates the table
+  with a run id for the new project-run lifecycle. Development data is disposable.
 
 ## Ratification needed
 
@@ -116,6 +129,17 @@ None.
   through the shared requirement check on the next character resolve.
 - 34-tutorial: create isolated owned instances from templates; list/map filtering
   is ready. Per-player instance lifecycle and tutorial-specific travel remain yours.
+
+- 34-tutorial: isolated templates can still be chosen in character creation
+  (api/characters.py) and as travel destinations (api/travel.py), and the client
+  picker does not filter them. Reject or filter these choices when isolated
+  instances exist.
+- 15-decay: the barren root node.verdant_t0_stub has the project-granted tag
+  bonus.fake as an inherent tag. Decay and regression tests should use an
+  inherent tag that no project grants.
+- 36-hardening: public active_tags in api/realms.py and the engine's
+  realm_active_tags assemble tag lists separately. Consolidate them into one
+  pure helper.
 
 ## New error codes
 
