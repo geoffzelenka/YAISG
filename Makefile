@@ -1,6 +1,6 @@
 .PHONY: ci auth-ci game-ci client-ci
 
-ci: auth-ci game-ci client-ci scripts-ci
+ci: auth-ci game-ci client-ci scripts-ci content-lint
 
 auth-ci:
 	cd services/auth && python -m ruff check .
@@ -31,3 +31,7 @@ scripts-ci:
 	python -m ruff check --config services/game/pyproject.toml scripts
 	python -m ruff format --check --config services/game/pyproject.toml scripts
 	python -m mypy --config-file services/game/pyproject.toml scripts
+
+.PHONY: content-lint
+content-lint:
+	cd services/game && python -m app.content.lint
