@@ -11,7 +11,7 @@ from app.engine.caravans import Candidate, Route, candidate, survival
 from app.engine.stores import Line, membership
 from app.models import GoldLedger, RealmShipment, RealmState, RealmStore, WorldState
 from app.services.market import market_contexts
-from app.services.realms import as_utc, resolve_realm
+from app.services.realms import as_utc, prepare_sqlite_write, resolve_realm
 from app.services.stores import realm_holders, recompute_lines
 
 
@@ -31,6 +31,9 @@ def run_caravan_pass(session: Session, content: ContentIndex, now: datetime) -> 
     )
     if previous is None or as_utc(now) < as_utc(previous) + interval:
         return False
+    # The early read is only a hint. Discard SQLite's read snapshot before
+    # acquiring write intent and loading the authoritative realm/cursor state.
+    prepare_sqlite_write(session)
     endpoints = {
         endpoint for edge in content.map.edges for endpoint in (edge.a, edge.b)
     }
@@ -52,7 +55,8 @@ def run_caravan_pass(session: Session, content: ContentIndex, now: datetime) -> 
     if world is None or as_utc(now) < as_utc(world.last_caravan_pass) + interval:
         return False
     for realm in realms:
-        resolve_realm(session, realm, now, content)
+        if not realm.isolated:
+            resolve_realm(session, realm, now, content)
     # Anchor to the seed cadence, skipping all missed passes.
     world.last_caravan_pass = (
         as_utc(world.seeded_at)

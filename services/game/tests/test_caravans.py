@@ -2,7 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal as D
 from fractions import Fraction
 from math import floor
@@ -13,7 +13,7 @@ from unittest.mock import patch
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from sqlalchemy import event, select
+from sqlalchemy import event, select, update
 from sqlalchemy.engine import Connection, ExecutionContext
 from sqlalchemy.orm import Session, sessionmaker
 from test_realms import CONTENT, NOW
@@ -579,7 +579,7 @@ def test_isolated_route_endpoint_tags_reduce_loss(
             template_id=BUYER,
             isolated=True,
             current_node_id=node.id,
-            last_tick_at=NOW + timedelta(days=1),
+            last_tick_at=NOW,
         )
     )
     first = content.map.edges[0].model_copy(
@@ -604,6 +604,8 @@ def test_isolated_route_endpoint_tags_reduce_loss(
     assert shipment.from_realm_id == SELLER and shipment.to_realm_id == BUYER
     assert shipment.quantity_sent == (17 if reduction == 0 else 10)
     assert shipment.quantity_arriving == 10
+    endpoint = realm_session.get(RealmState, isolated_id)
+    assert endpoint and as_utc(endpoint.last_tick_at) == NOW
 
 
 @given(
@@ -648,3 +650,101 @@ def test_remoteness_prefers_cheaper_two_hop_path() -> None:
     routes = remoteness(MapPack(edges=(direct, first, second), positions={}))
     assert routes[direct.a, direct.b].hours == Fraction(1, 2)
     assert tuple(e.id for e in routes[direct.a, direct.b].edges) == ("first", "second")
+
+
+def test_sqlite_pass_restarts_with_write_intent_after_competing_commit(
+    realm_session: Session,
+) -> None:
+    """Discard the early WAL snapshot before reading trade state under a writer lock."""
+    if realm_session.get_bind().dialect.name != "sqlite":
+        pytest.skip("SQLite WAL snapshots and BEGIN IMMEDIATE")
+    content = seed(realm_session)
+    engine = realm_session.get_bind()
+    statements: list[str] = []
+    competed = False
+
+    def record(
+        connection: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: ExecutionContext,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    def compete(
+        connection: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: ExecutionContext,
+        executemany: bool,
+    ) -> None:
+        nonlocal competed
+        if competed or "SELECT world_state.last_caravan_pass" not in statement:
+            return
+        competed = True
+        with Session(engine) as other:
+            other.execute(
+                update(RealmStore)
+                .where(RealmStore.realm_id == SELLER, RealmStore.item_id == ITEM)
+                .values(quantity_milli=50000)
+            )
+            other.commit()
+
+    event.listen(engine, "before_cursor_execute", record)
+    event.listen(engine, "after_cursor_execute", compete)
+    try:
+        assert run_caravan_pass(realm_session, content, NOW + timedelta(days=1))
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+        event.remove(engine, "after_cursor_execute", compete)
+    assert competed
+    early_read = next(
+        i
+        for i, sql in enumerate(statements)
+        if "SELECT world_state.last_caravan_pass" in sql
+    )
+    write_begin = statements.index("BEGIN IMMEDIATE")
+    realm_read = next(
+        i for i, sql in enumerate(statements) if sql.startswith("SELECT realm_state.")
+    )
+    assert early_read < write_begin < realm_read
+    shipment = realm_session.scalar(select(RealmShipment))
+    stock = realm_session.get(RealmStore, (SELLER, ITEM))
+    assert shipment and shipment.quantity_sent == 10
+    assert stock and stock.quantity_milli == 40000
+
+
+def test_scheduler_logs_failed_caravan_pass_and_retries(
+    realm_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failed dispatch transaction rolls back and leaves its boundary retryable."""
+    content = seed(realm_session)
+    factory = sessionmaker(bind=realm_session.get_bind())
+    now = NOW + timedelta(days=1)
+
+    def fail_after_dispatch(session: Session, data: ContentIndex, at: datetime) -> bool:
+        assert run_caravan_pass(session, data, at)
+        raise RuntimeError("Simulated caravan failure after dispatch")
+
+    with patch(
+        "app.services.scheduler.run_caravan_pass", side_effect=fail_after_dispatch
+    ):
+        assert run_realm_ticks(factory, content, now)
+    assert any(
+        record.name == "app.services.scheduler"
+        and record.getMessage() == "Caravan pass failed"
+        and record.exc_info is not None
+        for record in caplog.records
+    )
+    realm_session.expire_all()
+    assert list(realm_session.scalars(select(RealmShipment))) == []
+    world = realm_session.get(WorldState, 1)
+    assert world and as_utc(world.last_caravan_pass) == NOW
+    realm_session.commit()
+    assert run_realm_ticks(factory, content, now)
+    realm_session.expire_all()
+    assert len(list(realm_session.scalars(select(RealmShipment)))) == 1
+    assert as_utc(world.last_caravan_pass) == now

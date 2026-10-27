@@ -52,7 +52,7 @@
 - Review round 1: an unlocked cursor check skips passes that are not due;
   due passes take sorted realm locks (including isolated map endpoints), then
   the world lock and re-check the cursor with refreshed ORM state. Each locked
-  realm is resolved with the standard lazy resolver before selection, including
+  non-isolated realm is resolved with the standard lazy resolver before selection, including
   retrying a realm whose earlier scheduled attempt failed. The initial cursor
   read uses an ordinary transaction; no SQLite writer intent is taken for a
   pass that is not due. The PostgreSQL/SQLite database guards are unchanged.
@@ -84,8 +84,31 @@
 - Existing exact catch-up statement assertions are unchanged: freshness resolves
   are outside the catch-up loop, with no new tick queries or altered budgets.
 
+- Review round 2: after the unlocked not-due check, prepare_sqlite_write ends
+  SQLite's advisory read transaction and starts BEGIN IMMEDIATE before loading
+  any realms. The sorted realm locks and locked cursor re-check follow that
+  boundary; PostgreSQL preparation remains a no-op. The write transaction owns
+  all final realm resolution, selection, dispatches and cursor changes together.
+- Isolated map endpoints supply active road tags without being resolved or
+  ticked by the pass. Extended test_isolated_route_endpoint_tags_reduce_loss
+  with an overdue isolated timestamp and assert it remains unchanged for both
+  road settings while delivery expectations continue to hold.
+- Added test_sqlite_pass_restarts_with_write_intent_after_competing_commit:
+  an engine event commits competing stock changes after the advisory cursor
+  read. The test checks BEGIN IMMEDIATE precedes realm loads, dispatch succeeds
+  and the final stock reflects the competing write. Before the fix this raised
+  SQLite's database-is-locked error while upgrading the stale WAL snapshot.
+- Scheduled pass failures now log their traceback and roll back their dispatch
+  transaction, matching per-realm failure handling without aborting the driver.
+  Added test_scheduler_logs_failed_caravan_pass_and_retries: inject failure
+  after dispatch, assert the error is logged and shipments/cursor roll back,
+  then retry the same boundary successfully. It honors TEST_DATABASE_URL.
+- All four new/extended regression cases failed before the fixes. Focused
+  caravan, realm-tick and database tests pass: 47 passed, two dialect skips.
+  Existing exact catch-up statement-count assertions remain unchanged.
+
 - Validation: SQLite `PATH=$PWD/.venv/bin:$PATH make ci` passes (auth 15,
-  game 572 with 18 database-specific skips, client 41). Lint, formatting,
+  game 574 with 18 database-specific skips, client 41). Lint, formatting,
   strict typing, client build, scripts and content lint pass. A disposable
   SQLite make db-reset, subsequent upgrade to head, alembic check and world
   creation passed during initial implementation; this round changes no schema.
