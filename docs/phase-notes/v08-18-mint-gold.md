@@ -100,3 +100,20 @@ None.
 
 - OPERATOR_REQUIRED (403): the authenticated auth user is not in the operator
   allowlist. Existing authentication and validation envelopes are unchanged.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on e38401a: SQLite make ci green (auth 15, game 470 / 14
+  skipped, client 41); PostgreSQL 16 game-ci 484 passed; PG db-reset green;
+  alembic check clean; boot 200. Review round 1: APPROVE, nits only.
+- 36-hardening: parse `operator_auth_user_ids` as UUIDs at boot and compare
+  UUID objects (raw string compare silently denies uppercase entries); extract
+  one `mint_value_per_day` helper shared by realm_ticks and stores band code;
+  hoist function-local imports in test_gold.py and engine/realm_ticks.py.
+- 23-global-market / 24-market-lifecycle: when extending /admin/economy,
+  assert `sum(holders) - sum(ledger)` from the endpoint stays at baseline after
+  mint ticks (current admin test covers only an empty ledger).
+- Any prompt that prices bullion items differently: step-7 cap loss picks the
+  "most plentiful" line by milli-units, not value; and the mint's
+  `consume_value` eats every bullion-class item regardless of more specific
+  `{item: ...}` lines.
