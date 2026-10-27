@@ -1,12 +1,102 @@
 {
   "forms": [
-    {"id": "form.camp", "name": "Camp", "specialty_tags": [], "relocation_class": "light", "base_caps": {"estate_upgrade_slots": 2}, "modifiers": [], "upkeep_profile": [], "production_profile": []},
-    {"id": "form.homestead", "name": "Homestead", "specialty_tags": ["farming"], "relocation_class": "heavy", "base_caps": {"estate_upgrade_slots": 4}, "modifiers": [{"type": "xp_pct", "value": 5}], "upkeep_profile": [], "production_profile": []},
-    {"id": "form.orchard", "name": "Orchard", "specialty_tags": ["farming"], "relocation_class": "heavy", "base_caps": {"estate_upgrade_slots": 5}, "modifiers": [{"type": "xp_pct", "value": 5}], "upkeep_profile": [], "production_profile": [{"item_id": "item.fake_sprig", "per_day": 10}]}
+    {
+      "id": "form.camp",
+      "name": "Camp",
+      "specialty_tags": [],
+      "base_caps": {
+        "estate_upgrade_slots": 2
+      },
+      "modifiers": [],
+      "upkeep_profile": [],
+      "production_profile": [],
+      "mobility": "mobile",
+      "travel_profile": {
+        "time_mult": 1,
+        "supply_mult": 1,
+        "terrains": [
+          "land"
+        ]
+      }
+    },
+    {
+      "id": "form.homestead",
+      "name": "Homestead",
+      "specialty_tags": [
+        "farming"
+      ],
+      "base_caps": {
+        "estate_upgrade_slots": 4
+      },
+      "modifiers": [
+        {
+          "type": "xp_pct",
+          "value": 5
+        }
+      ],
+      "upkeep_profile": [],
+      "production_profile": [],
+      "mobility": "mobile",
+      "travel_profile": {
+        "time_mult": 1,
+        "supply_mult": 1,
+        "terrains": [
+          "land"
+        ]
+      }
+    },
+    {
+      "id": "form.orchard",
+      "name": "Orchard",
+      "specialty_tags": [
+        "farming"
+      ],
+      "base_caps": {
+        "estate_upgrade_slots": 5
+      },
+      "modifiers": [
+        {
+          "type": "xp_pct",
+          "value": 5
+        }
+      ],
+      "upkeep_profile": [],
+      "production_profile": [
+        {
+          "item_id": "item.fake_sprig",
+          "per_day": 10
+        }
+      ],
+      "mobility": "mobile",
+      "travel_profile": {
+        "time_mult": 1,
+        "supply_mult": 1,
+        "terrains": [
+          "land"
+        ]
+      }
+    }
   ],
   "transformations": [
-    {"from": "form.camp", "to": "form.homestead", "cost": [{"item_id": "item.fake_plank", "qty": 5}]},
-    {"from": "form.homestead", "to": "form.orchard", "cost": [{"item_id": "item.demo_crate", "qty": 3}]}
-  ],
-  "relocation_classes": {"light": {"cost_multiplier": 1, "time_multiplier": 1}, "heavy": {"cost_multiplier": 2.5, "time_multiplier": 2}}
+    {
+      "from": "form.camp",
+      "to": "form.homestead",
+      "cost": [
+        {
+          "item_id": "item.fake_plank",
+          "qty": 5
+        }
+      ]
+    },
+    {
+      "from": "form.homestead",
+      "to": "form.orchard",
+      "cost": [
+        {
+          "item_id": "item.demo_crate",
+          "qty": 3
+        }
+      ]
+    }
+  ]
 }

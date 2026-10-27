@@ -249,6 +249,7 @@ async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
         "INSUFFICIENT_LEVEL",
         "MISSING_REALM_TAG",
     ]
+    assert groups["travel"]["actions"][0]["action_id"] == "action.fake_journey"
     assert gathering["gathering.fake_sprigs"]["startable"] is True
     assert gathering["gathering.test_crystal"]["blocked_by"] == ["INSUFFICIENT_LEVEL"]
     for skill_id in (
@@ -258,10 +259,29 @@ async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
         "accuracy",
         "defense",
         "vigor",
-        "travel",
         "exploration",
     ):
         assert groups[skill_id]["actions"] == []
+
+
+async def test_journey_report_and_generic_start_share_destination_gate(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+) -> None:
+    """The uniform report cannot advertise a journey as directly startable."""
+    client, _, _, headers = action_client
+    response = await client.get("/actions/available", headers=headers)
+    assert response.status_code == 200
+    travel = next(
+        group for group in response.json()["skills"] if group["skill_id"] == "travel"
+    )
+    journey = travel["actions"][0]
+    assert journey["startable"] is False
+    assert journey["blocked_by"] == ["TRAVEL_DESTINATION_REQUIRED"]
+    started = await client.post(
+        "/actions/start", headers=headers, json={"action_id": journey["action_id"]}
+    )
+    assert started.status_code == 409
+    assert started.json()["error"]["code"] == journey["blocked_by"][0]
 
 
 async def test_profile_resolution_remains_in_reward_feed(

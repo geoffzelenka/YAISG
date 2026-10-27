@@ -51,7 +51,7 @@ def _duplicate_map_edge(content_dir: Path) -> None:
     path = content_dir / "map.json"
     value = json.loads(path.read_text())
     duplicate = value["edges"][0].copy()
-    duplicate["realms"] = list(reversed(duplicate["realms"]))
+    duplicate["a"], duplicate["b"] = duplicate["b"], duplicate["a"]
     value["edges"].append(duplicate)
     _write_json(path, value)
 
@@ -59,7 +59,7 @@ def _duplicate_map_edge(content_dir: Path) -> None:
 def _unknown_map_realm(content_dir: Path) -> None:
     path = content_dir / "map.json"
     value = json.loads(path.read_text())
-    value["edges"][0]["realms"][1] = "realm.missing"
+    value["edges"][0]["b"] = "realm.missing"
     _write_json(path, value)
 
 

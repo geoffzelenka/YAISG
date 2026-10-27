@@ -86,35 +86,6 @@ export function ActionExperience() {
   )
 
   useEffect(() => {
-    const receiveRelocationRewards = (event: Event) => {
-      const rewards = (event as CustomEvent<Rewards>).detail
-      const isWelcomeBack = shouldShowWelcomeBack(rewards)
-      if (isWelcomeBack) setWelcome(rewards)
-      setFeed((current) =>
-        [
-          ...current,
-          {
-            id: (nextFeedId.current += 1),
-            rewards,
-            reason: rewards.stop_reason ?? 'Action stopped for relocation',
-            showToast: !isWelcomeBack,
-            toastUntil: Date.now() + 5_000,
-          },
-        ].slice(-30),
-      )
-    }
-    window.addEventListener(
-      'yaisg:relocation-rewards',
-      receiveRelocationRewards,
-    )
-    return () =>
-      window.removeEventListener(
-        'yaisg:relocation-rewards',
-        receiveRelocationRewards,
-      )
-  }, [])
-
-  useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | undefined
     let cancelled = false
     let inFlight = false

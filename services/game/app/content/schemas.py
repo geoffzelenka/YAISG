@@ -29,6 +29,8 @@ class ContentModel(BaseModel):
 class ModifierType(StrEnum):
     """Modifier mechanics understood by the game engine."""
 
+    JOURNEY_SPEED_PCT = "journey_speed_pct"
+    SUPPLY_REDUCTION_PCT = "supply_reduction_pct"
     CYCLE_SPEED_PCT = "cycle_speed_pct"
     XP_PCT = "xp_pct"
     EXTRA_DROP_CHANCE_PCT = "extra_drop_chance_pct"
@@ -245,19 +247,33 @@ class RealmsPack(ContentModel):
     realms: tuple[Realm, ...]
 
 
-class MapCost(ContentModel):
-    """Typed cost of traversing one map edge."""
+class TravelProfile(ContentModel):
+    """Movement multipliers and traversable terrain."""
 
-    gold: int = Field(ge=0)
-    items: tuple[ItemQuantity, ...] = ()
-    time_ms: int = Field(ge=0)
+    time_mult: float = Field(gt=0, allow_inf_nan=False)
+    supply_mult: float = Field(ge=0, allow_inf_nan=False)
+    terrains: tuple[Literal["land", "water"], ...] = Field(min_length=1)
+
+
+class TravelTierBenefit(ContentModel):
+    """Travel's group P percentages at a given tier."""
+
+    journey_speed_pct: float = Field(ge=0, allow_inf_nan=False)
+    supply_reduction_pct: float = Field(ge=0, allow_inf_nan=False)
 
 
 class MapEdge(ContentModel):
-    """An undirected connection between two realms."""
+    """A directed or bidirectional travel connection."""
 
-    realms: tuple[str, str]
-    cost: MapCost
+    id: str = Field(min_length=1)
+    a: str = Field(min_length=1)
+    b: str = Field(min_length=1)
+    terrain: Literal["land", "water"]
+    base_time_s: float = Field(gt=0, allow_inf_nan=False)
+    supplies: tuple[ActionInput, ...] = ()
+    min_travel_level: int = Field(ge=1, le=100)
+    base_loss_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    one_way: bool
 
 
 class MapPosition(ContentModel):
@@ -296,7 +312,16 @@ class EstateForm(ContentModel):
     tags: tuple[str, ...] = ()
     requires_realm_tags: tuple[str, ...] = ()
     specialty_tags: tuple[str, ...] = ()
-    relocation_class: str = Field(min_length=1)
+    mobility: Literal["mobile", "fixed"]
+    travel_profile: TravelProfile | None
+
+    @model_validator(mode="after")
+    def validate_mobility(self) -> "EstateForm":
+        """Only mobile forms have a travel profile."""
+        if (self.mobility == "mobile") != (self.travel_profile is not None):
+            raise ValueError("mobile forms require a profile; fixed forms forbid it")
+        return self
+
     base_caps: dict[CapType, float] = {}
     modifiers: tuple[Modifier, ...] = ()
     upkeep_profile: tuple[ProfileItem, ...] = ()
@@ -311,25 +336,18 @@ class FormTransformation(ContentModel):
     cost: tuple[ItemQuantity, ...]
 
 
-class RelocationClass(ContentModel):
-    """Multipliers applied when relocating an estate."""
-
-    cost_multiplier: float = Field(ge=0)
-    time_multiplier: float = Field(ge=0)
-
-
 class EstateFormsPack(ContentModel):
-    """Estate forms, transformations, and relocation classes."""
+    """Estate forms and transformations."""
 
     forms: tuple[EstateForm, ...]
     transformations: tuple[FormTransformation, ...]
-    relocation_classes: dict[str, RelocationClass]
 
 
 class DevelopmentNode(ContentModel):
     """A complete realm mechanical identity."""
 
     id: str = Field(min_length=1)
+    tier: int = Field(ge=1, le=5)
     archetype: str = Field(min_length=1)
     name: str = Field(min_length=1)
     inherent_tags: tuple[str, ...] = ()
@@ -473,6 +491,9 @@ class LintConfig(ContentModel):
 class ProgressionPack(ContentModel):
     """Content-defined tier thresholds and titles."""
 
+    visit_profile: TravelProfile
+    travel_xp_per_second: float = Field(gt=0, allow_inf_nan=False)
+    tier_benefits: dict[Literal["travel"], tuple[TravelTierBenefit, ...]]
     lint: LintConfig
     tier_thresholds: tuple[StrictInt, ...]
     tier_titles: tuple[str, ...]
@@ -497,6 +518,8 @@ class ProgressionPack(ContentModel):
             raise ValueError("thresholds must strictly increase")
         if len(t) != len(self.tier_titles) or not all(self.tier_titles):
             raise ValueError("each tier requires a title")
+        if len(self.tier_benefits.get("travel", ())) != len(self.tier_thresholds):
+            raise ValueError("Travel benefits require one row per tier")
         return self
 
 

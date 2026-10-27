@@ -22,8 +22,6 @@ from app.engine.core import (
     input_payment,
     is_present,
     is_resident,
-    path_cost,
-    relocation_cost,
     resolve,
     resolve_caps,
 )
@@ -53,8 +51,6 @@ __all__ = [
     "Shortfall",
     "effective_xp",
     "input_payment",
-    "path_cost",
-    "relocation_cost",
     "resolve",
     "resolve_caps",
 ]

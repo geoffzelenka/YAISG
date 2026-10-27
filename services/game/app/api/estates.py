@@ -5,7 +5,6 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -14,14 +13,19 @@ from sqlalchemy import func, select
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
-from app.content.schemas import CapType, DecayStage, ItemQuantity, Modifier
+from app.content.schemas import (
+    CapType,
+    DecayStage,
+    ItemQuantity,
+    Modifier,
+    TravelProfile,
+)
 from app.engine import resolve_caps
 from app.engine.core import realm_active_tags
 from app.engine.tags import tags_present
 from app.errors import api_error
 from app.models import Character, Estate, EstateUpgrade, Inventory, RealmState
 from app.services.actions import load_character_state, resolve_character
-from app.services.realms import finalize_realm, finalize_relocation
 
 router = APIRouter(prefix="/estates", tags=["estates"])
 audit_logger = logging.getLogger("yaisg.audit")
@@ -33,7 +37,8 @@ class EstateFormSummary(BaseModel):
     id: str
     name: str
     specialty_tags: tuple[str, ...]
-    relocation_class: str
+    mobility: str
+    travel_profile: TravelProfile | None
     base_caps: dict[CapType, float]
     modifiers: tuple[Modifier, ...]
 
@@ -58,8 +63,6 @@ class EstateResponse(BaseModel):
     status: str
     upgrade_slots: int
     installed_upgrades: list[InstalledUpgradeSummary]
-    relocating_to_realm_id: str | None
-    relocation_completes_at: datetime | None
 
 
 class TransformRequest(BaseModel):
@@ -154,7 +157,8 @@ def _estate_response(
             id=form.id,
             name=form.name,
             specialty_tags=form.specialty_tags,
-            relocation_class=form.relocation_class,
+            mobility=form.mobility,
+            travel_profile=form.travel_profile,
             base_caps=form.base_caps,
             modifiers=form.modifiers,
         ),
@@ -163,8 +167,6 @@ def _estate_response(
         status=estate.status,
         upgrade_slots=slots,
         installed_upgrades=summaries,
-        relocating_to_realm_id=estate.relocating_to_realm_id,
-        relocation_completes_at=estate.relocation_completes_at,
     )
 
 
@@ -220,11 +222,11 @@ async def get_estate(
     player: CurrentPlayer,
     session: DatabaseSession,
 ) -> EstateResponse:
-    """Return the caller's home estate without resolving active work."""
+    """Resolve active work and return the caller's home estate."""
     character = _character(session, player.id)
     content = _content(request)
-    estate = finalize_relocation(session, character, now, prepare_sqlite=True)
-    finalize_realm(session, character.current_realm_id, now, content)
+    resolve_character(session, character.id, now, content)
+    estate = _home_estate(session, character)
     response = _estate_response(session, content, character, estate)
     session.commit()
     return response
@@ -291,10 +293,16 @@ async def transform_estate(
     """Resolve work, charge a transformation edge, and change estate form."""
     character = _character(session, player.id)
     content = _content(request)
-    resolve_character(session, character.id, now, content)
+    resolution = resolve_character(session, character.id, now, content)
     # On SQLite, resolve_character has already acquired BEGIN IMMEDIATE. This
     # ordering is the SQLite equivalent of the estate row lock below.
     estate = _home_estate(session, character, lock=True)
+    if (
+        resolution.active is not None
+        and content.action(resolution.active.action_id).resolver == "travel"
+        and resolution.active.meta.get("mode") == "relocate"
+    ):
+        raise api_error(409, "ESTATE_BUSY", "The estate is on a journey")
     if estate.status != "active":
         raise api_error(409, "ESTATE_BUSY", "The estate is not active")
     edge = next(

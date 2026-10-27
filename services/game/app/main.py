@@ -15,6 +15,7 @@ from app.api.content import router as content_router
 from app.api.estates import router as estates_router
 from app.api.players import router as players_router
 from app.api.realms import router as realms_router
+from app.api.travel import router as travel_router
 from app.auth import verify_access_token
 from app.config import CORS_ORIGINS, VERSION
 from app.content.runtime import CONTENT
@@ -31,6 +32,7 @@ app.include_router(characters_router)
 app.include_router(estates_router)
 app.include_router(actions_router)
 app.include_router(realms_router)
+app.include_router(travel_router)
 
 
 @app.middleware("http")

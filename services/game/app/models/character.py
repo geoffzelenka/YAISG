@@ -90,10 +90,6 @@ class Estate(Base):
     realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
     form_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    relocating_to_realm_id: Mapped[str | None] = mapped_column(String(128))
-    relocation_completes_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     upgrade_slots: Mapped[int] = mapped_column(Integer, nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

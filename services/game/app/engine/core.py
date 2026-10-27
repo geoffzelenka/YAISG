@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import heapq
-import itertools
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -21,8 +19,6 @@ from app.content.schemas import (
     Drop,
     EstateForm,
     EstateUpgrade,
-    ItemQuantity,
-    MapCost,
     Modifier,
     ModifierType,
     SkillCategory,
@@ -63,6 +59,7 @@ class CharacterState:
     gear_modifiers: tuple[Modifier, ...] = ()
     consumable_modifiers: tuple[Modifier, ...] = ()
     installed_upgrades: tuple[str, ...] = ()
+    realm_states: Mapping[str, tuple[str, DecayStage]] = field(default_factory=dict)
     cap_bonuses: Mapping[CapType, float] = field(default_factory=dict)
 
 
@@ -79,6 +76,7 @@ class ActiveAction:
 class StopReason(StrEnum):
     """Reasons resolution automatically ends an action."""
 
+    OUT_OF_SUPPLIES = "OUT_OF_SUPPLIES"
     REQUIREMENT_LOST = "REQUIREMENT_LOST"
     INPUTS_EXHAUSTED = "inputs_exhausted"
     OFFLINE_CAP = "offline_cap"
@@ -142,12 +140,11 @@ class CycleRewards:
 
 @dataclass(frozen=True)
 class ResolveContext:
-    """Content, initial bonuses, caps and action state for a clipped budget."""
+    """Content, caps and action state for a clipped budget."""
 
     content: ContentIndex
     active: ActiveAction
     caps: Caps
-    modifier_groups: tuple[tuple[Modifier, ...], ...]
 
 
 class ActionResolver(Protocol):
@@ -407,76 +404,6 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
     )
 
 
-def path_cost(realm_a: str, realm_b: str, content: ContentIndex) -> MapCost:
-    """Return the cheapest map path, tied by gold and then elapsed time.
-
-    Item quantities do not participate in ordering because different item bags
-    are not inherently comparable. They are summed along the selected path.
-    """
-    if realm_a not in {realm.id for realm in content.realms} or realm_b not in {
-        realm.id for realm in content.realms
-    }:
-        raise ValueError("path endpoint is not a known realm")
-    if realm_a == realm_b:
-        return MapCost(gold=0, items=(), time_ms=0)
-    graph: defaultdict[str, list[tuple[str, MapCost]]] = defaultdict(list)
-    for edge in content.map.edges:
-        left, right = edge.realms
-        graph[left].append((right, edge.cost))
-        graph[right].append((left, edge.cost))
-    sequence = itertools.count()
-    queue: list[tuple[int, int, int, str, dict[str, int]]] = [
-        (0, 0, next(sequence), realm_a, {})
-    ]
-    best: dict[str, tuple[int, int]] = {}
-    while queue:
-        gold, elapsed, _, realm, items = heapq.heappop(queue)
-        if best.get(realm, (gold + 1, elapsed + 1)) <= (gold, elapsed):
-            continue
-        best[realm] = (gold, elapsed)
-        if realm == realm_b:
-            return MapCost(
-                gold=gold,
-                time_ms=elapsed,
-                items=tuple(
-                    ItemQuantity(item_id=item_id, qty=qty)
-                    for item_id, qty in sorted(items.items())
-                ),
-            )
-        for destination, edge_cost in graph[realm]:
-            edge_items = dict(items)
-            for entry in edge_cost.items:
-                edge_items[entry.item_id] = edge_items.get(entry.item_id, 0) + entry.qty
-            heapq.heappush(
-                queue,
-                (
-                    gold + edge_cost.gold,
-                    elapsed + edge_cost.time_ms,
-                    next(sequence),
-                    destination,
-                    edge_items,
-                ),
-            )
-    raise ValueError(f"no map path from {realm_a!r} to {realm_b!r}")
-
-
-def relocation_cost(cost: MapCost, form: EstateForm, content: ContentIndex) -> MapCost:
-    """Apply relocation multipliers, omitting item quantities truncated to zero."""
-    relocation_class = content.relocation_classes[form.relocation_class]
-    return MapCost(
-        gold=int(cost.gold * relocation_class.cost_multiplier),
-        time_ms=int(cost.time_ms * relocation_class.time_multiplier),
-        items=tuple(
-            ItemQuantity(
-                item_id=entry.item_id,
-                qty=int(entry.qty * relocation_class.cost_multiplier),
-            )
-            for entry in cost.items
-            if int(entry.qty * relocation_class.cost_multiplier) > 0
-        ),
-    )
-
-
 def input_payment(
     holding: Mapping[str, int], action: Action, content: ContentIndex
 ) -> dict[str, int] | None:
@@ -664,8 +591,10 @@ class UniformResolver:
         return _resolve_uniform(state, action, ctx, budget_ms, rng)
 
 
+from app.engine.travel import TravelResolver  # noqa: E402
+
 ACTION_RESOLVERS: Mapping[str, ActionResolver] = MappingProxyType(
-    {"uniform": UniformResolver()}
+    {"uniform": UniformResolver(), "travel": TravelResolver()}
 )
 
 
@@ -706,7 +635,7 @@ def resolve(
     caps = resolve_caps(state, content)
     cap_ms = int(caps.offline_hours * 3_600_000)
     elapsed_ms = _milliseconds(now - active.last_resolved_at)
-    ctx = ResolveContext(content, active, caps, modifier_groups(state, content))
+    ctx = ResolveContext(content, active, caps)
     if action.resolver is None:
         raise ValueError(f"action {action.id!r} has no resolver")
     result = resolvers[action.resolver].resolve(
@@ -716,7 +645,15 @@ def resolve(
         raise ValueError(f"resolver {action.resolver!r} returned no character state")
     new_state = result.state
     reason = result.stop_reason
-    if reason is None and result.cycles_completed > 0 and elapsed_ms > cap_ms:
+    if (
+        reason is None
+        and (
+            result.cycles_completed > 0
+            or (action.resolver == "travel" and result.elapsed_ms == cap_ms)
+        )
+        and elapsed_ms > cap_ms
+        and result.active is not None
+    ):
         reason = StopReason.OFFLINE_CAP
     if requirement_lost:
         reason = StopReason.REQUIREMENT_LOST

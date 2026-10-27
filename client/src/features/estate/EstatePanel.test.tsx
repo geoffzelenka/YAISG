@@ -43,12 +43,21 @@ const packs: Record<string, unknown> = {
     estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },
-  estate_forms: { forms: [], transformations: [], relocation_classes: {} },
+  estate_forms: { forms: [], transformations: [] },
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
   tags: { tags: [] },
   economy: { decay: { faltering_factor: 0.5 } },
   progression: {
+    visit_profile: {
+      time_mult: 1,
+      supply_mult: 1,
+      terrains: ['land', 'water'],
+    },
+    travel_xp_per_second: 1,
+    tier_benefits: {
+      travel: [{ journey_speed_pct: 0, supply_reduction_pct: 0 }],
+    },
     lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,
     min_cycle_ms: 1,
@@ -106,7 +115,12 @@ describe('estate panel', () => {
                       id: 'form.camp',
                       name: 'Camp',
                       specialty_tags: ['mobile'],
-                      relocation_class: 'light',
+                      mobility: 'mobile',
+                      travel_profile: {
+                        time_mult: 1,
+                        supply_mult: 1,
+                        terrains: ['land'],
+                      },
                       base_caps: { estate_upgrade_slots: 3 },
                       modifiers: [],
                     },
@@ -130,8 +144,6 @@ describe('estate panel', () => {
                         inert_reason: 'realm requirements not met',
                       },
                     ],
-                    relocating_to_realm_id: null,
-                    relocation_completes_at: null,
                   }
         return Promise.resolve(
           new Response(JSON.stringify(body), {

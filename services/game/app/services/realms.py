@@ -1,4 +1,4 @@
-"""Transactional realm-development and relocation finalizers."""
+"""Transactional realm-development finalizers."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
-from app.models import Character, Estate, RealmEdgeProgress, RealmProject, RealmState
+from app.models import RealmEdgeProgress, RealmProject, RealmState
 
 
 class InvalidEdgeAwardError(RuntimeError):
@@ -153,32 +153,3 @@ def award_edge_progress(
             milliseconds=edge.transition_ms or 0
         )
     return progress
-
-
-def finalize_relocation(
-    session: Session,
-    character: Character,
-    now: datetime,
-    *,
-    prepare_sqlite: bool = False,
-) -> Estate:
-    """Complete a due home-estate relocation and synchronize residence cache."""
-    if prepare_sqlite:
-        prepare_sqlite_write(session)
-    statement = select(Estate).where(Estate.id == character.home_estate_id)
-    if session.get_bind().dialect.name != "sqlite":
-        statement = statement.with_for_update()
-    estate = session.scalar(statement)
-    if estate is None:
-        raise RuntimeError(f"character {character.id} has no home estate")
-    if (
-        estate.relocating_to_realm_id is not None
-        and estate.relocation_completes_at is not None
-        and _as_utc(estate.relocation_completes_at) <= now
-    ):
-        estate.realm_id = estate.relocating_to_realm_id
-        character.current_realm_id = estate.realm_id
-        estate.relocating_to_realm_id = None
-        estate.relocation_completes_at = None
-        estate.status = "active"
-    return estate

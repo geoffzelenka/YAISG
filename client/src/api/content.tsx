@@ -9,6 +9,8 @@ import {
 import { gameRequest } from './http'
 
 export type ModifierType =
+  | 'journey_speed_pct'
+  | 'supply_reduction_pct'
   | 'cycle_speed_pct'
   | 'xp_pct'
   | 'extra_drop_chance_pct'
@@ -109,7 +111,8 @@ export type EstateForm = {
   tags: string[]
   requires_realm_tags: string[]
   specialty_tags: string[]
-  relocation_class: string
+  mobility: 'mobile' | 'fixed'
+  travel_profile: TravelProfile | null
   base_caps: Partial<Caps>
   modifiers: Modifier[]
 }
@@ -119,6 +122,7 @@ export type FormTransformation = {
   cost: ItemQuantity[]
 }
 export type DevelopmentNode = {
+  tier: number
   id: string
   inherent_tags: string[]
   actions: string[]
@@ -142,9 +146,22 @@ export type Project = {
   targets: ItemQuantity[]
   awards: { edge_id: string; progress: number }[]
 }
+export type TravelProfile = {
+  time_mult: number
+  supply_mult: number
+  terrains: ('land' | 'water')[]
+}
+
 export type MapEdge = {
-  realms: [string, string]
-  cost: { gold: number; items: ItemQuantity[]; time_ms: number }
+  id: string
+  a: string
+  b: string
+  terrain: 'land' | 'water'
+  base_time_s: number
+  supplies: Action['inputs']
+  min_travel_level: number
+  base_loss_pct: number
+  one_way: boolean
 }
 
 export type Tag = {
@@ -181,6 +198,11 @@ type ContentPacks = {
   }
   development: { nodes: DevelopmentNode[]; edges: DevelopmentEdge[] }
   progression: {
+    visit_profile: TravelProfile
+    travel_xp_per_second: number
+    tier_benefits: {
+      travel: { journey_speed_pct: number; supply_reduction_pct: number }[]
+    }
     lint: { g: number; tolerance_pct: number }
     tier_thresholds: number[]
     tier_titles: string[]

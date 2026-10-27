@@ -35,12 +35,21 @@ const packBodies = {
     estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },
-  estate_forms: { forms: [], transformations: [], relocation_classes: {} },
+  estate_forms: { forms: [], transformations: [] },
   development: { nodes: [], edges: [] },
   projects: { projects: [] },
   tags: { tags: [] },
   economy: { decay: { faltering_factor: 0.5 } },
   progression: {
+    visit_profile: {
+      time_mult: 1,
+      supply_mult: 1,
+      terrains: ['land', 'water'],
+    },
+    travel_xp_per_second: 1,
+    tier_benefits: {
+      travel: [{ journey_speed_pct: 0, supply_reduction_pct: 0 }],
+    },
     lint: { g: 1.015969, tolerance_pct: 15 },
     min_factor: 0.25,
     min_cycle_ms: 1,

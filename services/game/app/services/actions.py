@@ -4,7 +4,7 @@ import random
 import secrets
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
@@ -73,7 +73,9 @@ def _lock_character_and_load_action(
     )
 
 
-def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
+def _load_state(
+    session: Session, character_id: uuid.UUID, content: ContentIndex = CONTENT
+) -> CharacterState:
     character = session.get(Character, character_id)
     currency = session.get(Currency, character_id)
     estate = session.get(Estate, character.home_estate_id) if character else None
@@ -102,7 +104,7 @@ def _load_state(session: Session, character_id: uuid.UUID) -> CharacterState:
         realm_node_id=(
             realm_state.node_id
             if realm_state
-            else CONTENT.realm(character.current_realm_id).starting_node_id
+            else content.realm(character.current_realm_id).starting_node_id
         ),
         realm_stage=DecayStage(realm_state.decay_stage)
         if realm_state
@@ -121,7 +123,14 @@ def load_character_state(session: Session, character_id: uuid.UUID) -> Character
 def _persist_state(
     session: Session, character_id: uuid.UUID, state: CharacterState
 ) -> None:
-    # Actions cannot change gold, so only skills and inventory are mutable here.
+    character = session.get(Character, character_id)
+    if character is None:
+        raise RuntimeError(f"character {character_id} does not exist")
+    estate = session.get(Estate, character.home_estate_id)
+    if estate is None:
+        raise RuntimeError(f"character {character_id} has no estate")
+    character.current_realm_id = state.current_realm_id
+    estate.realm_id = state.estate_realm_id
     for skill_id, xp in state.skills_xp.items():
         skill = session.get(CharacterSkill, (character_id, skill_id))
         if skill is None:
@@ -157,20 +166,54 @@ def resolve_character(
 ) -> Resolution:
     """Resolve and persist one character inside the caller's transaction."""
     record = _lock_character_and_load_action(session, character_id)
+    return resolve_locked_character(
+        session, character_id, now, content, additional_realm_ids, record
+    )
+
+
+def resolve_locked_character(
+    session: Session,
+    character_id: uuid.UUID,
+    now: datetime,
+    content: ContentIndex | None = None,
+    additional_realm_ids: set[str] | None = None,
+    record: ActiveActionRecord | None = None,
+) -> Resolution:
+    """Resolve while the caller already holds the character serialization lock."""
+    if record is None:
+        record = session.scalar(
+            select(ActiveActionRecord).where(
+                ActiveActionRecord.character_id == character_id
+            )
+        )
     character = session.get(Character, character_id)
     if character is None:
         raise RuntimeError(f"character {character_id} does not exist")
     # Imported locally to keep the finalizers independent of the action adapter.
-    from app.services.realms import finalize_realms, finalize_relocation
+    from app.services.realms import finalize_realms
 
-    finalize_relocation(session, character, now)
     resolved_content = content or CONTENT
     realm_ids = set(additional_realm_ids or ())
     realm_ids.add(character.current_realm_id)
-    finalize_realms(session, realm_ids, now, resolved_content)
+    if record is not None:
+        realm_ids.update(
+            step["destination_realm_id"] for step in record.meta.get("route", [])
+        )
+    realms = finalize_realms(session, realm_ids, now, resolved_content)
+    session.scalar(
+        select(Estate).where(Estate.id == character.home_estate_id).with_for_update()
+    )
     if record is None:
         return Resolution(None, empty_result())
-    state = _load_state(session, character_id)
+    state = replace(
+        _load_state(session, character_id, resolved_content),
+        realm_states={
+            realm_id: (realm.node_id, DecayStage(realm.decay_stage))
+            if realm
+            else (resolved_content.realm(realm_id).starting_node_id, DecayStage.FED)
+            for realm_id, realm in realms.items()
+        },
+    )
     action = ActiveAction(
         action_id=record.action_id,
         started_at=as_utc(record.started_at),

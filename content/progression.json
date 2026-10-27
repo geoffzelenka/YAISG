@@ -1,5 +1,8 @@
 {
-  "lint": {"g": 1.015969, "tolerance_pct": 15},
+  "lint": {
+    "g": 1.015969,
+    "tolerance_pct": 15
+  },
   "tier_thresholds": [
     1,
     50,
@@ -103,6 +106,39 @@
       1,
       1,
       1
+    ]
+  },
+  "visit_profile": {
+    "time_mult": 1,
+    "supply_mult": 1,
+    "terrains": [
+      "land",
+      "water"
+    ]
+  },
+  "travel_xp_per_second": 1,
+  "tier_benefits": {
+    "travel": [
+      {
+        "journey_speed_pct": 0,
+        "supply_reduction_pct": 0
+      },
+      {
+        "journey_speed_pct": 10,
+        "supply_reduction_pct": 10
+      },
+      {
+        "journey_speed_pct": 20,
+        "supply_reduction_pct": 20
+      },
+      {
+        "journey_speed_pct": 30,
+        "supply_reduction_pct": 30
+      },
+      {
+        "journey_speed_pct": 40,
+        "supply_reduction_pct": 40
+      }
     ]
   }
 }

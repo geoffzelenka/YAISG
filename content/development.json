@@ -16,7 +16,8 @@
       "inherent_tags": [
         "access.fake",
         "bonus.fake"
-      ]
+      ],
+      "tier": 1
     },
     {
       "id": "node.verdant_t1",
@@ -42,7 +43,8 @@
       "inherent_tags": [
         "verdant",
         "facility.fake_node"
-      ]
+      ],
+      "tier": 1
     },
     {
       "id": "node.verdant_t2",
@@ -70,7 +72,8 @@
       ],
       "inherent_tags": [
         "verdant"
-      ]
+      ],
+      "tier": 2
     },
     {
       "id": "node.ashen_t0_stub",
@@ -85,7 +88,8 @@
         "gathering.mock_ore",
         "gathering.test_crystal"
       ],
-      "inherent_tags": []
+      "inherent_tags": [],
+      "tier": 1
     },
     {
       "id": "node.ashen_t1",
@@ -110,7 +114,8 @@
       ],
       "inherent_tags": [
         "ashen"
-      ]
+      ],
+      "tier": 1
     },
     {
       "id": "node.ashen_t2",
@@ -138,7 +143,8 @@
       ],
       "inherent_tags": [
         "ashen"
-      ]
+      ],
+      "tier": 2
     }
   ],
   "edges": [

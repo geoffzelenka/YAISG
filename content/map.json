@@ -1,4 +1,32 @@
 {
-  "edges": [{"realms": ["realm.verdant_vale", "realm.ashen_reach"], "cost": {"gold": 25, "items": [], "time_ms": 60000}}],
-  "positions": {"realm.verdant_vale": {"x": 120, "y": 340}, "realm.ashen_reach": {"x": 420, "y": 180}}
+  "edges": [
+    {
+      "id": "edge.fake_road",
+      "a": "realm.verdant_vale",
+      "b": "realm.ashen_reach",
+      "terrain": "land",
+      "base_time_s": 60,
+      "supplies": [
+        {
+          "selector": {
+            "item": "item.fake_sprig"
+          },
+          "quantity": 2
+        }
+      ],
+      "min_travel_level": 1,
+      "base_loss_pct": 0,
+      "one_way": false
+    }
+  ],
+  "positions": {
+    "realm.verdant_vale": {
+      "x": 120,
+      "y": 340
+    },
+    "realm.ashen_reach": {
+      "x": 420,
+      "y": 180
+    }
+  }
 }
