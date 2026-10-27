@@ -50,5 +50,12 @@
     "min_stock_days": 3,
     "duration_hours": 72,
     "fail_cooldown_hours": 72
+  },
+  "caravan": {
+    "pass_every_ticks": 6,
+    "fee_pct_per_hour": 1,
+    "fee_burn_pct": 0,
+    "time_mult": 2,
+    "capacity_value_per_pass": 1000
   }
 }

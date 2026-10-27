@@ -26,7 +26,9 @@ _ensure_sqlite_directory(DATABASE_URL)
 
 
 def configure_sqlite_engine(database_engine: Engine) -> None:
-    """Configure explicit, transaction-aware SQLite BEGIN behavior and WAL."""
+    """Configure SQLite BEGIN behavior and WAL; leave other dialects alone."""
+    if database_engine.dialect.name != "sqlite":
+        return
 
     @event.listens_for(database_engine, "connect")
     def prepare_connection(dbapi_connection: object, connection_record: object) -> None:
@@ -41,6 +43,8 @@ def configure_sqlite_engine(database_engine: Engine) -> None:
 
     @event.listens_for(database_engine, "begin")
     def begin_transaction(connection: Connection) -> None:
+        if connection.dialect.name != "sqlite":
+            return
         mode = (
             "BEGIN IMMEDIATE"
             if connection.get_execution_options().get("sqlite_write_intent")
