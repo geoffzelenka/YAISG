@@ -30,7 +30,9 @@ export type CharacterProfile = {
   caps: Record<
     | 'offline_hours'
     | 'inventory_slots'
-    | 'market_listings'
+    | 'order_slots'
+    | 'key_listings'
+    | 'belt_slots'
     | 'estate_upgrade_slots',
     { base: number; effective: number }
   >

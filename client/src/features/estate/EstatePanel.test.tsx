@@ -35,7 +35,9 @@ const packs: Record<string, unknown> = {
   caps: {
     offline_hours: 12,
     inventory_slots: 30,
-    market_listings: 5,
+    order_slots: 5,
+    key_listings: 2,
+    belt_slots: 2,
     estate_upgrade_slots: 2,
   },
   map: { edges: [], positions: {} },

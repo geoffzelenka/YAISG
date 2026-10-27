@@ -304,7 +304,7 @@ async def test_upgrade_changes_subsequent_action_resolution(
     started = await client.post(
         "/characters/me/action",
         headers=headers,
-        json={"action_id": "crafting.demo_crate"},
+        json={"action_id": "manufacturing.demo_crate"},
     )
     clock["now"] += timedelta(seconds=6)
     resolved = await client.get("/characters/me/action", headers=headers)
@@ -312,7 +312,7 @@ async def test_upgrade_changes_subsequent_action_resolution(
     assert purchased.status_code == 200
     assert purchased.json()["installed_upgrades"][0]["slot_index"] == 0
     assert started.status_code == 200
-    assert resolved.json()["since_last"]["xp_gained"] == {"crafting": 29}
+    assert resolved.json()["since_last"]["xp_gained"] == {"manufacturing": 29}
     audit = next(
         json.loads(record.message)
         for record in caplog.records
@@ -573,7 +573,7 @@ async def test_transform_errors_and_shrinking_slots(
                 {
                     "from": "form.homestead",
                     "to": "form.camp",
-                    "cost": [ItemQuantity(item_id="item.fake_plank", qty=1)],
+                    "cost": (ItemQuantity(item_id="item.fake_plank", qty=1),),
                 }
             ),
         ),

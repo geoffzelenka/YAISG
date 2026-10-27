@@ -21,7 +21,7 @@ remain future phases.
   offline caps, and a durable reward feed.
 - Route authenticated accounts without a character to creation and established
   characters to the main profile shell.
-- Browse Gathering, Refining, and Crafting actions with requirements, recipes,
+- Browse Gathering, Refining, and Manufacturing actions with requirements, recipes,
   drop rates, server-calculated cycle times, and start blockers.
 - Track and stop the global active action with a cosmetic progress timer, receive
   authoritative reward notifications, and review offline gains in a catch-up

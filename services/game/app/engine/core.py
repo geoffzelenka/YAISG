@@ -23,6 +23,7 @@ from app.content.schemas import (
     ModifierType,
 )
 from app.engine.levels import level_for_xp
+from app.engine.selectors import Shortfall, pay_selector
 
 
 @dataclass(frozen=True)
@@ -31,7 +32,9 @@ class Caps:
 
     offline_hours: float
     inventory_slots: int
-    market_listings: int
+    order_slots: int
+    key_listings: int
+    belt_slots: int
     estate_upgrade_slots: int
 
 
@@ -169,7 +172,7 @@ def effective_cycle_time(
 ) -> int:
     """Return cycle milliseconds after applying all additive modifiers once."""
     percent = _modifier_total(ModifierType.CYCLE_TIME_PCT, action, state, content)
-    return max(1, int(action.cycle_ms * (1 + percent / 100)))
+    return max(1, int(action.base_cycle_ms * (1 + percent / 100)))
 
 
 def effective_xp(action: Action, state: CharacterState, content: ContentIndex) -> int:
@@ -188,7 +191,7 @@ def effective_drops(
     multiplier = 1 + percent / 100
     return tuple(
         drop.model_copy(update={"chance": min(1.0, max(0.0, drop.chance * multiplier))})
-        for drop in action.drops
+        for drop in action.outputs
     )
 
 
@@ -214,7 +217,7 @@ class StandardCycleRewards:
     ) -> CycleRewards:
         """Roll rewards from effective values cached for a resolution segment."""
         rolled_drops = tuple(
-            (drop.item_id, rng.randint(*drop.qty))
+            (drop.item_id, rng.randint(drop.quantity_min, drop.quantity_max))
             for drop in drops
             if rng.random() < drop.chance
         )
@@ -243,7 +246,9 @@ def resolve_caps(state: CharacterState, content: ContentIndex) -> Caps:
     return Caps(
         offline_hours=base.offline_hours + bonuses[CapType.OFFLINE_HOURS],
         inventory_slots=int(base.inventory_slots + bonuses[CapType.INVENTORY_SLOTS]),
-        market_listings=int(base.market_listings + bonuses[CapType.MARKET_LISTINGS]),
+        order_slots=int(base.order_slots + bonuses[CapType.ORDER_SLOTS]),
+        key_listings=int(base.key_listings + bonuses[CapType.KEY_LISTINGS]),
+        belt_slots=int(base.belt_slots + bonuses[CapType.BELT_SLOTS]),
         estate_upgrade_slots=int(
             base.estate_upgrade_slots + bonuses[CapType.ESTATE_UPGRADE_SLOTS]
         ),
@@ -320,18 +325,34 @@ def relocation_cost(cost: MapCost, form: EstateForm, content: ContentIndex) -> M
     )
 
 
+def input_payment(
+    holding: Mapping[str, int], action: Action, content: ContentIndex
+) -> dict[str, int] | None:
+    """Plan all inputs in content order, accounting for overlapping selectors."""
+    remaining = dict(holding)
+    payment: defaultdict[str, int] = defaultdict(int)
+    for entry in action.inputs:
+        result = pay_selector(remaining, entry.selector, entry.quantity, content)
+        if isinstance(result, Shortfall):
+            return None
+        for item_id, quantity in result.items():
+            remaining[item_id] -= quantity
+            payment[item_id] += quantity
+    return dict(payment)
+
+
 def can_start(
     action_id: str, state: CharacterState, content: ContentIndex
 ) -> Ok | ErrorCode:
     """Validate level, realm availability, and one cycle of inputs."""
     action = content.action(action_id)
-    if state.skill_levels.get(action.skill_id, 1) < action.level_required:
+    if state.skill_levels.get(action.skill_id, 1) < action.unlock_level:
         return ErrorCode.INSUFFICIENT_LEVEL
-    if not _tags_match(action.realm_tags, _realm_tags(state, content)):
-        return ErrorCode.WRONG_REALM
-    if any(
-        state.inventory.get(entry.item_id, 0) < entry.qty for entry in action.inputs
+    if action.requires.realm_tags and not _tags_match(
+        action.requires.realm_tags, _realm_tags(state, content)
     ):
+        return ErrorCode.WRONG_REALM
+    if input_payment(state.inventory, action, content) is None:
         return ErrorCode.MISSING_INPUTS
     return OK
 
@@ -387,15 +408,15 @@ def resolve(
             effective_level = current_level
         if resolved_ms + cycle_ms > available_ms:
             break
-        if any(inventory.get(entry.item_id, 0) < entry.qty for entry in action.inputs):
+        payment = input_payment(inventory, action, content)
+        if payment is None:
             stop_reason = StopReason.INPUTS_EXHAUSTED
             break
-
-        for entry in action.inputs:
-            inventory[entry.item_id] -= entry.qty
-            consumed[entry.item_id] += entry.qty
-            if inventory[entry.item_id] == 0:
-                del inventory[entry.item_id]
+        for item_id, quantity in payment.items():
+            inventory[item_id] -= quantity
+            consumed[item_id] += quantity
+            if inventory[item_id] == 0:
+                del inventory[item_id]
 
         if reward_strategy is STANDARD_REWARDS:
             rewards = STANDARD_REWARDS.rewards_from_values(
@@ -433,9 +454,7 @@ def resolve(
         if cycle_overflow:
             stop_reason = StopReason.INVENTORY_FULL
             break
-        if action.inputs and any(
-            inventory.get(entry.item_id, 0) < entry.qty for entry in action.inputs
-        ):
+        if action.inputs and input_payment(inventory, action, content) is None:
             stop_reason = StopReason.INPUTS_EXHAUSTED
             break
 

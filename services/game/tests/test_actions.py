@@ -235,7 +235,7 @@ async def test_offline_cap_rewards_once_and_stops(
         assert log is not None and log.cycles == 16_000
 
 
-async def test_available_actions_reflect_realm_level_and_combat_placeholder(
+async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
     action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
 ) -> None:
     client, _, _, headers = action_client
@@ -248,7 +248,17 @@ async def test_available_actions_reflect_realm_level_and_combat_placeholder(
     assert "gathering.mock_ore" not in gathering
     assert gathering["gathering.fake_sprigs"]["startable"] is True
     assert gathering["gathering.test_crystal"]["blocked_by"] == ["INSUFFICIENT_LEVEL"]
-    assert groups["combat-monsters"]["actions"] == []
+    for skill_id in (
+        "melee",
+        "ranged",
+        "magic",
+        "accuracy",
+        "defense",
+        "vigor",
+        "travel",
+        "exploration",
+    ):
+        assert groups[skill_id]["actions"] == []
 
 
 async def test_profile_resolution_remains_in_reward_feed(

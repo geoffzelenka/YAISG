@@ -4,27 +4,278 @@
       "id": "gathering",
       "name": "Gathering",
       "actions": [
-        {"id": "gathering.fake_sprigs", "name": "Collect Fake Sprigs", "skill_id": "gathering", "level_required": 1, "cycle_ms": 3000, "inputs": [], "xp": 10, "drops": [{"item_id": "item.fake_sprig", "qty": [1, 2], "chance": 1.0}, {"item_id": "item.worthless_button", "qty": [1, 1], "chance": 0.05}], "realm_tags": ["verdant"]},
-        {"id": "gathering.mock_ore", "name": "Mine Mock Ore", "skill_id": "gathering", "level_required": 10, "cycle_ms": 5000, "inputs": [], "xp": 25, "drops": [{"item_id": "item.mock_ore", "qty": [1, 2], "chance": 1.0}], "realm_tags": ["ashen"]},
-        {"id": "gathering.test_crystal", "name": "Gather Test Crystals", "skill_id": "gathering", "level_required": 25, "cycle_ms": 8000, "inputs": [], "xp": 55, "drops": [{"item_id": "item.test_crystal", "qty": [1, 1], "chance": 0.75}], "realm_tags": ["*"]}
-      ]
+        {
+          "id": "gathering.fake_sprigs",
+          "name": "Collect Fake Sprigs",
+          "skill_id": "gathering",
+          "unlock_level": 1,
+          "inputs": [],
+          "xp": 10,
+          "tier": 1,
+          "base_cycle_ms": 3000,
+          "requires": {
+            "realm_tags": [
+              "verdant"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.fake_sprig",
+              "chance": 1.0,
+              "quantity_min": 1,
+              "quantity_max": 2
+            },
+            {
+              "item_id": "item.worthless_button",
+              "chance": 0.05,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        },
+        {
+          "id": "gathering.mock_ore",
+          "name": "Mine Mock Ore",
+          "skill_id": "gathering",
+          "unlock_level": 10,
+          "inputs": [],
+          "xp": 25,
+          "tier": 1,
+          "base_cycle_ms": 5000,
+          "requires": {
+            "realm_tags": [
+              "ashen"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.mock_ore",
+              "chance": 1.0,
+              "quantity_min": 1,
+              "quantity_max": 2
+            }
+          ]
+        },
+        {
+          "id": "gathering.test_crystal",
+          "name": "Gather Test Crystals",
+          "skill_id": "gathering",
+          "unlock_level": 25,
+          "inputs": [],
+          "xp": 55,
+          "tier": 1,
+          "base_cycle_ms": 8000,
+          "requires": {
+            "realm_tags": [
+              "*"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.test_crystal",
+              "chance": 0.75,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        }
+      ],
+      "category": "gathering"
     },
     {
       "id": "refining",
       "name": "Refining",
       "actions": [
-        {"id": "refining.fake_plank", "name": "Press Fake Planks", "skill_id": "refining", "level_required": 1, "cycle_ms": 4500, "inputs": [{"item_id": "item.fake_sprig", "qty": 2}], "xp": 18, "drops": [{"item_id": "item.fake_plank", "qty": [1, 1], "chance": 1.0}], "realm_tags": ["*"]},
-        {"id": "refining.mock_ingot", "name": "Smelt Mock Ingots", "skill_id": "refining", "level_required": 10, "cycle_ms": 6500, "inputs": [{"item_id": "item.mock_ore", "qty": 2}, {"item_id": "item.test_crystal", "qty": 1}], "xp": 35, "drops": [{"item_id": "item.mock_ingot", "qty": [1, 1], "chance": 1.0}], "realm_tags": ["*"]}
-      ]
+        {
+          "id": "refining.fake_plank",
+          "name": "Press Fake Planks",
+          "skill_id": "refining",
+          "unlock_level": 1,
+          "inputs": [
+            {
+              "selector": {
+                "class": "fake_plant",
+                "tier": 1
+              },
+              "quantity": 2
+            }
+          ],
+          "xp": 18,
+          "tier": 1,
+          "base_cycle_ms": 4500,
+          "requires": {
+            "realm_tags": [
+              "*"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.fake_plank",
+              "chance": 1.0,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        },
+        {
+          "id": "refining.mock_ingot",
+          "name": "Smelt Mock Ingots",
+          "skill_id": "refining",
+          "unlock_level": 10,
+          "inputs": [
+            {
+              "selector": {
+                "item": "item.mock_ore"
+              },
+              "quantity": 2
+            },
+            {
+              "selector": {
+                "item": "item.test_crystal"
+              },
+              "quantity": 1
+            }
+          ],
+          "xp": 35,
+          "tier": 1,
+          "base_cycle_ms": 6500,
+          "requires": {
+            "realm_tags": [
+              "*"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.mock_ingot",
+              "chance": 1.0,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        }
+      ],
+      "category": "refining"
     },
     {
-      "id": "crafting",
-      "name": "Crafting",
+      "id": "manufacturing",
+      "name": "Manufacturing",
       "actions": [
-        {"id": "crafting.demo_crate", "name": "Build Demo Crates", "skill_id": "crafting", "level_required": 1, "cycle_ms": 6000, "inputs": [{"item_id": "item.fake_plank", "qty": 2}], "xp": 28, "drops": [{"item_id": "item.demo_crate", "qty": [1, 1], "chance": 1.0}], "realm_tags": ["*"]},
-        {"id": "crafting.prototype_widget", "name": "Assemble Prototype Widgets", "skill_id": "crafting", "level_required": 10, "cycle_ms": 9000, "inputs": [{"item_id": "item.mock_ingot", "qty": 2}, {"item_id": "item.fake_plank", "qty": 1}], "xp": 48, "drops": [{"item_id": "item.prototype_widget", "qty": [1, 1], "chance": 1.0}], "realm_tags": ["*"]}
-      ]
+        {
+          "id": "manufacturing.demo_crate",
+          "name": "Build Demo Crates",
+          "skill_id": "manufacturing",
+          "unlock_level": 1,
+          "inputs": [
+            {
+              "selector": {
+                "item": "item.fake_plank"
+              },
+              "quantity": 2
+            }
+          ],
+          "xp": 28,
+          "tier": 1,
+          "base_cycle_ms": 6000,
+          "requires": {
+            "realm_tags": [
+              "*"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.demo_crate",
+              "chance": 1.0,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        },
+        {
+          "id": "manufacturing.prototype_widget",
+          "name": "Assemble Prototype Widgets",
+          "skill_id": "manufacturing",
+          "unlock_level": 10,
+          "inputs": [
+            {
+              "selector": {
+                "item": "item.mock_ingot"
+              },
+              "quantity": 2
+            },
+            {
+              "selector": {
+                "item": "item.fake_plank"
+              },
+              "quantity": 1
+            }
+          ],
+          "xp": 48,
+          "tier": 1,
+          "base_cycle_ms": 9000,
+          "requires": {
+            "realm_tags": [
+              "*"
+            ]
+          },
+          "outputs": [
+            {
+              "item_id": "item.prototype_widget",
+              "chance": 1.0,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        }
+      ],
+      "category": "manufacturing"
     },
-    {"id": "combat-monsters", "name": "Combat (Monsters)", "actions": []}
+    {
+      "id": "melee",
+      "name": "Melee",
+      "category": "combat",
+      "actions": []
+    },
+    {
+      "id": "ranged",
+      "name": "Ranged",
+      "category": "combat",
+      "actions": []
+    },
+    {
+      "id": "magic",
+      "name": "Magic",
+      "category": "combat",
+      "actions": []
+    },
+    {
+      "id": "accuracy",
+      "name": "Accuracy",
+      "category": "combat",
+      "actions": []
+    },
+    {
+      "id": "defense",
+      "name": "Defense",
+      "category": "combat",
+      "actions": []
+    },
+    {
+      "id": "vigor",
+      "name": "Vigor",
+      "category": "combat",
+      "actions": []
+    },
+    {
+      "id": "travel",
+      "name": "Travel",
+      "category": "travel",
+      "actions": []
+    },
+    {
+      "id": "exploration",
+      "name": "Exploration",
+      "category": "exploration",
+      "actions": []
+    }
   ]
 }

@@ -234,7 +234,7 @@ function Shell({ profile }: { profile: CharacterProfile }) {
     [
       { name: 'Gathering', path: '/skills/gathering' },
       { name: 'Refining', path: '/skills/refining' },
-      { name: 'Crafting', path: '/skills/crafting' },
+      { name: 'Manufacturing', path: '/skills/manufacturing' },
     ],
   ]
   return (
@@ -302,8 +302,8 @@ function Shell({ profile }: { profile: CharacterProfile }) {
               element={<SkillPanel skillId="refining" />}
             />
             <Route
-              path="skills/crafting"
-              element={<SkillPanel skillId="crafting" />}
+              path="skills/manufacturing"
+              element={<SkillPanel skillId="manufacturing" />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

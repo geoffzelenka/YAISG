@@ -5,7 +5,7 @@ import { gameRequest, readApiError } from './http'
 export type AvailableAction = {
   action_id: string
   name: string
-  level_required: number
+  unlock_level: number
   cycle_ms: number
   startable: boolean
   blocked_by: string[]

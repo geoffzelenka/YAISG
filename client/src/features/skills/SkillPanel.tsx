@@ -48,7 +48,7 @@ export function SkillPanel({ skillId }: { skillId: string }) {
                 <div>
                   <h3 className="text-lg font-semibold">{action.name}</h3>
                   <p className="text-sm text-slate-400">
-                    Level {action.level_required} ·{' '}
+                    Level {action.unlock_level} ·{' '}
                     {(action.cycle_ms / 1000).toFixed(2)}s effective cycle
                   </p>
                 </div>
@@ -66,16 +66,16 @@ export function SkillPanel({ skillId }: { skillId: string }) {
                   values={
                     definition?.inputs.map(
                       (input) =>
-                        `${input.qty}× ${items.get(input.item_id) ?? input.item_id}`,
+                        `${input.quantity}× ${input.selector.item ? (items.get(input.selector.item) ?? input.selector.item) : `${input.selector.class}${input.selector.tier ? ` (tier ${input.selector.tier})` : ''}`}`,
                     ) ?? []
                   }
                 />
                 <Recipe
                   title="Outputs"
                   values={
-                    definition?.drops.map(
+                    definition?.outputs.map(
                       (drop) =>
-                        `${drop.qty[0]}–${drop.qty[1]}× ${items.get(drop.item_id) ?? drop.item_id} (${(drop.chance * 100).toFixed(0)}%)`,
+                        `${drop.quantity_min}–${drop.quantity_max}× ${items.get(drop.item_id) ?? drop.item_id} (${(drop.chance * 100).toFixed(0)}%)`,
                     ) ?? []
                   }
                 />

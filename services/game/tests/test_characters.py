@@ -117,6 +117,17 @@ async def test_creation_builds_complete_profile(
     profile = response.json()
     assert profile["character"]["name"] == "Demo Hero"
     assert profile["gold"] == 0
+    fixed = {
+        "melee",
+        "ranged",
+        "magic",
+        "accuracy",
+        "defense",
+        "vigor",
+        "travel",
+        "exploration",
+    }
+    assert fixed <= {skill["id"] for skill in profile["skills"]}
     assert profile["realm"]["name"] == "Verdant Vale"
     assert profile["estate"]["upgrade_slots"] == 2
     assert profile["estate"]["installed_upgrades"] == []
@@ -129,7 +140,7 @@ async def test_creation_builds_complete_profile(
         skill["level"] == 1 and skill["xp_to_next"] == 57 for skill in profile["skills"]
     )
     with client[1]() as session:
-        assert session.scalar(select(func.count()).select_from(CharacterSkill)) == 4
+        assert session.scalar(select(func.count()).select_from(CharacterSkill)) == 11
         assert session.scalar(select(func.count()).select_from(Currency)) == 1
         assert session.scalar(select(func.count()).select_from(Estate)) == 1
 
@@ -292,7 +303,7 @@ async def test_profile_seeds_a_missing_content_skill_row(
         session.execute(
             delete(CharacterSkill).where(
                 CharacterSkill.character_id == character_id,
-                CharacterSkill.skill_id == "crafting",
+                CharacterSkill.skill_id == "manufacturing",
             )
         )
         session.commit()
@@ -302,13 +313,13 @@ async def test_profile_seeds_a_missing_content_skill_row(
     )
 
     assert profile.status_code == 200
-    crafting = next(
-        skill for skill in profile.json()["skills"] if skill["id"] == "crafting"
+    manufacturing = next(
+        skill for skill in profile.json()["skills"] if skill["id"] == "manufacturing"
     )
-    assert crafting["level"] == 1
-    assert crafting["xp"] == 0
+    assert manufacturing["level"] == 1
+    assert manufacturing["xp"] == 0
     with client[1]() as session:
-        assert session.get(CharacterSkill, (character_id, "crafting")) is not None
+        assert session.get(CharacterSkill, (character_id, "manufacturing")) is not None
 
 
 async def test_profile_max_level_retains_64_bit_xp(

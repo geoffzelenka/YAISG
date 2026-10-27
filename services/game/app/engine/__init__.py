@@ -16,11 +16,13 @@ from app.engine.core import (
     effective_cycle_time,
     effective_drops,
     effective_xp,
+    input_payment,
     path_cost,
     relocation_cost,
     resolve,
     resolve_caps,
 )
+from app.engine.selectors import Shortfall, pay_selector
 
 __all__ = [
     "OK",
@@ -37,7 +39,10 @@ __all__ = [
     "can_start",
     "effective_cycle_time",
     "effective_drops",
+    "pay_selector",
+    "Shortfall",
     "effective_xp",
+    "input_payment",
     "path_cost",
     "relocation_cost",
     "resolve",

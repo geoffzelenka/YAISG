@@ -314,7 +314,9 @@ def _profile(
     effective_caps = {
         CapType.OFFLINE_HOURS: resolved.offline_hours,
         CapType.INVENTORY_SLOTS: resolved.inventory_slots,
-        CapType.MARKET_LISTINGS: resolved.market_listings,
+        CapType.ORDER_SLOTS: resolved.order_slots,
+        CapType.KEY_LISTINGS: resolved.key_listings,
+        CapType.BELT_SLOTS: resolved.belt_slots,
         CapType.ESTATE_UPGRADE_SLOTS: resolved.estate_upgrade_slots,
     }
     return ProfileResponse(
