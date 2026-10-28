@@ -26,7 +26,7 @@ from app.engine import (
     ResolveResult,
     effective_cycle_time,
 )
-from app.engine.core import unmet_requirements
+from app.engine.core import ACTION_RESOLVERS, unmet_requirements
 from app.errors import api_error
 from app.models import ActiveActionRecord, Character
 from app.services.actions import (
@@ -143,6 +143,8 @@ def _start_blockers(
 ) -> list[str]:
     """Share generic endpoint gates between the availability report and start."""
     blocked = [code.value for code in unmet_requirements(action, state, content)]
+    if action.resolver not in ACTION_RESOLVERS:
+        blocked.insert(0, "RESOLVER_UNAVAILABLE")
     if action.resolver == "travel":
         blocked.insert(0, "TRAVEL_DESTINATION_REQUIRED")
     return blocked

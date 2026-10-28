@@ -59,6 +59,7 @@ def _resident(session: Session) -> Character:
     session.add(player)
     session.flush()
     hero = Character(
+        stance=CONTENT.progression.default_stance,
         player_id=player.id,
         name=player.id.hex[:20],
         name_normalized=player.id.hex[:20],

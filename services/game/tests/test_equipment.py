@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from test_actions import FakeClock, action_client, anyio_backend
 
+from app.api import actions as action_api
 from app.content.lint import gear_bound, stack_bound
 from app.content.runtime import CONTENT
 from app.content.schemas import (
@@ -452,6 +453,11 @@ async def test_equipment_changes_rejected_during_combat(
     )
     monkeypatch.setattr(app.state, "content", CONTENT.with_overrides(actions=[action]))
     # Exercise the existing resolver seam without implementing future combat rules.
+    monkeypatch.setattr(
+        action_api,
+        "ACTION_RESOLVERS",
+        {**ACTION_RESOLVERS, "combat": UniformResolver()},
+    )
     monkeypatch.setattr(
         actions,
         "resolve",

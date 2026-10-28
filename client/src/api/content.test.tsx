@@ -19,9 +19,11 @@ const manifest = {
     progression: 'j',
     tags: 'k',
     economy: 'l',
+    combatants: 'm',
   },
 }
 const packBodies = {
+  combatants: { combatants: [] },
   skills: { skills: [] },
   items: { items: [] },
   realms: { realms: [] },
@@ -120,8 +122,9 @@ describe('content cache', () => {
     const { result } = renderHook(() => useContent(), { wrapper })
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
-    expect(fetchMock).toHaveBeenCalledTimes(13)
+    expect(fetchMock).toHaveBeenCalledTimes(Object.keys(packBodies).length + 1)
     expect(result.current.content?.version).toBe(manifest.version)
+    expect(result.current.content?.combatants.combatants).toEqual([])
     expect(localStorage.getItem('yaisg:content:manifest')).toContain(
       manifest.version,
     )
@@ -162,7 +165,8 @@ describe('content cache', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
     expect(result.current.content?.version).toBe(manifest.version)
-    expect(fetchMock).toHaveBeenCalledTimes(13)
+    expect(result.current.content?.combatants.combatants).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(Object.keys(packBodies).length + 1)
   })
 
   it('prunes stale content versions without touching unrelated storage', async () => {

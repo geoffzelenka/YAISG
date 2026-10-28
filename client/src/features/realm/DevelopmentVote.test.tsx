@@ -77,6 +77,7 @@ it('resets mutation variables after a successful confirmed vote cast', async () 
           content={
             {
               development: { nodes: [] },
+              combatants: { combatants: [] },
               estate_forms: { forms: [] },
             } as unknown as Content
           }

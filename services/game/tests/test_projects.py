@@ -99,6 +99,7 @@ def _hero(session: Session) -> Character:
     session.add(player)
     session.flush()
     hero = Character(
+        stance=CONTENT.progression.default_stance,
         player_id=player.id,
         name="Project Hero",
         name_normalized="project hero",
@@ -586,6 +587,7 @@ def test_postgres_two_kickoffs_one_active_run(realm_session: Session) -> None:
     realm_session.add(player)
     realm_session.flush()
     second_hero = Character(
+        stance=CONTENT.progression.default_stance,
         player_id=player.id,
         name="Second Hero",
         name_normalized="second hero",

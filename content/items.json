@@ -237,6 +237,37 @@
         "slot": "belt",
         "belt_slots": 2
       }
+    },
+    {
+      "id": "item.fake_sword",
+      "name": "Placeholder Sword",
+      "tier": 1,
+      "classes": [],
+      "reference_price": 1,
+      "equip": {
+        "slot": "right_hand",
+        "weapon": {
+          "style": "melee",
+          "attack_interval_ms": 2000,
+          "power": 1,
+          "accuracy": 1,
+          "damage_type": "blunt"
+        }
+      }
+    },
+    {
+      "id": "item.fake_armour",
+      "name": "Placeholder Armour",
+      "tier": 1,
+      "classes": [],
+      "reference_price": 1,
+      "equip": {
+        "slot": "chest",
+        "armour": {
+          "armour": 10,
+          "max_hp": 5
+        }
+      }
     }
   ]
 }

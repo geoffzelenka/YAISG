@@ -41,6 +41,7 @@ it('build confirmation lists the mobile estate upgrades before any payment', asy
     larder: { wood: 7500 },
   } as unknown as Estate
   const content = {
+    combatants: { combatants: [] },
     estate_forms: {
       forms: [
         {

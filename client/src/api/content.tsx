@@ -9,6 +9,11 @@ import {
 import { gameRequest } from './http'
 
 export type ModifierType =
+  | 'combat_accuracy_pct'
+  | 'combat_power_pct'
+  | 'combat_defense_pct'
+  | 'combat_armour_pct'
+  | 'combat_hp_pct'
   | 'journey_speed_pct'
   | 'supply_reduction_pct'
   | 'cycle_speed_pct'
@@ -48,6 +53,8 @@ export type Action = {
     tool_class?: string | null
   }
   resolver: 'uniform' | 'combat' | 'travel'
+  combatant_id?: string | null
+  location?: string | null
   off_curve: string | null
 }
 export type Skill = {
@@ -61,6 +68,25 @@ export type Skill = {
     | 'exploration'
     | 'travel'
   actions: Action[]
+}
+export type Combatant = {
+  id: string
+  name: string
+  tier: number
+  style: 'melee' | 'ranged' | 'magic'
+  max_hp: number
+  accuracy: number
+  power: number
+  defense: number
+  armour: number
+  attack_interval_ms: number
+  respawn_ms: number
+  weak_to: string[]
+  resistant_to: string[]
+  xp_pool_offense: number
+  xp_pool_defense: number
+  defense_xp_per_damage: number
+  drops: Action['outputs']
 }
 export type Item = {
   id: string
@@ -276,6 +302,7 @@ type ContentPacks = {
     proficiency: Record<Skill['category'], number[]>
     taper: Record<Skill['category'], number[]>
   }
+  combatants: { combatants: Combatant[] }
   projects: { projects: Project[] }
 }
 type PackName = keyof ContentPacks
@@ -287,6 +314,7 @@ type ContentState =
   | { status: 'error'; content: null; error: Error }
 
 const PACKS: PackName[] = [
+  'combatants',
   'skills',
   'items',
   'realms',

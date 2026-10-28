@@ -44,6 +44,11 @@ function RequireAuth() {
 
 function describeModifier(modifier: Modifier): string {
   const labels: Record<Modifier['type'], string> = {
+    combat_accuracy_pct: 'combat accuracy',
+    combat_power_pct: 'combat power',
+    combat_defense_pct: 'combat defense',
+    combat_armour_pct: 'combat armour',
+    combat_hp_pct: 'maximum HP',
     journey_speed_pct: 'journey speed',
     supply_reduction_pct: 'supply reduction',
     cycle_speed_pct: 'cycle speed',

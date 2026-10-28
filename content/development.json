@@ -40,7 +40,8 @@
       "actions": [
         "gathering.fake_sprigs",
         "gathering.mock_ore",
-        "gathering.test_crystal"
+        "gathering.test_crystal",
+        "placeholder.fight"
       ],
       "inherent_tags": [
         "verdant",

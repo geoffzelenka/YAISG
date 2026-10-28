@@ -224,6 +224,7 @@ def test_only_known_content_routes_are_public() -> None:
 
     assert manifest.status_code == 200
     assert set(manifest.json()["packs"]) == {
+        "combatants",
         "skills",
         "items",
         "realms",

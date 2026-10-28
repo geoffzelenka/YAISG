@@ -43,6 +43,7 @@ const packs: Record<string, unknown> = {
     belt_slots: 2,
   },
   map: { edges: [], positions: {} },
+  combatants: { combatants: [] },
   estate_forms: {
     forms: [
       { id: 'form.camp', upgrade_slots: 3, transforms_to: ['form.next'] },

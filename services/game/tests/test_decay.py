@@ -19,6 +19,7 @@ from test_realms import realm_session as realm_session
 
 from app.content.schemas import DecayStage, GaugeConfig, Selector, TagUpkeep
 from app.engine import can_start, resolve, resolve_caps
+from app.engine.combat import player_stats
 from app.engine.core import modifier_groups, unmet_requirements
 from app.engine.decay import advance_gauge, advance_shed, gauge_stage
 from app.engine.stores import line_key
@@ -59,6 +60,13 @@ def test_strained_has_no_engine_effect() -> None:
         assert unmet_requirements(action, fed, CONTENT) == unmet_requirements(
             action, strained, CONTENT
         )
+        if action.resolver == "combat":
+            assert action.combatant_id is not None
+            opponent = CONTENT.combatant(action.combatant_id)
+            assert player_stats(fed, {}, opponent, CONTENT) == player_stats(
+                strained, {}, opponent, CONTENT
+            )
+            continue
         active = make_active(action.id)
         if action.resolver == "travel":
             from test_travel import journey

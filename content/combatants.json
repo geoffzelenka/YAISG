@@ -1,0 +1,21 @@
+{
+  "combatants": [
+    {
+      "id": "placeholder.target",
+      "name": "Placeholder Target",
+      "tier": 1,
+      "style": "melee",
+      "max_hp": 10,
+      "accuracy": 1,
+      "power": 2,
+      "defense": 1,
+      "armour": 0,
+      "attack_interval_ms": 2000,
+      "respawn_ms": 2000,
+      "xp_pool_offense": 20,
+      "xp_pool_defense": 20,
+      "defense_xp_per_damage": 1,
+      "drops": []
+    }
+  ]
+}

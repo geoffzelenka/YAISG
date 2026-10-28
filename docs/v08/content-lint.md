@@ -21,7 +21,8 @@ bonuses, proficiency and taper. This deliberately measures the base-rate anchors
 rather than reproducing a live resolver. The baseline uses the fastest action
 unlocked at level 1 for the whole XP table. Missing level-1 actions yield JSON
 null hours (text explains that training is blocked), including empty skills.
-Combat skills are omitted entirely.
+Combat skills are omitted from this uniform-action report and receive the
+separate encounter report described below.
 
 The external stack report is an **uncapped upper bound** on XP factor times
 cycle-speed factor. Each group adds matching skill/category/all modifiers and
@@ -58,4 +59,37 @@ warns even if the runtime XP cap would absorb some of the excess.
 Subset enumeration is exponential in the number of eligible upgrades; current
 placeholder packs are small. Larger packs may require a bounded optimization
 that preserves the conservative guarantee. Prompts 11/12 must adapt form/slot
-eligibility when their rules change. Prompt 28 owns combat checks.
+eligibility when their rules change.
+
+
+## Combat pools
+
+Combat reports are included in both text and JSON output. For every combatant,
+its referencing actions and every `progression.stances` entry, the report gives
+time to kill, time including respawn, the four receiving skills' XP/hour,
+target XP/hour at the action's unlock level, and the skills outside the authored
+tolerance. An unreferenced combatant reports `NO_COMBAT_ACTION` because it has
+no unlock level; an opponent the standard player cannot damage reports
+`UNDEFEATABLE`, null durations and zero rates. Warnings retain exit status zero.
+
+`progression.combat.standard_gear` maps concrete slots to item ids. It is a
+content-owned baseline, independent of a live character's equipment. Boot
+checks that this layout fits the slots, respects two-handed exclusions and is
+usable at every combat action's unlock level. Empty slots use the unarmed
+fallback. All six combat skills are set to the action's unlock level. Gear
+modifiers and tier effectiveness participate; realm, estate and consumable
+bonuses are excluded from this baseline.
+
+The estimate enumerates every integer damage roll using the engine's weakness,
+resistance and armour floors and the clamped hit chance. It divides combatant
+HP by mean player damage and rounds up to whole player cycles, then adds
+respawn time. Enemy attacks count whole enemy intervals during the estimated
+fight. Their expected damage taken and mitigated determine the defensive split,
+scaled proportionally when the defensive pool caps it. The offensive pool is
+split by stance. Respawn time trains neither stream.
+
+This is a deterministic sizing estimate, not an encounter simulation: it omits
+survival, utility consumption, reactive items and timed buffs, and approximates
+the expected number of attacks needed to kill by HP / mean damage. A pool that
+is not exhausted before the estimated kill contributes only its expected draw.
+Actual combat resolution belongs to Prompt 29.

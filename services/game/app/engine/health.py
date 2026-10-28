@@ -3,7 +3,8 @@
 from datetime import datetime
 
 from app.content.loader import ContentIndex
-from app.engine.core import CharacterState
+from app.content.schemas import ModifierType
+from app.engine.core import CharacterState, scoped_bonus_total
 
 
 def maximum_hp(state: CharacterState, armour_hp: float, content: ContentIndex) -> float:
@@ -13,6 +14,8 @@ def maximum_hp(state: CharacterState, armour_hp: float, content: ContentIndex) -
         combat.base_hp
         + state.skill_levels.get("vigor", 1) * combat.hp_per_level
         + armour_hp
+    ) * scoped_bonus_total(
+        ModifierType.COMBAT_HP_PCT, "vigor", "combat", state, content
     )
 
 

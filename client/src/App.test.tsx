@@ -4,7 +4,9 @@ import { expect, it, vi } from 'vitest'
 import { ProfilePanel } from './App'
 import type { CharacterProfile } from './api/characters'
 
-vi.mock('./api/realms', () => ({ useRealm: () => ({ data: undefined }) }))
+vi.mock('./api/realms', () => ({
+  useRealm: () => ({ data: { node: { id: 'node', name: 'Realm node' } } }),
+}))
 vi.mock('./api/content', () => ({ useContent: () => ({ status: 'loading' }) }))
 vi.mock('./features/profile/InventoryPanel', () => ({
   InventoryPanel: () => null,
@@ -26,7 +28,14 @@ it('shows Maximum level when XP to next is null', () => {
       },
     ],
     gold: 0,
-    realm: { id: 'r', name: 'Realm', tags: [], active_modifiers: [] },
+    realm: {
+      id: 'r',
+      name: 'Realm',
+      tags: [],
+      active_modifiers: [
+        { type: 'combat_power_pct', value: 10, category: 'combat' },
+      ],
+    },
     estate: { id: 'e', tier: 1, upgrade_slots: 2, installed_upgrades: [] },
     caps: {
       offline_hours: { base: 12, effective: 12 },
@@ -39,5 +48,6 @@ it('shows Maximum level when XP to next is null', () => {
   }
   render(<ProfilePanel profile={profile} />)
   expect(screen.getByText('Maximum level')).toBeInTheDocument()
+  expect(screen.getByText(/\+10% combat power/)).toBeInTheDocument()
   expect(screen.queryByText(/to next/)).not.toBeInTheDocument()
 })

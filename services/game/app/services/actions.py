@@ -410,6 +410,7 @@ def regenerate_character_hp(
 ) -> None:
     """Materialize lazy HP under the existing character serialization lock."""
     maximum = character_max_hp(session, character.id, content)
+    character.hp = min(maximum, max(0.0, character.hp))
     if character.hp_updated_at is None:
         character.hp = maximum
         character.hp_updated_at = now
