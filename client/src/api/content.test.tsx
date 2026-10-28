@@ -7,6 +7,7 @@ import { ContentProvider, useContent } from './content'
 const manifest = {
   version: 'version-one',
   packs: {
+    tutorial: 'o',
     skills: 'a',
     items: 'b',
     realms: 'c',
@@ -24,6 +25,14 @@ const manifest = {
   },
 }
 const packBodies = {
+  tutorial: {
+    realm_1: 'a',
+    realm_2: 'b',
+    arrival_realms: [],
+    raft_site_project: 'p',
+    raft_form: 'r',
+    steps: [],
+  },
   exploration: { templates: [], actions: [] },
   combatants: { combatants: [] },
   skills: { skills: [] },

@@ -136,3 +136,44 @@ export async function logout(): Promise<void> {
     setAccessToken(null)
   }
 }
+
+/** Create a guest session or upgrade the current identity in place. */
+export async function guestSession(credentials?: {
+  email: string
+  password: string
+}): Promise<void> {
+  const response = await fetch(
+    `${authUrl}/auth/${credentials ? 'upgrade' : 'guest'}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: authenticatedHeaders({
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      ...(credentials ? { body: JSON.stringify(credentials) } : {}),
+    },
+  )
+  if (!response.ok) {
+    const error = await readApiError(response, 'Unable to save session')
+    throw new ApiError(error.code ?? 'AUTH_FAILED', error.message)
+  }
+  const payload = (await response.json()) as TokenResponse
+  setAccessToken(payload.access_token)
+  if (credentials) {
+    // Persist promotion in game before allowing any departure request.
+    await confirmAccountUpgrade()
+  }
+}
+
+/** Retry game promotion without resubmitting credentials after auth has saved them. */
+export async function confirmAccountUpgrade(): Promise<void> {
+  try {
+    const player = await gameRequest('/players/me')
+    if (!player.ok) throw new Error('Promotion request failed')
+  } catch {
+    throw new ApiError(
+      'UPGRADE_CONFIRMATION_FAILED',
+      'Account saved. Confirm the account before departing.',
+    )
+  }
+}

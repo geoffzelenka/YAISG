@@ -1,3 +1,5 @@
+import { KeysPanel } from './features/keys/KeysPanel'
+import { TutorialBanner } from './features/tutorial/TutorialBanner'
 import { useState } from 'react'
 import { EquipmentPanel } from './features/equipment/EquipmentPanel'
 import { CombatPanel } from './features/combat/CombatPanel'
@@ -196,6 +198,8 @@ function Shell({ profile }: { profile: CharacterProfile }) {
     [
       { name: 'Combat', path: '/combat' },
       { name: 'Equipment', path: '/equipment' },
+      { name: 'Keys', path: '/keys' },
+      { name: 'Exploration', path: '/skills/exploration' },
     ],
     [
       { name: 'Gathering', path: '/skills/gathering' },
@@ -239,12 +243,6 @@ function Shell({ profile }: { profile: CharacterProfile }) {
               )}
             </div>
           ))}
-          <span
-            aria-disabled="true"
-            className="sidebar-link mt-3 cursor-not-allowed border-t border-slate-700 pt-5 text-slate-600"
-          >
-            Exploration · coming soon
-          </span>
         </nav>
         <button
           className="secondary-button mt-8 w-full"
@@ -255,7 +253,13 @@ function Shell({ profile }: { profile: CharacterProfile }) {
       </aside>
       <div className="flex min-h-screen min-w-0 flex-col">
         <main className="flex-1 p-8">
+          <TutorialBanner profile={profile} />
           <Routes>
+            <Route path="keys" element={<KeysPanel />} />
+            <Route
+              path="skills/exploration"
+              element={<SkillPanel skillId="exploration" />}
+            />
             <Route index element={<ProfilePanel profile={profile} />} />
             <Route
               path="equipment"

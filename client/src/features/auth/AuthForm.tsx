@@ -76,6 +76,26 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
         <button className="primary-button mt-6 w-full" disabled={submitting}>
           {submitting ? 'Please wait…' : isLogin ? 'Log in' : 'Register'}
         </button>
+        <button
+          type="button"
+          className="secondary-button mt-4"
+          disabled={submitting}
+          onClick={() => {
+            setSubmitting(true)
+            setError(null)
+            void auth
+              .guest()
+              .then(() => navigate('/', { replace: true }))
+              .catch((caught: unknown) =>
+                setError(
+                  caught instanceof Error ? caught.message : 'Unable to play',
+                ),
+              )
+              .finally(() => setSubmitting(false))
+          }}
+        >
+          Play now
+        </button>
         <p className="mt-5 text-sm text-slate-400">
           {isLogin ? 'Need an account?' : 'Already registered?'}{' '}
           <Link

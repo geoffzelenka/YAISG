@@ -86,6 +86,7 @@ export function ActionExperience() {
           ].slice(-30),
         )
       }
+      void client.invalidateQueries({ queryKey: ['keys'] })
       // HP also regenerates while idle; display the server snapshot after polls.
       void client.invalidateQueries({
         queryKey: ['characters', 'me'],

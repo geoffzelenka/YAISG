@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -90,7 +91,7 @@ function setup(
       <EquipmentPanel profile={profile} />
     </QueryClientProvider>,
   )
-  return { fetcher, invalidate, ...view }
+  return { client, fetcher, invalidate, ...view }
 }
 it('blocks the left hand for a two-handed item and permits removing the right hand', async () => {
   setup(true)
@@ -212,4 +213,23 @@ it('adds belt positions to the resolved cap and allows returning an unavailable 
       }),
     ),
   )
+})
+
+it('locks equipment, belt and utility for a private combat key template', async () => {
+  const { client, container } = setup(false)
+  await screen.findByText('Equip Staff in right hand')
+  act(() => {
+    client.setQueryData(['characters', 'me', 'action'], {
+      active: {
+        action_id: 'private-template',
+        meta: {
+          key_id: 'held-instance',
+          key_action: { id: 'private-template', resolver: 'combat' },
+        },
+      },
+    })
+  })
+  await screen.findByText(/Stop combat to change/)
+  for (const fieldset of container.querySelectorAll('fieldset'))
+    expect(fieldset).toBeDisabled()
 })

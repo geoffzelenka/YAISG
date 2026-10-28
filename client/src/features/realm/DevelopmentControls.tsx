@@ -260,7 +260,9 @@ export function DevelopmentControls({
               . Who: {project.kickoff.who}
             </p>
             <p>
-              Funding:{' '}
+              {project.cost.length
+                ? 'Funding: '
+                : 'Fully paid at kickoff; no contributions required.'}{' '}
               {project.cost
                 .map((l) => `${l.quantity} ${selectorLabel(l.selector)}`)
                 .join(', ')}{' '}
