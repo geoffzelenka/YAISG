@@ -168,3 +168,15 @@ None.
   returned consistently by availability and start. Combat registration belongs
   to Prompt 29. Malformed requests retain INVALID_REQUEST.
 - No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Verified on SQLite (`make ci`: auth 15, game 725 passed / 21 skipped, client 90) and PostgreSQL (game 745 passed / 1 skipped). The alembic check is clean and the app boots (200).
+- Round 1: CHANGES_REQUESTED.
+  - B1: the stance migration had no backfill.
+  - B2: the stance endpoint did not resolve elapsed work first. Ruling: a new stance applies only to work done after the change.
+  - Both were fixed in e9dc183, together with N1–N3 and N7.
+- Round 2 (Sonnet): APPROVE. The B2 test was mutation-checked.
+- Open hand-offs:
+  - Validate weak_to/resistant_to against known damage types (round 1 N4, not done).
+  - v08_0015 imports the app content loader, which couples the old migration to future loader changes. The migration could read `progression.json` directly instead (round 2 N1).
