@@ -48,8 +48,13 @@ class PurgeAudit:
     """Write sinks in the same transaction that removes their physical holders."""
 
     def __init__(
-        self, session: Session, character_id: uuid.UUID, now: datetime
+        self,
+        session: Session,
+        character_id: uuid.UUID,
+        now: datetime,
+        cause: str = "guest_purge",
     ) -> None:
+        self.cause = cause
         self.session = session
         self.character_id = character_id
         self.now = now
@@ -59,7 +64,7 @@ class PurgeAudit:
         if amount:
             self.session.add(
                 GoodsLedger(
-                    cause="guest_purge",
+                    cause=self.cause,
                     item_id=item,
                     amount_milli=-amount,
                     holder=holder,
@@ -73,7 +78,7 @@ class PurgeAudit:
         if amount:
             self.session.add(
                 GoldLedger(
-                    cause="guest_purge",
+                    cause=self.cause,
                     amount=-amount,
                     realm_id=realm_id,
                     character_id=self.character_id,

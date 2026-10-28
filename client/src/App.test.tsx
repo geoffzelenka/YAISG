@@ -1,13 +1,20 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
-import { ProfilePanel } from './App'
+import { CharacterCreation, ProfilePanel } from './App'
 import type { CharacterProfile } from './api/characters'
 
 vi.mock('./api/realms', () => ({
   useRealm: () => ({ data: { node: { id: 'node', name: 'Realm node' } } }),
 }))
-vi.mock('./api/content', () => ({ useContent: () => ({ status: 'loading' }) }))
+const creation = vi.hoisted(() => ({ status: 'loading', mutate: vi.fn() }))
+vi.mock('./api/content', () => ({
+  useContent: () => ({ status: creation.status }),
+}))
+vi.mock('./api/characters', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./api/characters')>()),
+  useCreateCharacter: () => ({ mutate: creation.mutate, isPending: false }),
+}))
 vi.mock('./features/profile/InventoryPanel', () => ({
   InventoryPanel: () => null,
 }))
@@ -50,4 +57,15 @@ it('shows Maximum level when XP to next is null', () => {
   expect(screen.getByText('Maximum level')).toBeInTheDocument()
   expect(screen.getByText(/\+10% combat power/)).toBeInTheDocument()
   expect(screen.queryByText(/to next/)).not.toBeInTheDocument()
+})
+
+it('creates a character with a name and no starting realm while content is loading', () => {
+  creation.status = 'loading'
+  render(<CharacterCreation />)
+  fireEvent.change(screen.getByLabelText('Character name'), {
+    target: { value: '  Island Hero  ' },
+  })
+  fireEvent.submit(screen.getByLabelText('Character name').closest('form')!)
+  expect(creation.mutate).toHaveBeenCalledWith({ name: 'Island Hero' })
+  expect(screen.queryByText('Starting realm')).not.toBeInTheDocument()
 })

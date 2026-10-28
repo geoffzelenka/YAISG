@@ -17,6 +17,8 @@ from app.services.stores import recompute_lines
 
 def present(character: Character, realm: RealmState) -> None:
     """Require resolved presence, equally for residents and visitors."""
+    if realm.isolated:
+        raise api_error(409, "NO_MARKET_ACCESS", "Isolated realms have no market")
     if character.current_realm_id != realm.id:
         raise api_error(409, "NOT_PRESENT", "You must be in the realm")
 

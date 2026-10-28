@@ -502,7 +502,7 @@ def test_market_locks_character_before_enumerating_realms(
     realm_enumeration = next(
         i
         for i, sql in enumerate(statements)
-        if sql.strip() == "SELECT realm_state.id \nFROM realm_state"
+        if sql.startswith("SELECT realm_state.id \nFROM realm_state")
     )
     assert character_lock < realm_enumeration
 
@@ -560,7 +560,11 @@ def test_postgres_market_retries_realm_created_after_enumeration(
         executemany: bool,
     ) -> None:
         nonlocal inserted
-        if inserted or statement.strip() != "SELECT realm_state.id \nFROM realm_state":
+        # Preparation filters out foreign isolated realms. Match the realm-id
+        # enumeration even when its SELECT includes that WHERE clause.
+        if inserted or not statement.startswith(
+            "SELECT realm_state.id \nFROM realm_state"
+        ):
             return
         inserted = True
         # The SELECT snapshot is already fixed, but no realm locks have been
@@ -571,6 +575,7 @@ def test_postgres_market_retries_realm_created_after_enumeration(
                 RealmState(
                     id=late_id,
                     template_id=REALM,
+                    isolated=False,
                     current_node_id="node.verdant_t1",
                     last_tick_at=NOW,
                 )

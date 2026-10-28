@@ -16,6 +16,30 @@
       "xp_pool_defense": 20,
       "defense_xp_per_damage": 1,
       "drops": []
+    },
+    {
+      "id": "tutorial.dummy",
+      "name": "Placeholder Tutorial Dummy",
+      "tier": 1,
+      "style": "melee",
+      "max_hp": 1,
+      "accuracy": 1,
+      "power": 1,
+      "defense": 1,
+      "armour": 0,
+      "attack_interval_ms": 60000,
+      "respawn_ms": 2000,
+      "xp_pool_offense": 20,
+      "xp_pool_defense": 20,
+      "defense_xp_per_damage": 1,
+      "drops": [
+        {
+          "item_id": "item.worthless_button",
+          "chance": 1,
+          "quantity_min": 1,
+          "quantity_max": 1
+        }
+      ]
     }
   ]
 }

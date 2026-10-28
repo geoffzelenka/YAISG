@@ -784,6 +784,7 @@ class ProgressionPack(ContentModel):
     default_stance: str
     combat_effectiveness: tuple[Annotated[float, Field(ge=0, allow_inf_nan=False)], ...]
     combat: CombatProgression
+    tutorial_camp_form: str = Field(min_length=1)
     basic_mobile_form: str = Field(min_length=1)
     visit_profile: TravelProfile
     travel_xp_per_second: float = Field(gt=0, allow_inf_nan=False)
@@ -1023,3 +1024,38 @@ Equipment.model_rebuild()
 TimedBuff.model_rebuild()
 Consumable.model_rebuild()
 Item.model_rebuild()
+
+
+class TutorialCondition(ContentModel):
+    """One authored profile milestone."""
+
+    kind: Literal[
+        "has_item",
+        "skill_level",
+        "equipped",
+        "in_realm",
+        "tag_present",
+        "estate_form",
+        "project_kicked_off",
+    ]
+    id: str = Field(min_length=1)
+    quantity: int = Field(default=1, gt=0)
+
+
+class TutorialStep(ContentModel):
+    """Ordered guidance, never a restriction on island play."""
+
+    id: str = Field(min_length=1)
+    hint: str = Field(min_length=1)
+    done_when: TutorialCondition
+
+
+class TutorialPack(ContentModel):
+    """Private realm templates, departure choices and guidance."""
+
+    realm_1: str
+    realm_2: str
+    arrival_realms: tuple[str, ...] = Field(min_length=1)
+    raft_site_project: str
+    raft_form: str
+    steps: tuple[TutorialStep, ...] = Field(min_length=1)

@@ -6,11 +6,11 @@
       "stores": [
         {
           "item_id": "item.fake_sprig",
-          "qty": 100
+          "qty": 6
         }
       ],
       "estates": [
-        "form.fake_workshop"
+        "form.placeholder_arrival_workshop"
       ]
     },
     {

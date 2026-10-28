@@ -346,7 +346,9 @@ def test_passed_vote_raises_reserves(realm_session: Session) -> None:
     from app.services.stores import recompute_lines
 
     hero, realm = _ready(realm_session)
-    realm_session.add(Estate(form_id=CONTENT.estate_forms[-1].id, realm_id=realm.id))
+    realm_session.add(
+        Estate(form_id=CONTENT.estate_form("form.fake_workshop").id, realm_id=realm.id)
+    )
     realm_session.flush()
     _stock_reserves(realm_session, realm)
     before = {
@@ -525,7 +527,7 @@ def test_reserve_gate_before_development(
         ()
         if stock == "no_lines"
         else (
-            *CONTENT.estate_forms[-1].upkeep,
+            *CONTENT.estate_form("form.fake_workshop").upkeep,
             TagUpkeep(selector=Selector(item="item.demo_crate"), per_day=1),
         )
     )

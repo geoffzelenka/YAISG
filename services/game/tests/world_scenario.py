@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_estates import _token
 from test_gold import BULLION, REALM, mint_content
 from world_accounting import GoodsAccounting, goods
+from world_helpers import create_world_character
 
 from app.content.loader import ContentIndex
 from app.content.schemas import (
@@ -35,10 +36,12 @@ from app.models import (
     RealmProjectRun,
     RealmShipment,
     RealmState,
+    RealmStore,
 )
 from app.services.caravans import run_caravan_pass
 from app.services.guest_purge import purge_guests
 from app.services.market_lifecycle import run_market_lifecycle
+from app.services.projects import kickoff
 from app.services.realm_ticks import (
     complete_tick_transition,
     load_context,
@@ -49,6 +52,7 @@ from app.services.realms import (
     resolve_realm,
     start_transition,
 )
+from app.services.tutorial import instance_id, seed_arrival
 
 SPRIG = "item.fake_sprig"
 PLANK = "item.fake_plank"
@@ -60,6 +64,8 @@ PROJECT_IDS = (
     *(f"project.{name}" for name in EXTRA_PROJECT_NAMES),
 )
 OPERATIONS = (
+    "tutorial_creation",
+    "tutorial_departure",
     "guest_purge",
     "exploration",
     "key_trade",
@@ -721,19 +727,82 @@ class WorldScenario:
                 assert response.json()["stop_reason"] == "KEY_INVALIDATED"
         await self.check()
 
+    async def tutorial_operation(self, operation: str) -> None:
+        """Exercise actual creation and audited departure with independent holders."""
+        headers = {"Authorization": f"Bearer {_token()}"}
+        response = await self.client.post(
+            "/characters",
+            headers=headers,
+            json={"name": f"Island {uuid.uuid4().hex[:10]}"},
+        )
+        assert response.status_code == 201, response.text
+        identifier = uuid.UUID(response.json()["character"]["id"])
+        await self.check()
+        if operation == "tutorial_creation":
+            return
+        with self.factory() as session:
+            character = session.get(Character, identifier)
+            assert character is not None
+            realm_id = instance_id(self.content.tutorial.realm_2, identifier)
+            character.current_realm_id = realm_id
+            estate = session.get(Estate, character.home_estate_id)
+            assert estate is not None
+            # Prepare the raft holder; the dedicated end-to-end test builds it.
+            estate.realm_id = realm_id
+            estate.form_id = self.content.tutorial.raft_form
+            seed_arrival(session, character, self.content, self.now)
+            realm = session.get(RealmState, realm_id)
+            assert realm is not None
+            donor = session.get(Inventory, (self.characters[0], SPRIG))
+            assert donor is not None and donor.quantity >= 3
+            donor.quantity -= 2
+            session.add(Inventory(character_id=identifier, item_id=SPRIG, quantity=2))
+            kickoff(
+                session,
+                character,
+                realm,
+                self.content.tutorial.raft_site_project,
+                self.now,
+                self.content,
+            )
+            donor = session.get(Inventory, (self.characters[0], SPRIG))
+            assert donor is not None and donor.quantity > 0
+            donor.quantity -= 1
+            session.add(
+                RealmStore(realm_id=realm_id, item_id=SPRIG, quantity_milli=1000)
+            )
+            session.commit()
+        self.audit.add("projects", SPRIG, -2000)
+        await self.check()
+        response = await self.client.post(
+            "/tutorial/depart",
+            headers=headers,
+            json={"destination_realm_id": self.content.tutorial.arrival_realms[0]},
+        )
+        assert response.status_code == 200, response.text
+        self.audit.add("tutorial_destroy", SPRIG, -1000)
+        await self.check()
+
     async def run(self, operation: str) -> None:
         """Execute one valid generated intent, checking all required preparation."""
+        if operation in {"tutorial_creation", "tutorial_departure"}:
+            await self.tutorial_operation(operation)
+            return
         if operation == "guest_purge":
             headers = {"Authorization": f"Bearer {_token()}"}
-            response = await self.client.post(
-                "/characters",
+            response = await create_world_character(
+                self.client,
+                self.factory,
                 headers=headers,
-                json={"name": f"Guest {uuid.uuid4().hex[:10]}", "realm_id": REALM},
+                name=f"Guest {uuid.uuid4().hex[:10]}",
+                realm_id=REALM,
             )
             assert response.status_code == 201, response.text
             with self.factory() as session:
                 guest = session.scalar(
-                    select(Character).where(Character.id.not_in(self.characters))
+                    select(Character).where(
+                        Character.id == uuid.UUID(response.json()["character"]["id"])
+                    )
                 )
                 assert guest is not None
                 player = session.get(Player, guest.player_id)

@@ -91,10 +91,14 @@ class GoodsAccounting:
     def verify_purge_ledger(self, session: Session) -> None:
         """Compare durable sinks with independent generated-operation amounts."""
         recorded: Counter[str] = Counter()
-        for row in session.scalars(select(GoodsLedger)):
-            assert row.cause == "guest_purge" and row.amount_milli <= 0
-            recorded[row.item_id] += row.amount_milli
-        assert recorded == self.changes.get("guest_purge", Counter())
+        for cause in ("guest_purge", "tutorial_destroy"):
+            recorded = Counter()
+            for row in session.scalars(
+                select(GoodsLedger).where(GoodsLedger.cause == cause)
+            ):
+                assert row.amount_milli <= 0
+                recorded[row.item_id] += row.amount_milli
+            assert recorded == self.changes.get(cause, Counter())
 
     def expected(self, baseline: Counter[str]) -> Counter[str]:
         """Preserve signed deltas; Counter addition would discard negatives."""

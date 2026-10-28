@@ -40,6 +40,10 @@ class Character(Base):
     stance: Mapped[str] = mapped_column(String(128), nullable=False)
     hp: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     hp_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tutorial_step: Mapped[str | None] = mapped_column(String(128))
+    tutorial_seeded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     last_kickoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     current_realm_id: Mapped[str] = mapped_column(String(128), nullable=False)
     # Residence is derived from this estate, independently of current presence.

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from test_actions import FakeClock, action_client, anyio_backend
 from test_consumables_hp import NOW, state
+from world_helpers import create_world_character
 
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
@@ -513,11 +514,11 @@ async def test_other_character_cannot_see_use_or_delete_a_key(
     """Private action access and deletion both require the current holder."""
     from test_actions import _token
 
-    client, _, _, _ = action_client
+    client, factory, _, _ = action_client
     identifier = await discover_api(action_client, monkeypatch)
     other = {"Authorization": f"Bearer {_token()}"}
-    response = await client.post(
-        "/characters", headers=other, json={"name": "Other Hero", "realm_id": REALM}
+    response = await create_world_character(
+        client, factory, headers=other, name="Other Hero", realm_id=REALM
     )
     assert response.status_code == 201
     assert (await client.get("/keys/me", headers=other)).json()["keys"] == []

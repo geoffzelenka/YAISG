@@ -82,7 +82,6 @@ async function profileRequest(): Promise<CharacterProfile | null> {
 
 async function createCharacter(input: {
   name: string
-  realm_id: string
 }): Promise<CharacterProfile> {
   const response = await gameRequest('/characters', {
     method: 'POST',

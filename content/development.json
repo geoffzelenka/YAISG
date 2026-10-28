@@ -142,6 +142,48 @@
       "regression": {
         "to_node": "node.verdant_t0_stub"
       }
+    },
+    {
+      "id": "node.tutorial_1",
+      "name": "Placeholder Island 1",
+      "modifiers": [],
+      "cap_bonuses": [],
+      "projects": [],
+      "actions": [
+        "tutorial.gather",
+        "tutorial.fight"
+      ],
+      "inherent_tags": [],
+      "tier": 1,
+      "realm_type": "barren",
+      "upkeep": [],
+      "carried_tags": [],
+      "upgrades": [],
+      "regression": {
+        "to_node": "node.verdant_t0_stub"
+      }
+    },
+    {
+      "id": "node.tutorial_2",
+      "name": "Placeholder Island 2",
+      "modifiers": [],
+      "cap_bonuses": [],
+      "projects": [
+        "project.tutorial_raft"
+      ],
+      "actions": [
+        "tutorial.gather",
+        "tutorial.fight"
+      ],
+      "inherent_tags": [],
+      "tier": 1,
+      "realm_type": "barren",
+      "upkeep": [],
+      "carried_tags": [],
+      "upgrades": [],
+      "regression": {
+        "to_node": "node.verdant_t0_stub"
+      }
     }
   ]
 }

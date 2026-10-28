@@ -38,7 +38,14 @@ def prepare_market(
     it preserves character -> sorted realms -> estate -> price-time order locks.
     """
     record = lock_character_and_load_action(session, character.id)
-    realm_ids = set(session.scalars(select(RealmState.id)))
+    realm_ids = set(
+        session.scalars(
+            select(RealmState.id).where(
+                (RealmState.isolated.is_(False))
+                | (RealmState.owner_character_id == character.id)
+            )
+        )
+    )
     resolve_locked_character(
         session,
         character.id,
@@ -55,7 +62,8 @@ def require_access(
 ) -> None:
     """Gate creation and collection on resolved current-realm access tags."""
     state = load_character_state(session, character.id, content)
-    if not any(
+    realm = session.get(RealmState, character.current_realm_id)
+    if (realm is not None and realm.isolated) or not any(
         tag.effects.market_access for tag, _ in realm_active_tags(state, content)
     ):
         raise api_error(

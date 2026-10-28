@@ -82,7 +82,7 @@ def test_placeholder_content_loads() -> None:
     content = load_content(CONTENT_DIR)
 
     assert len(content.skills) == 11
-    assert len(content.actions_for_skill("gathering")) == 3
+    assert len(content.actions_for_skill("gathering")) == 4
     assert content.action("manufacturing.demo_crate").inputs[0].selector.item == (
         "item.fake_plank"
     )
@@ -225,6 +225,7 @@ def test_only_known_content_routes_are_public() -> None:
     assert manifest.status_code == 200
     assert set(manifest.json()["packs"]) == {
         "exploration",
+        "tutorial",
         "combatants",
         "skills",
         "items",
@@ -330,7 +331,10 @@ def test_content_model_validation(tmp_path: Path, defect: str, message: str) -> 
         items = json.loads(items_path.read_text())
         if defect == "input":
             action["inputs"][0]["selector"] = {"class": "fake_plant"}
-            skills["skills"][0]["actions"][0]["outputs"][0]["off_tier"] = True
+            for gather in skills["skills"][0]["actions"]:
+                for output in gather["outputs"]:
+                    if output["item_id"] == "item.fake_sprig":
+                        output["off_tier"] = True
         index = 0 if defect == "input" else 3
         items["items"][index]["tier"] = 2
         _write_json(items_path, items)
@@ -357,7 +361,15 @@ def test_off_tier_output_and_resolver_defaults(tmp_path: Path) -> None:
     path = directory / "skills.json"
     skills = json.loads(path.read_text())
     action = skills["skills"][0]["actions"][0]
-    action["outputs"][0]["off_tier"] = True
+    for gather in skills["skills"][0]["actions"]:
+        for output in gather["outputs"]:
+            if output["item_id"] == "item.fake_sprig":
+                output["off_tier"] = True
+    for skill in skills["skills"]:
+        for recipe in skill["actions"]:
+            for entry in recipe.get("inputs", []):
+                if entry["selector"].get("item") == "item.fake_sprig":
+                    entry["selector"] = {"class": "fake_plant", "tier": 1}
     _write_json(path, skills)
     path = directory / "items.json"
     items = json.loads(path.read_text())
@@ -495,4 +507,23 @@ def test_loader_requires_equipped_tool_class(tmp_path: Path) -> None:
     tool["classes"].append("fake_pickaxe")
     _write_json(items_path, items)
     with pytest.raises(ContentError, match="unknown tool class"):
+        load_content(directory)
+
+
+def test_tutorial_raft_project_rejects_remaining_contribution_cost(
+    tmp_path: Path,
+) -> None:
+    """A raft site cannot regress to funding that can erode after spending its seed."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "projects.json"
+    projects = json.loads(path.read_text())
+    tutorial = json.loads((directory / "tutorial.json").read_text())
+    raft = next(
+        p for p in projects["projects"] if p["id"] == tutorial["raft_site_project"]
+    )
+    raft["cost"] = raft["kickoff"]["goods"]
+    raft["kickoff"]["goods"] = []
+    _write_json(path, projects)
+    with pytest.raises(ContentError, match="full cost at kickoff"):
         load_content(directory)

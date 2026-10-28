@@ -133,7 +133,7 @@ def test_validator_rejects_mixed_price_upkeep_class(tmp_path: Path) -> None:
 
 def test_upkeep_overlap_warning() -> None:
     """Lint warns about intersecting selectors rather than rejecting overlap."""
-    form = CONTENT.estate_forms[-1]
+    form = CONTENT.estate_form("form.fake_workshop")
     extra = TagUpkeep(
         selector=Selector.model_validate({"class": "fake_plant"}), per_day=1
     )
@@ -222,7 +222,9 @@ def test_funding_overlay_uses_run_snapshot_and_full_estate_upkeep(
     item_id = CONTENT.items[0].id
     run.required = [{"selector": {"item": item_id}, "quantity": 10}]
     run.contributed = [2500]
-    estate = Estate(form_id=CONTENT.estate_forms[-1].id, realm_id=realm.id)
+    estate = Estate(
+        form_id=CONTENT.estate_form("form.fake_workshop").id, realm_id=realm.id
+    )
     realm_session.add(estate)
     realm_session.flush()
     realm_session.add(
@@ -400,7 +402,9 @@ def test_pending_reserve_uses_full_recorded_transition(realm_session: Session) -
 
     realm = realm_session.get(RealmState, "realm.verdant_vale")
     assert realm is not None
-    realm_session.add(Estate(form_id=CONTENT.estate_forms[-1].id, realm_id=realm.id))
+    realm_session.add(
+        Estate(form_id=CONTENT.estate_form("form.fake_workshop").id, realm_id=realm.id)
+    )
     realm_session.flush()
     start_transition(realm, "node.verdant_t2", "upgrade", NOW, CONTENT)
     assert realm.pending_transition is not None

@@ -1086,3 +1086,27 @@ async def test_kickoff_availability_reports_gates_without_payment(
     assert limited.json()[PROJECT]["code"] == "KICKOFF_LIMIT"
     missing = await client.get("/realms/unknown/projects/availability", headers=headers)
     assert missing.json()["error"]["code"] == "UNKNOWN_REALM"
+
+
+def test_empty_contribution_cost_builds_immediately_and_completes_on_time(
+    realm_session: Session,
+) -> None:
+    """Any project paid entirely at kickoff bypasses idle funding and erosion."""
+    project = CONTENT.project(PROJECT).model_copy(
+        update={"cost": (), "build_seconds": 2}
+    )
+    content = _content(project)
+    realm = realm_session.get(RealmState, REALM)
+    assert realm is not None
+    hero = _hero(realm_session)
+    run = kickoff(realm_session, hero, realm, PROJECT, NOW, content)
+    assert run.status == "building" and run.required == [] and run.contributed == []
+    assert run.build_completes_at == NOW + timedelta(seconds=2)
+    resolve_realm(realm_session, realm, NOW + timedelta(seconds=1), content)
+    assert run.status == "building"
+    resolve_realm(realm_session, realm, NOW + timedelta(seconds=2), content)
+    assert run.status == "complete" and run.failed_at is None
+    tag = realm_session.get(RealmTag, (REALM, project.grants_tag))
+    assert tag is not None and as_utc(tag.acquired_at) == NOW + timedelta(seconds=2)
+    resolve_realm(realm_session, realm, NOW + timedelta(days=6), content)
+    assert run.status == "complete" and run.failed_at is None
