@@ -83,3 +83,20 @@ without introducing a new defeat or XP rule.
 No new server codes. The new request hook retains server ApiError codes/messages;
 EQUIPMENT_REQUEST_FAILED is its client fallback for an unstructured failure.
 No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Verification:
+  - SQLite `make ci`: auth 15, game 750 passed / 22 skipped, client 100.
+  - PostgreSQL: game 771 passed / 1 skipped. Boot: 200.
+- Review round 1: APPROVE, no blocking findings. Non-blocking hand-offs for 36-hardening (client polish):
+  - Two mutations survived, so add tests for them:
+    - Unequip and Return stack are disabled in combat.
+    - The shared poll refetches the profile when idle and refetches inventory when active.
+  - Belt trigger: add an explicit submit guard for 0 < hp_below_pct ≤ 100 (finite), with boundary tests. The native `min=0.01` diverges from the server rule.
+  - Format the fractional HP label for display. The `<progress>` keeps the raw value.
+  - Requirement display: show met/unmet and the player's current level. Default a missing skill to 1, matching the server.
+  - a11y: role="group" for the doll, and a fieldset/legend per belt position.
+  - Encounter log: filter the initial seed with the combat filter, drop the dead fallback, and use stable keys.
+  - Add a test for the active-encounter meta rendering.
+  - The stance mutation uses the equipment-named hook and fallback text. Rename it.
