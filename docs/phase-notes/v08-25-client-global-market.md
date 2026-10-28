@@ -100,3 +100,12 @@ client displays the caller-side projections supplied by the server.
 ## New error codes
 
 None. Existing server codes are displayed. No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on 634856e: SQLite make ci green (auth 15, game 615 / 20
+  skipped, client 90); PostgreSQL 16 game-ci 634 / 1 skipped; PG db-reset,
+  alembic check and boot green. Review: round 1 CHANGES_REQUESTED (access-gate
+  test could not fail), round 2 APPROVE.
+- 36-hardening: RealmApiError (client/src/api/realms.ts:60) duplicates the new
+  shared ApiError; alias or extend it.
