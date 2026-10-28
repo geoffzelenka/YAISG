@@ -33,7 +33,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 23 | `23-global-market` | Global order book, slots, tax, access | done | v08/23-global-market | 6dad2ba | Global order book, escrow slots, seller tax, access gating |
 | 24 | `24-market-lifecycle` | Order expiry, purge, world conservation suite | done | v08/24-market-lifecycle | 6cc0db1 | Order expiry/purge job, paginated private history, world conservation suite |
 | 25 | `25-client-global-market` | Client: global market | done | v08/25-client-global-market | c7cbe1f | Client global market: book, orders, slots, collect/cancel, history |
-| 26 | `26-equipment` | Equipment slots and gear bonuses | ready for review | `v08/26-equipment` | — | Permanent gear, group G, tool gates, legal gear lint and equipment conservation |
+| 26 | `26-equipment` | Equipment slots and gear bonuses | done | v08/26-equipment | fce64c4 | Equipment slots, equip/unequip, group G gear, tool_class, §7.5 caps |
 | 27 | `27-consumables-hp` | Belt, utility, buffs, hit points | pending | — | — | — |
 | 28 | `28-combat-model` | Combatants, stats, the hit, stance, combat lint | pending | — | — | — |
 | 29 | `29-combat-resolver` | The combat resolver | pending | — | — | — |
