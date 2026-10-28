@@ -245,7 +245,7 @@ async def create_character(
         )
     )
     try:
-        character.hp = character_max_hp(session, character.id, content)
+        character.hp = character_max_hp(session, character.id, content, now)
         session.commit()
     except IntegrityError:
         session.rollback()
@@ -256,11 +256,11 @@ async def create_character(
         raise api_error(
             409, "NAME_TAKEN", "That character name is already taken"
         ) from None
-    return _profile(session, content, character)
+    return _profile(session, content, character, now)
 
 
 def _profile(
-    session: DatabaseSession, content: ContentIndex, character: Character
+    session: DatabaseSession, content: ContentIndex, character: Character, now: datetime
 ) -> ProfileResponse:
     currency = session.get(Currency, character.id)
     estate = session.get(Estate, character.home_estate_id)
@@ -324,7 +324,7 @@ def _profile(
             .order_by(EstateUpgrade.slot_index)
         )
     )
-    state = load_character_state(session, character.id, content)
+    state = load_character_state(session, character.id, content, now)
     resolved = resolve_caps(state, content)
     active_modifiers = [
         modifier for group in modifier_groups(state, content) for modifier in group
@@ -339,7 +339,7 @@ def _profile(
     }
     return ProfileResponse(
         hp=character.hp,
-        max_hp=character_max_hp(session, character.id, content),
+        max_hp=character_max_hp(session, character.id, content, now),
         hp_updated_at=character.hp_updated_at or character.created_at,
         belt={
             row.slot: BeltStack(
@@ -408,7 +408,7 @@ async def get_profile(
     content = _content(request)
     resolve_character(session, character.id, now, content)
     session.commit()
-    return _profile(session, content, character)
+    return _profile(session, content, character, now)
 
 
 @router.get("/me/inventory", response_model=InventoryResponse)

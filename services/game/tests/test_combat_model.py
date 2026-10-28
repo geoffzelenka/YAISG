@@ -288,23 +288,22 @@ def test_standard_gear_validation(tmp_path: Path, gear: dict[str, str]) -> None:
 
 
 @pytest.mark.anyio
-async def test_combat_actions_wait_for_registered_resolver(
+async def test_combat_actions_use_registered_resolver(
     action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
 ) -> None:
-    """Authored combat is visible but cannot start until Prompt 29 registers it."""
+    """Authored combat is startable through the registered resolver."""
     client, _, _, headers = action_client
     available = await client.get("/actions/available", headers=headers)
     group = next(
         group for group in available.json()["skills"] if group["skill_id"] == "melee"
     )
     action = group["actions"][0]
-    assert action["startable"] is False
-    assert action["blocked_by"] == ["RESOLVER_UNAVAILABLE"]
+    assert action["startable"] is True
+    assert action["blocked_by"] == []
     start = await client.post(
         "/actions/start", headers=headers, json={"action_id": action["action_id"]}
     )
-    assert start.status_code == 409
-    assert start.json()["error"]["code"] == "RESOLVER_UNAVAILABLE"
+    assert start.status_code == 200
 
 
 @pytest.mark.anyio

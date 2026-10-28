@@ -376,7 +376,7 @@ async def test_profile_lazy_hp_and_buff_adapter(action_client: ApiFixture) -> No
     assert profile["hp"] == 5
     maximum = profile["max_hp"]
     with factory() as session:
-        current = load_character_state(session, character.id, CONTENT)
+        current = load_character_state(session, character.id, CONTENT, clock.now)
         assert len(current.consumable_modifiers) == 1
         assert not current.gear_modifiers
     clock.advance(timedelta(seconds=30))
@@ -384,7 +384,9 @@ async def test_profile_lazy_hp_and_buff_adapter(action_client: ApiFixture) -> No
     assert profile["hp"] == pytest.approx(5 + maximum * 0.005)
     with factory() as session:
         assert (
-            load_character_state(session, character.id, CONTENT).consumable_modifiers
+            load_character_state(
+                session, character.id, CONTENT, clock.now
+            ).consumable_modifiers
             == ()
         )
     clock.advance(timedelta(days=1))
