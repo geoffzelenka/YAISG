@@ -48,6 +48,13 @@
           "value_per_day": 120
         }
       }
+    },
+    {
+      "id": "facility.tutorial_raft",
+      "kind": "facility",
+      "modifiers": [],
+      "upkeep": [],
+      "name": "Placeholder Raft Site"
     }
   ]
 }

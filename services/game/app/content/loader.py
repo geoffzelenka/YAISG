@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -36,6 +37,7 @@ from app.content.schemas import (
     SkillsPack,
     Tag,
     TagsPack,
+    TutorialPack,
     UpgradesPack,
     WorldSeedPack,
     XpCurve,
@@ -46,6 +48,7 @@ if TYPE_CHECKING:
     from app.engine.caravans import Route
 
 PUBLIC_PACKS = (
+    "tutorial",
     "exploration",
     "combatants",
     "skills",
@@ -84,6 +87,7 @@ class ContentManifest:
 class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
+    tutorial: TutorialPack
     auth: GuestSettings
     exploration: ExplorationPack
     combatants: tuple[Combatant, ...]
@@ -147,7 +151,16 @@ class ContentIndex:
 
     def realm(self, realm_id: str) -> Realm:
         """Look up a realm."""
-        return self._realms_by_id[realm_id]
+        template_id, separator, owner = realm_id.partition(":")
+        realm = self._realms_by_id[template_id]
+        if separator:
+            if not realm.isolated:
+                raise KeyError(realm_id)
+            try:
+                uuid.UUID(owner)
+            except ValueError:
+                raise KeyError(realm_id) from None
+        return realm
 
     def upgrade(self, upgrade_id: str) -> EstateUpgrade:
         """Look up an estate upgrade."""
@@ -450,6 +463,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     unknown = {path.stem for path in content_dir.rglob("*.json")} - _KNOWN_PACKS
     if unknown:
         raise ContentError(f"unrecognized content packs: {sorted(unknown)}")
+    tutorial = _load_model(content_dir, "tutorial", TutorialPack)
     auth = _load_model(content_dir, "auth", GuestSettings)
     exploration = _load_model(content_dir, "exploration", ExplorationPack)
     combatants_pack = _load_model(content_dir, "combatants", CombatantsPack)
@@ -470,6 +484,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     progression = _load_model(content_dir, "progression", ProgressionPack)
     world_seed = _load_model(content_dir, "world_seed", WorldSeedPack)
     packs: dict[str, BaseModel] = {
+        "tutorial": tutorial,
         "auth": auth,
         "exploration": exploration,
         "combatants": combatants_pack,
@@ -656,6 +671,47 @@ def load_content(content_dir: Path) -> ContentIndex:
             raise ContentError("unknown world_seed estate form")
         if any(forms_by_id[form_id].mobility != "fixed" for form_id in seed.estates):
             raise ContentError("world_seed estates must use fixed forms")
+    if tutorial.realm_1 == tutorial.realm_2 or any(
+        realm_id not in realms or not realms[realm_id].isolated
+        for realm_id in (tutorial.realm_1, tutorial.realm_2)
+    ):
+        raise ContentError("tutorial requires two distinct isolated templates")
+    if any(r not in realms or realms[r].isolated for r in tutorial.arrival_realms):
+        raise ContentError("tutorial arrivals must be world realms")
+    if (
+        tutorial.raft_site_project not in projects
+        or tutorial.raft_form not in forms_by_id
+    ):
+        raise ContentError("unknown tutorial raft project or form")
+    camp = forms_by_id.get(progression.tutorial_camp_form)
+    if (
+        camp is None
+        or camp.mobility != "mobile"
+        or camp.upkeep
+        or camp.production
+        or camp.modifiers
+        or camp.cap_bonuses
+        or camp.tags
+    ):
+        raise ContentError("tutorial camp must be mobile without bonuses or upkeep")
+    island = {tutorial.realm_1, tutorial.realm_2}
+    if any((e.a in island) != (e.b in island) for e in map_pack.edges):
+        raise ContentError("tutorial edges cannot lead to the world")
+    if len({step.id for step in tutorial.steps}) != len(tutorial.steps):
+        raise ContentError("tutorial step ids must be unique")
+    for step in tutorial.steps:
+        condition = step.done_when
+        known: dict[str, set[str]] = {
+            "has_item": set(items),
+            "equipped": set(items),
+            "skill_level": set(skills),
+            "in_realm": set(realms),
+            "tag_present": tag_ids,
+            "estate_form": set(forms_by_id),
+            "project_kicked_off": set(projects),
+        }
+        if condition.id not in known[condition.kind]:
+            raise ContentError(f"unknown tutorial condition in {step.id}")
     canonical = {
         name: model.model_dump(mode="json", by_alias=True)
         for name, model in packs.items()
@@ -670,6 +726,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     }
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
+        tutorial,
         auth,
         exploration,
         tuple(combatants.values()),

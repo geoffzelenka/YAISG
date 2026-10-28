@@ -18,6 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from jwt import PyJWK
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
+from world_helpers import create_world_character
 
 from app.auth import jwks_cache
 from app.clock import utc_now
@@ -126,10 +127,12 @@ async def action_client(
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            created = await client.post(
-                "/characters",
+            created = await create_world_character(
+                client,
+                factory,
                 headers=headers,
-                json={"name": "Action Hero", "realm_id": "realm.verdant_vale"},
+                name="Action Hero",
+                realm_id="realm.verdant_vale",
             )
             assert created.status_code == 201
             yield client, factory, clock, headers

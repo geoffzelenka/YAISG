@@ -141,6 +141,105 @@
           }
         ]
       }
+    },
+    {
+      "id": "form.tutorial_camp",
+      "name": "Placeholder Tutorial Camp",
+      "modifiers": [],
+      "mobility": "mobile",
+      "travel_profile": {
+        "time_mult": 1,
+        "supply_mult": 1,
+        "terrains": [
+          "land"
+        ]
+      },
+      "tier": 1,
+      "upgrade_slots": 4,
+      "cap_bonuses": [],
+      "upkeep": [],
+      "production": [],
+      "transforms_to": [
+        "form.tutorial_raft"
+      ],
+      "regresses_to": null,
+      "build_cost": {
+        "gold": 0,
+        "goods": []
+      }
+    },
+    {
+      "id": "form.tutorial_raft",
+      "name": "Placeholder Raft",
+      "modifiers": [],
+      "mobility": "mobile",
+      "travel_profile": {
+        "time_mult": 1,
+        "supply_mult": 1,
+        "terrains": [
+          "land"
+        ]
+      },
+      "tier": 1,
+      "upgrade_slots": 4,
+      "cap_bonuses": [],
+      "upkeep": [],
+      "production": [],
+      "transforms_to": [
+        "form.homestead"
+      ],
+      "regresses_to": null,
+      "build_cost": {
+        "gold": 0,
+        "goods": [
+          {
+            "selector": {
+              "item": "item.fake_sprig"
+            },
+            "quantity": 1
+          }
+        ]
+      },
+      "requires_realm_tags": [
+        "facility.tutorial_raft"
+      ]
+    },
+    {
+      "id": "form.placeholder_arrival_workshop",
+      "name": "Placeholder Arrival Workshop",
+      "modifiers": [],
+      "mobility": "fixed",
+      "travel_profile": null,
+      "tier": 1,
+      "upgrade_slots": 4,
+      "cap_bonuses": [],
+      "upkeep": [
+        {
+          "selector": {
+            "item": "item.fake_sprig"
+          },
+          "per_day": 1
+        }
+      ],
+      "production": [
+        {
+          "item_id": "item.fake_sprig",
+          "per_day": 1
+        }
+      ],
+      "transforms_to": [],
+      "regresses_to": null,
+      "build_cost": {
+        "gold": 20,
+        "goods": [
+          {
+            "selector": {
+              "class": "fake_plant"
+            },
+            "quantity": 2
+          }
+        ]
+      }
     }
   ]
 }

@@ -39,8 +39,17 @@ class TravelRequest(BaseModel):
 def _route(
     state: CharacterState, destination: str, mode: str, content: ContentIndex
 ) -> list[dict[str, str]]:
-    if destination not in {realm.id for realm in content.realms}:
-        raise api_error(404, "UNKNOWN_REALM", "The destination does not exist")
+    if ":" in state.current_realm_id and destination in {
+        content.tutorial.realm_1,
+        content.tutorial.realm_2,
+    }:
+        destination = f"{destination}:{state.current_realm_id.partition(':')[2]}"
+    try:
+        content.realm(destination)
+    except KeyError:
+        raise api_error(
+            404, "UNKNOWN_REALM", "The destination does not exist"
+        ) from None
     if destination == state.current_realm_id:
         raise api_error(409, "ALREADY_THERE", "You are already in that realm")
     if mode == "relocate":
@@ -80,7 +89,13 @@ async def preview(
         character.id,
         now,
         content,
-        additional_realm_ids={realm.id for realm in content.realms},
+        additional_realm_ids={realm.id for realm in content.realms}
+        | {
+            row.id
+            for row in session.scalars(
+                select(RealmState).where(RealmState.owner_character_id == character.id)
+            )
+        },
     )
     state = load_character_state(session, character.id, content, now)
     steps = _route(state, destination_realm_id, mode, content)
@@ -124,7 +139,13 @@ async def start(
         character.id,
         now,
         content,
-        additional_realm_ids={realm.id for realm in content.realms},
+        additional_realm_ids={realm.id for realm in content.realms}
+        | {
+            row.id
+            for row in session.scalars(
+                select(RealmState).where(RealmState.owner_character_id == character.id)
+            )
+        },
     )
     state = load_character_state(session, character.id, content, now)
     steps = _route(state, body.destination_realm_id, body.mode, content)

@@ -502,7 +502,7 @@ def test_market_locks_character_before_enumerating_realms(
     realm_enumeration = next(
         i
         for i, sql in enumerate(statements)
-        if sql.strip() == "SELECT realm_state.id \nFROM realm_state"
+        if sql.startswith("SELECT realm_state.id \nFROM realm_state")
     )
     assert character_lock < realm_enumeration
 

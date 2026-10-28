@@ -1,0 +1,92 @@
+{
+  "realm_1": "realm.tutorial_1",
+  "realm_2": "realm.tutorial_2",
+  "arrival_realms": [
+    "realm.verdant_vale"
+  ],
+  "raft_site_project": "project.tutorial_raft",
+  "raft_form": "form.tutorial_raft",
+  "steps": [
+    {
+      "id": "gather",
+      "hint": "Gather two placeholder sprigs.",
+      "done_when": {
+        "kind": "has_item",
+        "id": "item.fake_sprig",
+        "quantity": 2
+      }
+    },
+    {
+      "id": "clothes",
+      "hint": "Make and equip placeholder clothes.",
+      "done_when": {
+        "kind": "equipped",
+        "id": "item.tutorial_clothes"
+      }
+    },
+    {
+      "id": "club",
+      "hint": "Make and equip a placeholder club.",
+      "done_when": {
+        "kind": "equipped",
+        "id": "item.tutorial_club"
+      }
+    },
+    {
+      "id": "fight",
+      "hint": "Fight the placeholder dummy.",
+      "done_when": {
+        "kind": "has_item",
+        "id": "item.worthless_button"
+      }
+    },
+    {
+      "id": "food",
+      "hint": "Make placeholder food.",
+      "done_when": {
+        "kind": "has_item",
+        "id": "item.fake_food"
+      }
+    },
+    {
+      "id": "travel",
+      "hint": "Travel to the second island.",
+      "done_when": {
+        "kind": "in_realm",
+        "id": "realm.tutorial_2"
+      }
+    },
+    {
+      "id": "kickoff",
+      "hint": "Kick off the placeholder raft site.",
+      "done_when": {
+        "kind": "project_kicked_off",
+        "id": "project.tutorial_raft"
+      }
+    },
+    {
+      "id": "fund",
+      "hint": "Fund the site and wait for its facility.",
+      "done_when": {
+        "kind": "tag_present",
+        "id": "facility.tutorial_raft"
+      }
+    },
+    {
+      "id": "raft",
+      "hint": "Transform your camp into a raft.",
+      "done_when": {
+        "kind": "estate_form",
+        "id": "form.tutorial_raft"
+      }
+    },
+    {
+      "id": "depart",
+      "hint": "Register and depart for the world.",
+      "done_when": {
+        "kind": "in_realm",
+        "id": "realm.verdant_vale"
+      }
+    }
+  ]
+}

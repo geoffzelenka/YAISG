@@ -17,6 +17,17 @@
       "min_travel_level": 1,
       "base_loss_pct": 0,
       "one_way": false
+    },
+    {
+      "id": "edge.tutorial",
+      "a": "realm.tutorial_1",
+      "b": "realm.tutorial_2",
+      "terrain": "land",
+      "base_time_s": 2,
+      "supplies": [],
+      "min_travel_level": 1,
+      "base_loss_pct": 0,
+      "one_way": false
     }
   ],
   "positions": {

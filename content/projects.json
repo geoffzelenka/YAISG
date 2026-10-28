@@ -77,6 +77,28 @@
       "realm_completion_days": 1,
       "requires_tags": [],
       "repeatable": false
+    },
+    {
+      "id": "project.tutorial_raft",
+      "name": "Placeholder Raft Site",
+      "grants_tag": "facility.tutorial_raft",
+      "cost": [
+        {
+          "selector": {
+            "item": "item.fake_sprig"
+          },
+          "quantity": 2
+        }
+      ],
+      "kickoff": {
+        "gold": 10,
+        "goods": [],
+        "who": "anyone"
+      },
+      "build_seconds": 2,
+      "realm_completion_days": 1,
+      "requires_tags": [],
+      "repeatable": false
     }
   ]
 }

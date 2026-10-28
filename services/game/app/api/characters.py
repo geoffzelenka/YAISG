@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -45,8 +45,9 @@ logger = logging.getLogger(__name__)
 class CreateCharacterRequest(BaseModel):
     """Character creation fields."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str
-    realm_id: str
 
 
 class CharacterSummary(BaseModel):
@@ -56,6 +57,7 @@ class CharacterSummary(BaseModel):
     name: str
     current_realm_id: str
     stance: str
+    tutorial_step: str | None
     created_at: datetime
 
 
@@ -170,6 +172,9 @@ async def create_character(
 ) -> ProfileResponse:
     """Atomically create the caller's initial character state."""
     content = _content(request)
+    from app.services.realms import prepare_sqlite_write
+
+    prepare_sqlite_write(session)
     if session.scalar(select(Character.id).where(Character.player_id == player.id)):
         raise api_error(409, "CHARACTER_EXISTS", "This player already has a character")
     name = body.name.strip()
@@ -179,36 +184,17 @@ async def create_character(
             "INVALID_NAME",
             "Name must be 3–20 characters using letters, numbers, and spaces",
         )
-    try:
-        content.realm(body.realm_id)
-    except KeyError:
-        raise api_error(
-            422, "UNKNOWN_REALM", "The selected realm does not exist"
-        ) from None
+    from app.services.tutorial import create_island, instance_id
 
-    if content.realm(body.realm_id).isolated:
-        raise api_error(
-            422, "UNKNOWN_REALM", "An isolated template is not a starting realm"
-        )
-    from app.services.realms import finalize_realm
-    from app.services.world import WorldStateError, create_world
-
-    try:
-        create_world(session, content, now)
-        finalize_realm(session, body.realm_id, now, content)
-    except WorldStateError as error:
-        logger.error("Character creation refused: %s", error)
-        raise api_error(
-            503, "WORLD_STATE_INCOMPLETE", "The selected realm is unavailable"
-        ) from error
-
+    character_id = uuid.uuid4()
+    realm_id = instance_id(content.tutorial.realm_1, character_id)
     estate_id = uuid.uuid4()
     character = Character(
-        id=uuid.uuid4(),
+        id=character_id,
         player_id=player.id,
         name=name,
         name_normalized=name.casefold(),
-        current_realm_id=body.realm_id,
+        current_realm_id=realm_id,
         home_estate_id=estate_id,
         created_at=now,
         hp=0,
@@ -216,6 +202,7 @@ async def create_character(
         stance=content.progression.default_stance,
     )
     session.add(character)
+    create_island(session, character, content, now)
     for skill in content.skills:
         xp = 0
         session.add(
@@ -231,8 +218,8 @@ async def create_character(
         Estate(
             id=estate_id,
             owner_character_id=character.id,
-            realm_id=body.realm_id,
-            form_id=content.progression.basic_mobile_form,
+            realm_id=realm_id,
+            form_id=content.progression.tutorial_camp_form,
             status="active",
             data={},
         )
@@ -366,7 +353,7 @@ def _profile(
         skills=skills,
         gold=currency.gold,
         realm=RealmSummary(
-            id=realm.id,
+            id=character.current_realm_id,
             name=realm.name,
             tags=node.inherent_tags,
             active_modifiers=tuple(active_modifiers),
@@ -407,6 +394,9 @@ async def get_profile(
     character = _character_for_player(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
+    from app.services.tutorial import advance_steps
+
+    advance_steps(session, character, content)
     session.commit()
     return _profile(session, content, character, now)
 

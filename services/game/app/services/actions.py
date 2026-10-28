@@ -360,6 +360,16 @@ def resolve_locked_character(
     if character is None:
         raise RuntimeError(f"character {character_id} does not exist")
     resolved_content = content or CONTENT
+    from app.errors import api_error
+
+    for realm_id in additional_realm_ids or ():
+        realm = session.get(RealmState, realm_id)
+        if (
+            realm is not None
+            and realm.isolated
+            and realm.owner_character_id != character_id
+        ):
+            raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
     realm_ids = set(additional_realm_ids or ())
     realm_ids.update(
         session.scalars(
@@ -423,6 +433,9 @@ def resolve_locked_character(
         random.Random(secrets.randbits(256)),
     )
     _persist_state(session, character_id, new_state)
+    from app.services.tutorial import seed_arrival
+
+    seed_arrival(session, character, resolved_content, now)
     session.flush()
     if (
         not is_combat

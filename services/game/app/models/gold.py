@@ -47,6 +47,7 @@ class GoodsLedger(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint(
-            "cause = 'guest_purge' AND amount_milli <= 0", name="ck_goods_ledger_sink"
+            "cause IN ('guest_purge', 'tutorial_destroy') AND amount_milli <= 0",
+            name="ck_goods_ledger_sink",
         ),
     )

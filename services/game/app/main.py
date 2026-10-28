@@ -25,6 +25,7 @@ from app.api.market import router as market_router
 from app.api.players import router as players_router
 from app.api.realms import router as realms_router
 from app.api.travel import router as travel_router
+from app.api.tutorial import router as tutorial_router
 from app.auth import verify_access_token
 from app.config import CORS_ORIGINS, VERSION
 from app.content.runtime import CONTENT
@@ -75,6 +76,7 @@ app.include_router(actions_router)
 app.include_router(equipment_router)
 app.include_router(realms_router)
 app.include_router(travel_router)
+app.include_router(tutorial_router)
 
 
 @app.middleware("http")

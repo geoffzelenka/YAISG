@@ -11,6 +11,18 @@
       "name": "Ashen Reach",
       "starting_node_id": "node.ashen_t1",
       "isolated": false
+    },
+    {
+      "id": "realm.tutorial_1",
+      "name": "Placeholder Island 1",
+      "starting_node_id": "node.tutorial_1",
+      "isolated": true
+    },
+    {
+      "id": "realm.tutorial_2",
+      "name": "Placeholder Island 2",
+      "starting_node_id": "node.tutorial_2",
+      "isolated": true
     }
   ]
 }

@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 from jwt import PyJWK
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
+from world_helpers import create_world_character
 
 from app.api.estates import purchase_upgrade
 from app.api.realms import get_realms
@@ -135,10 +136,12 @@ async def estate_client(
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            created = await client.post(
-                "/characters",
+            created = await create_world_character(
+                client,
+                factory,
                 headers=headers,
-                json={"name": "Estate Hero", "realm_id": "realm.verdant_vale"},
+                name="Estate Hero",
+                realm_id="realm.verdant_vale",
             )
             assert created.status_code == 201
             # Estate tests keep currency independent of new-player grants.
@@ -1379,10 +1382,12 @@ async def test_postgres_two_buyers_one_estate(
     client, factory, _, clock = estate_client
     if factory.kw["bind"].dialect.name != "postgresql":
         pytest.skip("Concurrent row locking requires PostgreSQL")
-    created = await client.post(
-        "/characters",
+    created = await create_world_character(
+        client,
+        factory,
         headers={"Authorization": f"Bearer {_token()}"},
-        json={"name": "Second Buyer", "realm_id": "realm.verdant_vale"},
+        name="Second Buyer",
+        realm_id="realm.verdant_vale",
     )
     assert created.status_code == 201
     with factory() as session:

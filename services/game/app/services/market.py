@@ -17,6 +17,8 @@ def market_contexts(
     session: Session, realm: RealmState, content: ContentIndex
 ) -> dict[str, tuple[Line | None, QuoteContext]]:
     """Assign every item to at most one line, preserving its stored budget."""
+    if realm.isolated:
+        return {}
     with localcontext() as precision:
         precision.prec = PRECISION
         return _market_contexts(session, realm, content)

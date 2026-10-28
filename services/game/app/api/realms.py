@@ -227,12 +227,38 @@ async def get_realms(
     return result
 
 
+def _private_realm_access(
+    session: DatabaseSession,
+    content: ContentIndex,
+    realm_id: str,
+    player: CurrentPlayer,
+) -> None:
+    """Hide templates and reject every non-owner reference to private instances."""
+    state = session.get(RealmState, realm_id)
+    if state is not None and state.isolated:
+        character = get_character(session, player.id)
+        if state.owner_character_id != character.id:
+            raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    elif state is None:
+        try:
+            isolated = content.realm(realm_id).isolated
+        except KeyError:
+            return
+        if isolated:
+            raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+
+
 @router.get("/realms/{realm_id}", response_model=RealmResponse)
 async def get_realm(
-    realm_id: str, request: Request, now: ServerNow, session: DatabaseSession
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+    player: CurrentPlayer,
 ) -> RealmResponse:
     """Return a realm's public identity and acquired tag stack."""
     content = _content(request)
+    _private_realm_access(session, content, realm_id, player)
     state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     try:
         content.realm(state.template_id if state else realm_id)
@@ -397,9 +423,11 @@ async def tag_credits(
     request: Request,
     now: ServerNow,
     session: DatabaseSession,
+    player: CurrentPlayer,
 ) -> TagCreditsResponse:
     """Return credits from the attempt that granted the currently held tag."""
     content = _content(request)
+    _private_realm_access(session, content, realm_id, player)
     state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if state is None and realm_id not in {realm.id for realm in content.realms}:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
@@ -444,10 +472,15 @@ class RealmEstateResponse(BaseModel):
 
 @router.get("/realms/{realm_id}/estates", response_model=list[RealmEstateResponse])
 async def get_realm_estates(
-    realm_id: str, request: Request, now: ServerNow, session: DatabaseSession
+    realm_id: str,
+    request: Request,
+    now: ServerNow,
+    session: DatabaseSession,
+    player: CurrentPlayer,
 ) -> list[RealmEstateResponse]:
     """List player and realm estates after resolving the realm lazily."""
     content = _content(request)
+    _private_realm_access(session, content, realm_id, player)
     state = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if state is None and realm_id not in {realm.id for realm in content.realms}:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
@@ -550,6 +583,8 @@ async def get_market(
     realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if realm is None:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    if realm.isolated:
+        raise api_error(409, "NO_MARKET_ACCESS", "Isolated realms have no market")
     recompute_lines(session, realm, content)
     session.flush()
     result = MarketResponse.model_validate(market_view(session, realm, content))
@@ -576,6 +611,8 @@ async def get_market_quote(
     realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if realm is None:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
+    if realm.isolated:
+        raise api_error(409, "NO_MARKET_ACCESS", "Isolated realms have no market")
     recompute_lines(session, realm, content)
     session.flush()
     contexts = market_contexts(session, realm, content)

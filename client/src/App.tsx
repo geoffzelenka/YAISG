@@ -62,28 +62,25 @@ function describeModifier(modifier: Modifier): string {
   return `${prefix}${modifier.value}% ${labels[modifier.type]}${skill}`
 }
 
-function CharacterCreation() {
+export function CharacterCreation() {
   const content = useContent()
   const create = useCreateCharacter()
   const [name, setName] = useState('')
-  const [realmId, setRealmId] = useState('')
   if (content.status === 'loading') return <p>Loading realms…</p>
   if (content.status === 'error') return <p>Unable to load realms.</p>
-  const realms = content.content.realms.realms
-  const selectedRealm = realmId || realms[0]?.id || ''
   return (
     <main className="mx-auto min-h-screen max-w-3xl p-8">
       <h1 className="text-3xl font-bold text-emerald-400">
         Create your character
       </h1>
       <p className="mt-2 text-slate-400">
-        Choose a name and a realm for your estate.
+        Choose a name to begin on Tutorial Island.
       </p>
       <form
         className="mt-8 space-y-6"
         onSubmit={(event) => {
           event.preventDefault()
-          create.mutate({ name: name.trim(), realm_id: selectedRealm })
+          create.mutate({ name: name.trim() })
         }}
       >
         <label className="block">
@@ -98,46 +95,7 @@ function CharacterCreation() {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
-        <fieldset>
-          <legend className="mb-3 font-semibold">Starting realm</legend>
-          <div className="grid gap-3 md:grid-cols-2">
-            {realms.map((realm) => (
-              <label
-                className="cursor-pointer rounded-xl border border-slate-700 bg-slate-900 p-4 has-[:checked]:border-emerald-400"
-                key={realm.id}
-              >
-                <input
-                  className="mr-2"
-                  type="radio"
-                  name="realm"
-                  value={realm.id}
-                  checked={selectedRealm === realm.id}
-                  onChange={() => setRealmId(realm.id)}
-                />
-                <strong>{realm.name}</strong>
-                {(() => {
-                  const node = content.content.development.nodes.find(
-                    (candidate) => candidate.id === realm.starting_node_id,
-                  )
-                  return (
-                    <>
-                      <p className="mt-2 text-sm text-slate-400">
-                        Tags: {node?.inherent_tags.join(', ') || 'none'}
-                      </p>
-                      <ul className="mt-2 text-sm text-slate-300">
-                        {node?.modifiers.map((modifier, index) => (
-                          <li key={`${modifier.type}-${index}`}>
-                            {describeModifier(modifier)}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )
-                })()}
-              </label>
-            ))}
-          </div>
-        </fieldset>
+
         {create.error && (
           <p className="text-red-300" role="alert">
             {create.error instanceof CharacterApiError
@@ -145,10 +103,7 @@ function CharacterCreation() {
               : 'Unable to create character.'}
           </p>
         )}
-        <button
-          className="primary-button"
-          disabled={create.isPending || !selectedRealm}
-        >
+        <button className="primary-button" disabled={create.isPending}>
           {create.isPending ? 'Creating…' : 'Create character'}
         </button>
       </form>

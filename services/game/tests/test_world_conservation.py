@@ -13,7 +13,7 @@ from test_gold import BULLION, REALM
 from test_realms import NOW
 from test_travel import ApiFixture
 from world_accounting import GoodsAccounting, goods
-from world_helpers import create_empty_world
+from world_helpers import create_empty_world, create_world_character
 from world_scenario import (
     OPERATIONS,
     OTHER_REALM,
@@ -61,8 +61,8 @@ async def setup_scenario(
         ("World Buyer", REALM, headers),
         ("World Seller", OTHER_REALM, partner_headers),
     ):
-        response = await client.post(
-            "/characters", headers=auth, json={"name": name, "realm_id": realm_id}
+        response = await create_world_character(
+            client, factory, headers=auth, name=name, realm_id=realm_id
         )
         assert response.status_code == 201, response.text
         with factory() as session:
@@ -184,6 +184,8 @@ async def test_random_world_operations_conserve_goods_and_gold(
         # Keep the specification independent of the generator: deleting an
         # operation from OPERATIONS must not silently delete its coverage check.
         required = {
+            "tutorial_creation",
+            "tutorial_departure",
             "guest_purge",
             "exploration",
             "key_trade",

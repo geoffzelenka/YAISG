@@ -82,6 +82,25 @@
               "quantity_max": 1
             }
           ]
+        },
+        {
+          "id": "tutorial.gather",
+          "name": "Gather Placeholder Sprigs",
+          "skill_id": "gathering",
+          "unlock_level": 1,
+          "inputs": [],
+          "xp": 1,
+          "tier": 1,
+          "base_cycle_ms": 3000,
+          "requires": {},
+          "outputs": [
+            {
+              "item_id": "item.fake_sprig",
+              "chance": 1,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
         }
       ],
       "category": "gathering"
@@ -221,6 +240,84 @@
               "quantity_max": 1
             }
           ]
+        },
+        {
+          "id": "tutorial.clothes",
+          "name": "Make Placeholder Clothes",
+          "skill_id": "manufacturing",
+          "unlock_level": 1,
+          "inputs": [
+            {
+              "selector": {
+                "item": "item.fake_sprig"
+              },
+              "quantity": 1
+            }
+          ],
+          "xp": 1,
+          "tier": 1,
+          "base_cycle_ms": 1000,
+          "requires": {},
+          "outputs": [
+            {
+              "item_id": "item.tutorial_clothes",
+              "chance": 1,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        },
+        {
+          "id": "tutorial.club",
+          "name": "Make Placeholder Club",
+          "skill_id": "manufacturing",
+          "unlock_level": 1,
+          "inputs": [
+            {
+              "selector": {
+                "item": "item.fake_sprig"
+              },
+              "quantity": 1
+            }
+          ],
+          "xp": 1,
+          "tier": 1,
+          "base_cycle_ms": 1000,
+          "requires": {},
+          "outputs": [
+            {
+              "item_id": "item.tutorial_club",
+              "chance": 1,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
+        },
+        {
+          "id": "tutorial.food",
+          "name": "Make Placeholder Food",
+          "skill_id": "manufacturing",
+          "unlock_level": 1,
+          "inputs": [
+            {
+              "selector": {
+                "item": "item.worthless_button"
+              },
+              "quantity": 1
+            }
+          ],
+          "xp": 1,
+          "tier": 1,
+          "base_cycle_ms": 1000,
+          "requires": {},
+          "outputs": [
+            {
+              "item_id": "item.fake_food",
+              "chance": 1,
+              "quantity_min": 1,
+              "quantity_max": 1
+            }
+          ]
         }
       ],
       "category": "manufacturing"
@@ -240,6 +337,18 @@
           "xp": 1,
           "resolver": "combat",
           "combatant_id": "placeholder.target",
+          "location": "Placeholder Grounds"
+        },
+        {
+          "id": "tutorial.fight",
+          "name": "Fight Placeholder Dummy",
+          "skill_id": "melee",
+          "tier": 1,
+          "unlock_level": 1,
+          "base_cycle_ms": 2000,
+          "xp": 1,
+          "resolver": "combat",
+          "combatant_id": "tutorial.dummy",
           "location": "Placeholder Grounds"
         }
       ]

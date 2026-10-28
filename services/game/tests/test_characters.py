@@ -111,7 +111,7 @@ async def _post(client: AsyncClient, token: str, name: str, realm: str) -> Respo
     return await client.post(
         "/characters",
         headers={"Authorization": f"Bearer {token}"},
-        json={"name": name, "realm_id": realm},
+        json={"name": name},
     )
 
 
@@ -123,7 +123,8 @@ async def test_creation_builds_complete_profile(
     assert response.status_code == 201
     profile = response.json()
     assert profile["character"]["name"] == "Demo Hero"
-    assert profile["character"]["current_realm_id"] == "realm.verdant_vale"
+    assert profile["character"]["current_realm_id"].startswith("realm.tutorial_1:")
+    assert profile["character"]["tutorial_step"] == "gather"
     assert "realm_id" not in profile["character"]
     assert profile["gold"] == 0
     fixed = {
@@ -137,7 +138,7 @@ async def test_creation_builds_complete_profile(
         "exploration",
     }
     assert fixed <= {skill["id"] for skill in profile["skills"]}
-    assert profile["realm"]["name"] == "Verdant Vale"
+    assert profile["realm"]["name"] == "Placeholder Island 1"
     assert profile["estate"]["upgrade_slots"] == 4
     assert profile["estate"]["installed_upgrades"] == []
     assert profile["caps"]["inventory_slots"] == {"base": 30.0, "effective": 30.0}
@@ -189,7 +190,6 @@ async def test_profile_caps_include_installed_upgrade_bonus(
         ("x", "realm.verdant_vale", "INVALID_NAME"),
         ("Bad_Name", "realm.verdant_vale", "INVALID_NAME"),
         ("   ", "realm.verdant_vale", "INVALID_NAME"),
-        ("Valid Name", "realm.missing", "UNKNOWN_REALM"),
     ],
 )
 async def test_creation_validation_errors(
@@ -244,10 +244,10 @@ async def test_concurrent_double_submit_creates_exactly_one_character(
         assert session.scalar(select(func.count()).select_from(Character)) == 1
 
 
-async def test_concurrent_first_characters_share_realm_initialization(
+async def test_concurrent_first_characters_create_independent_islands(
     client: tuple[AsyncClient, sessionmaker[Session]],
 ) -> None:
-    """A realm-state initialization race does not become a name error."""
+    """Concurrent creation gives each character two private realms."""
     # Start this race before either the world or any character exists.
     with client[1]() as session:
         session.execute(delete(WorldState))
@@ -260,17 +260,10 @@ async def test_concurrent_first_characters_share_realm_initialization(
 
     assert [response.status_code for response in responses] == [201, 201]
     with client[1]() as session:
-        assert (
-            session.scalar(
-                select(func.count())
-                .select_from(RealmState)
-                .where(RealmState.id == "realm.verdant_vale")
-            )
-            == 1
-        )
-        assert set(session.scalars(select(RealmState.id))) == {
-            realm.id for realm in app.state.content.realms if not realm.isolated
-        }
+        realms = list(session.scalars(select(RealmState)))
+        assert len(realms) == 4
+        assert all(realm.isolated for realm in realms)
+        assert len({realm.owner_character_id for realm in realms}) == 2
         assert session.scalar(select(func.count()).select_from(Character)) == 2
 
 
@@ -374,7 +367,15 @@ async def test_visitor_profile_excludes_estate_modifiers(
 ) -> None:
     """An estate elsewhere contributes neither form nor upgrade modifiers."""
     token = _token()
-    created = await _post(client[0], token, "Visiting Hero", "realm.verdant_vale")
+    from world_helpers import create_world_character
+
+    created = await create_world_character(
+        client[0],
+        client[1],
+        headers={"Authorization": f"Bearer {token}"},
+        name="Visiting Hero",
+        realm_id="realm.verdant_vale",
+    )
     estate_id = uuid.UUID(created.json()["estate"]["id"])
     with client[1]() as session:
         estate = session.get(Estate, estate_id)

@@ -136,7 +136,7 @@ async def test_character_creation_rejects_unavailable_realm(
         with factory() as session:
             session.execute(delete(RealmState).where(RealmState.id == realm_id))
             session.commit()
-        expected_status, expected_code = 503, "WORLD_STATE_INCOMPLETE"
+        expected_status, expected_code = 422, "INVALID_REQUEST"
     else:
         content = app.state.content
         realms = dict(content._realms_by_id)
@@ -146,7 +146,7 @@ async def test_character_creation_rejects_unavailable_realm(
             "content",
             replace(content, _realms_by_id=MappingProxyType(realms)),
         )
-        expected_status, expected_code = 422, "UNKNOWN_REALM"
+        expected_status, expected_code = 422, "INVALID_REQUEST"
     response = await client.post(
         "/characters",
         headers={"Authorization": f"Bearer {_token()}"},

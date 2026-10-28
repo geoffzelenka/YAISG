@@ -40,13 +40,36 @@ def route(
     content: ContentIndex,
 ) -> list[dict[str, str]]:
     """Find the least base-time path, then fewest edges, then edge ids."""
+    _, separator, owner = origin.partition(":")
+
+    def isolated(identifier: str) -> bool:
+        try:
+            return content.realm(identifier).isolated
+        except KeyError:
+            return False
+
+    if isolated(origin):
+        if not separator:
+            raise ValueError("Tutorial travel requires an owned instance")
+        destination_owner = destination.partition(":")[2]
+        if destination_owner != owner or not isolated(destination):
+            raise ValueError("Tutorial travel cannot leave its owner instances")
+    elif isolated(destination):
+        raise ValueError("World travel cannot enter tutorial realms")
     graph: defaultdict[str, list[tuple[str, MapEdge]]] = defaultdict(list)
     for edge in content.map.edges:
         if edge.terrain not in profile.terrains or edge.min_travel_level > level:
             continue
-        graph[edge.a].append((edge.b, edge))
+        a, b = edge.a, edge.b
+        if separator:
+            if not isolated(a) or not isolated(b):
+                continue
+            a, b = f"{a}:{owner}", f"{b}:{owner}"
+        elif isolated(a) or isolated(b):
+            continue
+        graph[a].append((b, edge))
         if not edge.one_way:
-            graph[edge.b].append((edge.a, edge))
+            graph[b].append((a, edge))
     queue: list[tuple[Fraction, int, tuple[str, ...], str]] = [
         (Fraction(0), 0, (), origin)
     ]
