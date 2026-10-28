@@ -63,11 +63,8 @@ function describeModifier(modifier: Modifier): string {
 }
 
 export function CharacterCreation() {
-  const content = useContent()
   const create = useCreateCharacter()
   const [name, setName] = useState('')
-  if (content.status === 'loading') return <p>Loading realms…</p>
-  if (content.status === 'error') return <p>Unable to load realms.</p>
   return (
     <main className="mx-auto min-h-screen max-w-3xl p-8">
       <h1 className="text-3xl font-bold text-emerald-400">

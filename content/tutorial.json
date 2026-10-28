@@ -58,15 +58,15 @@
     },
     {
       "id": "kickoff",
-      "hint": "Kick off the placeholder raft site.",
+      "hint": "Pay two placeholder sprigs and the seed gold to start the raft site.",
       "done_when": {
         "kind": "project_kicked_off",
         "id": "project.tutorial_raft"
       }
     },
     {
-      "id": "fund",
-      "hint": "Fund the site and wait for its facility.",
+      "id": "build",
+      "hint": "Wait a few seconds for the raft site to finish.",
       "done_when": {
         "kind": "tag_present",
         "id": "facility.tutorial_raft"

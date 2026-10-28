@@ -59,8 +59,8 @@ it('shows Maximum level when XP to next is null', () => {
   expect(screen.queryByText(/to next/)).not.toBeInTheDocument()
 })
 
-it('creates a character with a name and no starting realm', () => {
-  creation.status = 'ready'
+it('creates a character with a name and no starting realm while content is loading', () => {
+  creation.status = 'loading'
   render(<CharacterCreation />)
   fireEvent.change(screen.getByLabelText('Character name'), {
     target: { value: '  Island Hero  ' },

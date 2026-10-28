@@ -220,6 +220,12 @@ def depart(
         )
     )
     _dispose_orders(session, orders, audit)
+    # Stop every island action before deleting any key or realm it can reference.
+    session.execute(
+        delete(ActiveActionRecord).where(
+            ActiveActionRecord.character_id == character.id
+        )
+    )
     _dispose_island_keys(session, character, isolated, audit)
     _dispose_estates(session, other_estates, isolated, content, audit)
     wallet = session.get(Currency, character.id)
@@ -237,11 +243,6 @@ def _dispose_island_keys(
     session: Session, character: Character, isolated: set[str], audit: PurgeAudit
 ) -> None:
     """Destroy local discoveries and settle listing custody before realm deletion."""
-    session.execute(
-        delete(ActiveActionRecord).where(
-            ActiveActionRecord.character_id == character.id
-        )
-    )
     instances = list(
         session.scalars(select(ItemInstance).where(ItemInstance.realm_id.in_(isolated)))
     )

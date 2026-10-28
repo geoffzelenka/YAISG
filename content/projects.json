@@ -82,17 +82,17 @@
       "id": "project.tutorial_raft",
       "name": "Placeholder Raft Site",
       "grants_tag": "facility.tutorial_raft",
-      "cost": [
-        {
-          "selector": {
-            "item": "item.fake_sprig"
-          },
-          "quantity": 2
-        }
-      ],
+      "cost": [],
       "kickoff": {
         "gold": 10,
-        "goods": [],
+        "goods": [
+          {
+            "selector": {
+              "item": "item.fake_sprig"
+            },
+            "quantity": 2
+          }
+        ],
         "who": "anyone"
       },
       "build_seconds": 2,

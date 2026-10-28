@@ -1,12 +1,16 @@
 """World setup for tests that isolate character and estate behavior."""
 
+import uuid
 from dataclasses import replace
 from datetime import datetime
 
 from httpx import AsyncClient, Response
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.content.loader import ContentIndex
+from app.main import app
+from app.models import Character, Estate, RealmState
 from app.services.world import create_world
 
 
@@ -37,14 +41,6 @@ async def create_world_character(
     These fixtures test world mechanics, not the tutorial. No tutorial rewards or
     departure rules are bypassed in production; this is explicit test setup.
     """
-    import uuid
-
-    from httpx import Response
-    from sqlalchemy import delete
-
-    from app.main import app
-    from app.models import Character, Estate, RealmState
-
     response = await client.post("/characters", headers=headers, json={"name": name})
     if response.status_code != 201:
         return response

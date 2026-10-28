@@ -36,6 +36,8 @@ from app.services.actions import (
     load_character_state,
     resolve_character,
 )
+from app.services.realms import prepare_sqlite_write
+from app.services.tutorial import advance_steps, create_island, instance_id
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 _VALID_NAME = re.compile(r"^[A-Za-z0-9 ]{3,20}$")
@@ -172,8 +174,6 @@ async def create_character(
 ) -> ProfileResponse:
     """Atomically create the caller's initial character state."""
     content = _content(request)
-    from app.services.realms import prepare_sqlite_write
-
     prepare_sqlite_write(session)
     if session.scalar(select(Character.id).where(Character.player_id == player.id)):
         raise api_error(409, "CHARACTER_EXISTS", "This player already has a character")
@@ -184,8 +184,6 @@ async def create_character(
             "INVALID_NAME",
             "Name must be 3–20 characters using letters, numbers, and spaces",
         )
-    from app.services.tutorial import create_island, instance_id
-
     character_id = uuid.uuid4()
     realm_id = instance_id(content.tutorial.realm_1, character_id)
     estate_id = uuid.uuid4()
@@ -394,8 +392,6 @@ async def get_profile(
     character = _character_for_player(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
-    from app.services.tutorial import advance_steps
-
     advance_steps(session, character, content)
     session.commit()
     return _profile(session, content, character, now)

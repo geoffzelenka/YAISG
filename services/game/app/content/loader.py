@@ -683,6 +683,8 @@ def load_content(content_dir: Path) -> ContentIndex:
         or tutorial.raft_form not in forms_by_id
     ):
         raise ContentError("unknown tutorial raft project or form")
+    if projects[tutorial.raft_site_project].cost:
+        raise ContentError("tutorial raft site must charge its full cost at kickoff")
     camp = forms_by_id.get(progression.tutorial_camp_form)
     if (
         camp is None

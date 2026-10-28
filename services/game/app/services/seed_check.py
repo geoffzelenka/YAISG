@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.content.loader import ContentIndex
+from app.content.runtime import CONTENT
 from app.content.schemas import DecayStage
 from app.db import Base
 from app.engine.market import quote
@@ -40,7 +41,9 @@ def check_seed(content: ContentIndex, *, days: int = 30) -> list[SeedReport]:
             create_world(session, content, start)
             realms = list(session.scalars(select(RealmState).order_by(RealmState.id)))
             unhealthy: set[str] = set()
-            unfunded: set[str] = set()
+            arrival_bids = {
+                realm_id: "passed" for realm_id in content.tutorial.arrival_realms
+            }
             interval = timedelta(days=1) / content.economy.tick.per_day
             for tick in range(1, days * content.economy.tick.per_day + 1):
                 for realm in realms:
@@ -52,7 +55,7 @@ def check_seed(content: ContentIndex, *, days: int = 30) -> list[SeedReport]:
                             and quote(context, item_id, "sell", 1).max_quantity > 0
                             for item_id, (_, context) in contexts.items()
                         ):
-                            unfunded.add(realm.id)
+                            arrival_bids[realm.id] = "failed"
                     if realm.decay_stage not in (DecayStage.FED, DecayStage.STRAINED):
                         unhealthy.add(realm.id)
                         break
@@ -70,7 +73,7 @@ def check_seed(content: ContentIndex, *, days: int = 30) -> list[SeedReport]:
                         )
                     },
                     realm.id in unhealthy,
-                    "failed" if realm.id in unfunded else "passed",
+                    arrival_bids.get(realm.id, "n/a"),
                 )
                 for realm in realms
             ]
@@ -80,8 +83,6 @@ def check_seed(content: ContentIndex, *, days: int = 30) -> list[SeedReport]:
 
 def main() -> None:
     """Print operator holdings and return a failing exit status for starvation."""
-    from app.content.runtime import CONTENT
-
     reports = check_seed(CONTENT)
     for report in reports:
         print(

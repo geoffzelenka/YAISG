@@ -508,3 +508,22 @@ def test_loader_requires_equipped_tool_class(tmp_path: Path) -> None:
     _write_json(items_path, items)
     with pytest.raises(ContentError, match="unknown tool class"):
         load_content(directory)
+
+
+def test_tutorial_raft_project_rejects_remaining_contribution_cost(
+    tmp_path: Path,
+) -> None:
+    """A raft site cannot regress to funding that can erode after spending its seed."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "projects.json"
+    projects = json.loads(path.read_text())
+    tutorial = json.loads((directory / "tutorial.json").read_text())
+    raft = next(
+        p for p in projects["projects"] if p["id"] == tutorial["raft_site_project"]
+    )
+    raft["cost"] = raft["kickoff"]["goods"]
+    raft["kickoff"]["goods"] = []
+    _write_json(path, projects)
+    with pytest.raises(ContentError, match="full cost at kickoff"):
+        load_content(directory)

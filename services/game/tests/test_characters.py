@@ -15,6 +15,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from jwt import PyJWK
 from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
+from world_helpers import create_world_character
 
 from app.auth import jwks_cache
 from app.db import Base, get_db
@@ -367,8 +368,6 @@ async def test_visitor_profile_excludes_estate_modifiers(
 ) -> None:
     """An estate elsewhere contributes neither form nor upgrade modifiers."""
     token = _token()
-    from world_helpers import create_world_character
-
     created = await create_world_character(
         client[0],
         client[1],

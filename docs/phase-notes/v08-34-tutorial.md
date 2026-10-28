@@ -32,8 +32,7 @@
   and goods audits have no foreign keys to deleted holders. Already-consumed
   project contributions are historical totals, not physical goods destroyed twice.
 - Placeholder content teaches gathering, clothes/club crafting and equipping,
-  a winnable dummy fight, making food from its drop, travel, project kickoff and
-  funding, short construction, raft transformation and departure. The dummy's
+  a winnable dummy fight, making food from its drop, travel, full project payment at kickoff, short construction, raft transformation and departure. The dummy's
   short fight does not depend on the unresolved zero-HP regeneration ruling.
 - Activated arrival-realm funded tier-one bids at every simulated seed-check tick.
   The synthetic arrival workshop balances production/upkeep and starts below
@@ -53,7 +52,7 @@
   Updated test_concurrent_first_characters_create_independent_islands and added
   client test "creates a character with a name and no starting realm".
 
-- SQLite make ci passes: auth 35, game 828, client 101, with dialect-specific
+- SQLite make ci passes: auth 35, game 832, client 101, with dialect-specific
   skips. Formatting, lint, strict types, client build, script checks and content
   lint pass. Disposable SQLite db-reset, subsequent head upgrade, Alembic schema
   comparison, application lifespan/manifest smoke test and thirty-day seed-check
@@ -67,6 +66,40 @@
   late realm. The failure was a stale exact-SQL test hook, not a production
   enumeration/locking regression; retry and subsequent settlement assertions
   remain unchanged.
+
+- Review round 1: the full island run now travels 2 → 1 → 2 before kickoff and
+  asserts exactly one tutorial_seed row and exactly the kickoff gold. Departure
+  cleanup independently asserts Currency.gold == 0 and the distinct wallet -2
+  (realm_id=None), treasury -5 and order -3 tutorial_destroy rows.
+- Added test_island_market_exclusions_override_market_access_tag: injects an
+  active market-access tag, then requires NO_MARKET_ACCESS for commodity order
+  placement, key listing/purchase, realm market/quote and gift/trade. All wallets,
+  treasuries, escrow and key/listing custody remain unchanged after every refusal.
+  Foreign private market/quote reads require UNKNOWN_REALM before lazy resolve.
+- Added test_postgres_concurrent_arrival_resolves_grant_seed_once and
+  test_postgres_double_depart_destroys_gold_once. Independent sessions queue on a
+  held character lock; pg_blocking_pids confirms both actual waits before release.
+  The tests pin one seed grant and one successful departure without repeated sinks.
+- Implemented the human's upfront-payment ruling. Added
+  test_raft_kickoff_pays_all_costs_and_completes_after_five_days_idle (also verifies
+  MISSING_INPUTS consumes no gold),
+  test_empty_contribution_cost_builds_immediately_and_completes_on_time (a normal
+  world project, not a tutorial special case), and
+  test_tutorial_raft_project_rejects_remaining_contribution_cost. Existing general
+  begin_build and timestamp completion already support empty contribution costs;
+  no special-case resolver was introduced. Conservation operations now transfer
+  and independently account for the two kickoff goods consumed.
+- Review nits: non-arrival seed-check reports say n/a; private market/quote reads
+  check ownership first; departure explicitly removes actions before removing
+  referenced keys/realms; phase-added local imports are at module level; creation
+  no longer waits on useContent. The client test submits while content is loading.
+
+
+- Review verification: SQLite make ci passes (auth 35, game 832, client 101),
+  including the generated conservation suite. Thirty-day seed-check passes,
+  with n/a for non-arrivals. Mutation checks independently removed the once-only
+  seed guard, wallet zeroing and global-market isolation guard; each was rejected
+  by its corresponding regression test. All three mutations were restored.
 
 ## Removed
 
@@ -89,6 +122,15 @@
   realms, with signed goods audits. Unrelated world keys remain held; a listing
   tied to a deleted realm is explicitly settled before deletion. Inconsistent
   foreign custody or action references abort atomically rather than orphaning it.
+
+- §20.2, human ruling: "the kickoff requirements for raft building should cover
+  the whole cost of the project and the length of that project should be short,
+  like a few seconds (just enough for the player to feel like something is
+  happening)". The raft-site project charges its 10 gold and two sprigs entirely
+  at kickoff, has no contribution cost and builds in two seconds. This prevents
+  idle erosion from consuming the only seed-funded attempt. Loader validation
+  rejects a raft site with any contribution cost. Hints now describe upfront
+  payment and waiting for construction, with no contribution step.
 
 ## Deviations
 

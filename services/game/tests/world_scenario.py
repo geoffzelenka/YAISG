@@ -41,6 +41,7 @@ from app.models import (
 from app.services.caravans import run_caravan_pass
 from app.services.guest_purge import purge_guests
 from app.services.market_lifecycle import run_market_lifecycle
+from app.services.projects import kickoff
 from app.services.realm_ticks import (
     complete_tick_transition,
     load_context,
@@ -51,6 +52,7 @@ from app.services.realms import (
     resolve_realm,
     start_transition,
 )
+from app.services.tutorial import instance_id, seed_arrival
 
 SPRIG = "item.fake_sprig"
 PLANK = "item.fake_plank"
@@ -738,9 +740,6 @@ class WorldScenario:
         await self.check()
         if operation == "tutorial_creation":
             return
-        from app.services.projects import kickoff
-        from app.services.tutorial import instance_id, seed_arrival
-
         with self.factory() as session:
             character = session.get(Character, identifier)
             assert character is not None
@@ -754,6 +753,10 @@ class WorldScenario:
             seed_arrival(session, character, self.content, self.now)
             realm = session.get(RealmState, realm_id)
             assert realm is not None
+            donor = session.get(Inventory, (self.characters[0], SPRIG))
+            assert donor is not None and donor.quantity >= 3
+            donor.quantity -= 2
+            session.add(Inventory(character_id=identifier, item_id=SPRIG, quantity=2))
             kickoff(
                 session,
                 character,
@@ -769,6 +772,7 @@ class WorldScenario:
                 RealmStore(realm_id=realm_id, item_id=SPRIG, quantity_milli=1000)
             )
             session.commit()
+        self.audit.add("projects", SPRIG, -2000)
         await self.check()
         response = await self.client.post(
             "/tutorial/depart",

@@ -16,6 +16,7 @@ from app.content.schemas import CapType, DecayStage
 from app.engine import ActiveAction, CharacterState, ResolveResult, resolve
 from app.engine.core import BeltStack, InstanceState, action_definition
 from app.engine.health import maximum_hp, regenerate_hp
+from app.errors import api_error
 from app.models import (
     ActiveActionRecord,
     Character,
@@ -32,6 +33,7 @@ from app.models import (
     RewardLog,
 )
 from app.services.realms import finalize_realms, prepare_sqlite_write, stack_tags
+from app.services.tutorial import seed_arrival
 
 
 @dataclass(frozen=True)
@@ -360,8 +362,6 @@ def resolve_locked_character(
     if character is None:
         raise RuntimeError(f"character {character_id} does not exist")
     resolved_content = content or CONTENT
-    from app.errors import api_error
-
     for realm_id in additional_realm_ids or ():
         realm = session.get(RealmState, realm_id)
         if (
@@ -433,8 +433,6 @@ def resolve_locked_character(
         random.Random(secrets.randbits(256)),
     )
     _persist_state(session, character_id, new_state)
-    from app.services.tutorial import seed_arrival
-
     seed_arrival(session, character, resolved_content, now)
     session.flush()
     if (

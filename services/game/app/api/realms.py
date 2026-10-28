@@ -14,6 +14,7 @@ from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import CapBonus, DecayStage, Modifier
 from app.engine.estates import sale_price
+from app.engine.market import quote
 from app.engine.tags import TagHolder, active_tags
 from app.errors import api_error
 from app.models import (
@@ -27,6 +28,7 @@ from app.models import (
 )
 from app.services.actions import resolve_character
 from app.services.estates import estate_ask_provider, persisted_estate_value
+from app.services.market import market_contexts, market_view
 from app.services.projects import (
     active_run,
     contribute_character,
@@ -40,6 +42,7 @@ from app.services.realms import (
     prepare_sqlite_write,
 )
 from app.services.stores import recompute_lines
+from app.services.trade import gift, trade
 from app.services.votes import call_vote, cast_vote
 
 router = APIRouter(tags=["realms"])
@@ -577,9 +580,8 @@ async def get_market(
     player: CurrentPlayer,
 ) -> MarketResponse:
     """Inspect any realm market from any location."""
-    from app.services.market import market_view
-
     content = _content(request)
+    _private_realm_access(session, content, realm_id, player)
     realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if realm is None:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
@@ -604,10 +606,8 @@ async def get_market_quote(
     quantity: int = Query(gt=0),
 ) -> MarketQuoteResponse:
     """Return an integrated quote and the currently executable maximum."""
-    from app.engine.market import quote
-    from app.services.market import market_contexts
-
     content = _content(request)
+    _private_realm_access(session, content, realm_id, player)
     realm = finalize_realm(session, realm_id, now, content, prepare_sqlite=True)
     if realm is None:
         raise api_error(404, "UNKNOWN_REALM", "The realm does not exist")
@@ -653,8 +653,6 @@ async def trade_market(
     session: DatabaseSession,
 ) -> MarketQuoteResponse:
     """Resolve and serialize holdings before executing a whole trade."""
-    from app.services.trade import trade
-
     content = _content(request)
     character = get_character(session, player.id)
     _check_realm_id(session, content, realm_id)
@@ -683,8 +681,6 @@ async def gift_treasury(
     session: DatabaseSession,
 ) -> None:
     """Give gold to the realm where the resolved character is present."""
-    from app.services.trade import gift
-
     content = _content(request)
     character = get_character(session, player.id)
     _check_realm_id(session, content, realm_id)
