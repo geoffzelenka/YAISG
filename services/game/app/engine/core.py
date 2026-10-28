@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -51,6 +52,21 @@ class BeltStack:
 
 
 @dataclass(frozen=True)
+class InstanceState:
+    """Pure projection of a held key; identity is supplied by the adapter."""
+
+    id: str
+    template_id: str
+    realm_id: str
+    payload: Mapping[str, Any]
+    uses_total: int
+    uses_remaining: int
+    state: str
+    created_at: datetime
+    bound_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class CharacterState:
     """All character data needed by the pure action engine."""
 
@@ -80,6 +96,7 @@ class CharacterState:
     buff_expiries: Mapping[str, datetime] = field(default_factory=dict)
     stance: str | None = None
     cap_bonuses: Mapping[CapType, float] = field(default_factory=dict)
+    instances: tuple[InstanceState, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -95,6 +112,8 @@ class ActiveAction:
 class StopReason(StrEnum):
     """Reasons resolution automatically ends an action."""
 
+    KEY_DEPLETED = "KEY_DEPLETED"
+    KEY_INVALIDATED = "KEY_INVALIDATED"
     OUT_OF_AMMO = "OUT_OF_AMMO"
     DEFEATED = "DEFEATED"
     COMBAT_OFFLINE_CAP = "OFFLINE_CAP"
@@ -277,6 +296,10 @@ def proficiency_pct(
 ) -> float:
     """Look up the speed-only proficiency percentage."""
     category = content.skill(action.skill_id).category
+    if category == "exploration":
+        from app.engine.exploration import tier_benefit
+
+        return tier_benefit(state, content).cycle_speed_pct
     return content.progression.proficiency[category][
         tier_distance(action, state, content)
     ]
@@ -538,7 +561,17 @@ def _resolve_uniform(
 ) -> ResolveResult:
     """Resolve full uniform cycles, recomputing values at level changes."""
     content, active, caps = ctx.content, ctx.active, ctx.caps
+    from app.engine.exploration import discover, exploration_buffs, use_exploration_belt
+
     inventory = {item_id: qty for item_id, qty in state.inventory.items() if qty > 0}
+    initial_instances = len(state.instances)
+    instances = list(state.instances)
+    belt = dict(state.belt)
+    buffs = dict(state.buff_expiries)
+    discoveries = 0
+    lost_keys = 0
+    key_id = active.meta.get("key_id")
+    key = next((key for key in instances if key.id == key_id), None)
     xp = dict(state.skills_xp)
     levels = dict(state.skill_levels)
     consumed: defaultdict[str, int] = defaultdict(int)
@@ -561,6 +594,9 @@ def _resolve_uniform(
             boundary, active.last_resolved_at + timedelta(milliseconds=resolved_ms)
         )
         modifiers = consumable_modifiers_at(state, evaluation_at)
+        state = replace(
+            state, instances=tuple(instances), belt=belt, buff_expiries=buffs
+        )
         current_state = replace(
             state,
             skills_xp=xp,
@@ -596,6 +632,9 @@ def _resolve_uniform(
                 boundary = expiry
                 effective_level = None
                 continue
+        if key is not None and key.uses_remaining == 0:
+            stop_reason = StopReason.KEY_DEPLETED
+            break
         if resolved_ms + cycle_ms > available_ms:
             break
         payment = input_payment(inventory, action, content)
@@ -620,7 +659,10 @@ def _resolve_uniform(
         cycle_overflow = False
         for item_id, quantity in rewards.drops:
             current_quantity = inventory.get(item_id, 0)
-            has_slot = item_id in inventory or len(inventory) < caps.inventory_slots
+            has_slot = (
+                item_id in inventory
+                or len(inventory) + len(instances) < caps.inventory_slots
+            )
             available_stack = max(
                 0, content.item(item_id).stack_limit - current_quantity
             )
@@ -632,12 +674,48 @@ def _resolve_uniform(
             if discarded:
                 overflowed[item_id] += discarded
                 cycle_overflow = True
+        if content.skill(action.skill_id).category == "exploration":
+            cycle_at = active.last_resolved_at + timedelta(
+                milliseconds=resolved_ms + cycle_ms
+            )
+            belt, buffs, used = use_exploration_belt(current_state, cycle_at, content)
+            for identifier, amount in used.items():
+                consumed[identifier] += amount
+            current_state = replace(
+                current_state, inventory=inventory, belt=belt, buff_expiries=buffs
+            )
+            found, lost, count = discover(
+                current_state, action, content, cycle_at, rng, caps.inventory_slots
+            )
+            instances.extend(found)
+            discoveries += count
+            lost_keys += lost
+            cycle_overflow = cycle_overflow or bool(lost)
+            state = replace(
+                state,
+                timed_buffs=exploration_buffs(buffs, content),
+            )
+            effective_level = None
+        if key is not None:
+            updated = replace(
+                key,
+                uses_remaining=key.uses_remaining - 1,
+                bound_at=key.bound_at
+                or active.last_resolved_at + timedelta(milliseconds=resolved_ms),
+            )
+            if not updated.uses_remaining:
+                updated = replace(updated, state="depleted")
+            instances[instances.index(key)] = updated
+            key = updated
         cycles += 1
         resolved_ms += cycle_ms
         # Capacity loss takes precedence when the same cycle also exhausts inputs:
         # it is the first irreversible constraint encountered while granting rewards.
         if cycle_overflow:
             stop_reason = StopReason.INVENTORY_FULL
+            break
+        if key is not None and key.uses_remaining == 0:
+            stop_reason = StopReason.KEY_DEPLETED
             break
         if action.inputs and input_payment(inventory, action, content) is None:
             stop_reason = StopReason.INPUTS_EXHAUSTED
@@ -648,6 +726,9 @@ def _resolve_uniform(
         skills_xp=xp,
         skill_levels=levels,
         inventory=inventory,
+        instances=tuple(instances),
+        belt=belt,
+        buff_expiries=buffs,
         consumable_modifiers=consumable_modifiers_at(
             state, active.last_resolved_at + timedelta(milliseconds=available_ms)
         ),
@@ -676,6 +757,13 @@ def _resolve_uniform(
         state=new_state,
         active=new_active,
         elapsed_ms=max(0, resolved_ms),
+        details={
+            "discoveries": discoveries,
+            "keys_created": len(instances) - initial_instances,
+            "keys_lost": lost_keys,
+        }
+        if cycles and content.skill(action.skill_id).category == "exploration"
+        else {},
     )
 
 
@@ -706,6 +794,26 @@ ACTION_RESOLVERS: Mapping[str, ActionResolver] = MappingProxyType(
 )
 
 
+def action_definition(
+    action_id: str, meta: Mapping[str, Any], content: ContentIndex
+) -> Action:
+    """Resolve ordinary content or the private server-authored key projection."""
+    if "key_action" in meta:
+        return Action.model_validate_json(json.dumps(meta["key_action"]))
+    return content.action(action_id)
+
+
+def key_requirements(
+    action: Action, state: CharacterState, content: ContentIndex
+) -> tuple[ErrorCode, ...]:
+    """Keys replace public offering/facility gates with private access checks."""
+    return tuple(
+        code
+        for code in unmet_requirements(action, state, content)
+        if code not in {ErrorCode.NOT_OFFERED_HERE, ErrorCode.MISSING_FACILITY}
+    )
+
+
 def resolve(
     state: CharacterState,
     active: ActiveAction,
@@ -716,10 +824,47 @@ def resolve(
     resolvers: Mapping[str, ActionResolver] = ACTION_RESOLVERS,
 ) -> tuple[CharacterState, ActiveAction | None, ResolveResult]:
     """Clip elapsed time, dispatch by content resolver, and apply shared stops."""
-    action = content.action(active.action_id)
+    action = action_definition(active.action_id, active.meta, content)
+    if "key_id" in active.meta:
+        key = next(
+            (key for key in state.instances if key.id == active.meta["key_id"]), None
+        )
+        reason = None
+        if key is None or key.state == "invalid":
+            reason = StopReason.KEY_INVALIDATED
+        elif key.state == "depleted" and action.resolver != "combat":
+            reason = StopReason.KEY_DEPLETED
+        if reason is not None:
+            return (
+                state,
+                None,
+                ResolveResult(
+                    0,
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    reason,
+                    state=state,
+                    details={"stop_reason": reason},
+                ),
+            )
+        if key is not None and key.realm_id != state.current_realm_id:
+            return (
+                state,
+                None,
+                ResolveResult(
+                    0, {}, {}, {}, {}, {}, StopReason.REQUIREMENT_LOST, state=state
+                ),
+            )
     requirement_lost = any(
         code != ErrorCode.MISSING_INPUTS
-        for code in unmet_requirements(action, state, content)
+        for code in (
+            key_requirements(action, state, content)
+            if "key_id" in active.meta
+            else unmet_requirements(action, state, content)
+        )
     )
     if now < active.last_resolved_at:
         reason = StopReason.REQUIREMENT_LOST if requirement_lost else None

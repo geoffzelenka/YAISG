@@ -139,6 +139,33 @@
         "journey_speed_pct": 40,
         "supply_reduction_pct": 40
       }
+    ],
+    "exploration": [
+      {
+        "cycle_speed_pct": 0,
+        "keys_per_discovery_bonus": 0,
+        "rarity_weight_shift": 0.0
+      },
+      {
+        "cycle_speed_pct": 5,
+        "keys_per_discovery_bonus": 1,
+        "rarity_weight_shift": 0.1
+      },
+      {
+        "cycle_speed_pct": 10,
+        "keys_per_discovery_bonus": 2,
+        "rarity_weight_shift": 0.2
+      },
+      {
+        "cycle_speed_pct": 15,
+        "keys_per_discovery_bonus": 3,
+        "rarity_weight_shift": 0.30000000000000004
+      },
+      {
+        "cycle_speed_pct": 20,
+        "keys_per_discovery_bonus": 4,
+        "rarity_weight_shift": 0.4
+      }
     ]
   },
   "basic_mobile_form": "form.camp",

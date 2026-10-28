@@ -215,6 +215,9 @@ class ActiveActionRecord(Base):
         ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
     )
     action_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_instance_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("item_instances.id")
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

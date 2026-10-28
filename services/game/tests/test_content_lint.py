@@ -175,6 +175,15 @@ def test_empty_skills_report_blocked_and_combat_is_skipped() -> None:
     assert {r.skill_id for r in reports} == {
         s.id for s in content.skills if s.category != "combat"
     }
+    # Exploration now has authored actions; explicitly exercise an empty skill.
+    content = replace(
+        content,
+        skills=tuple(
+            s.model_copy(update={"actions": ()}) if s.id == "exploration" else s
+            for s in content.skills
+        ),
+    )
+    reports = lint_content(content)
     empty = next(s for s in content.skills if s.category != "combat" and not s.actions)
     report = next(r for r in reports if r.skill_id == empty.id)
     assert report.optimal_hours is None

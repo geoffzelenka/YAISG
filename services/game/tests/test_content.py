@@ -224,6 +224,7 @@ def test_only_known_content_routes_are_public() -> None:
 
     assert manifest.status_code == 200
     assert set(manifest.json()["packs"]) == {
+        "exploration",
         "combatants",
         "skills",
         "items",
@@ -364,6 +365,10 @@ def test_off_tier_output_and_resolver_defaults(tmp_path: Path) -> None:
     # Keep class selectors from matching this deliberately higher-tier by-product.
     items["items"][0]["classes"] = ["byproduct"]
     _write_json(path, items)
+    exploration_path = directory / "exploration.json"
+    exploration = json.loads(exploration_path.read_text())
+    exploration["templates"][0]["gather"]["outputs"][0]["off_tier"] = True
+    _write_json(exploration_path, exploration)
     content = load_content(directory)
     assert content.action(action["id"]).resolver == "uniform"
 

@@ -43,6 +43,7 @@ const packs: Record<string, unknown> = {
     belt_slots: 2,
   },
   map: { edges: [], positions: {} },
+  exploration: { templates: [], actions: [] },
   combatants: { combatants: [] },
   estate_forms: {
     forms: [

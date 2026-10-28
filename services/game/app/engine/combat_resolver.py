@@ -69,6 +69,10 @@ class CombatSimulation:
         self.xp = dict(state.skills_xp)
         self.levels = dict(state.skill_levels)
         self.inventory = dict(state.inventory)
+        self.instances = list(state.instances)
+        self.key = next(
+            (key for key in self.instances if key.id == self.meta.get("key_id")), None
+        )
         self.belt = dict(state.belt)
         # CharacterBuff rows, loaded into state, are runtime truth.
         # meta["buffs"] is summary-only and must not restore stale expiries.
@@ -122,6 +126,19 @@ class CombatSimulation:
 
     def spawn(self) -> None:
         """Refill pools only when a new encounter begins."""
+        if self.key is not None:
+            if self.key.uses_remaining == 0:
+                self.reason = StopReason.KEY_DEPLETED
+                return
+            updated = replace(
+                self.key,
+                uses_remaining=self.key.uses_remaining - 1,
+                bound_at=self.key.bound_at or self.at,
+            )
+            if not updated.uses_remaining:
+                updated = replace(updated, state="depleted")
+            self.instances[self.instances.index(self.key)] = updated
+            self.key = updated
         self.meta.update(
             opponent_hp=self.opponent.max_hp,
             offense=_pack(self._offense_pool),
@@ -268,7 +285,9 @@ class CombatSimulation:
             quantity = self.rng.randint(drop.quantity_min, drop.quantity_max)
             current = self.inventory.get(drop.item_id, 0)
             has_slot = (
-                current > 0 or len(self.inventory) < self.ctx.caps.inventory_slots
+                current > 0
+                or len(self.inventory) + len(self.instances)
+                < self.ctx.caps.inventory_slots
             )
             granted = (
                 min(
@@ -342,6 +361,8 @@ class CombatSimulation:
             self.loot()
             self.offense = self.defense = Fraction()
             self.meta["respawn_remaining_ms"] = self.opponent.respawn_ms
+            if self.key is not None and self.key.uses_remaining == 0:
+                self.reason = self.reason or StopReason.KEY_DEPLETED
         if self.hp == 0:
             self.summary["defeats"] += 1
             self.reason = StopReason.DEFEATED
@@ -368,6 +389,8 @@ class CombatSimulation:
                     continue
             if self.meta["opponent_hp"] == 0:
                 self.spawn()
+                if self.reason is not None:
+                    break
                 self.offense = _unpack(self.meta["offense"])
                 self.defense = _unpack(self.meta["defense"])
             values = self.parameters()
@@ -424,6 +447,7 @@ class CombatSimulation:
             skills_xp=self.xp,
             skill_levels=self.levels,
             inventory=self.inventory,
+            instances=tuple(self.instances),
             belt=self.belt,
             utility_quantity=self.utility,
             buff_expiries=self.buffs,

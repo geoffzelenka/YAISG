@@ -83,7 +83,8 @@ def trade(
             item_id
         ).stack_limit or (
             stack is None
-            and len(state.inventory) >= resolve_caps(state, content).inventory_slots
+            and (len(state.inventory) + len(state.instances))
+            >= resolve_caps(state, content).inventory_slots
         ):
             raise api_error(
                 409, "INVENTORY_FULL", "The trade does not fit your inventory"

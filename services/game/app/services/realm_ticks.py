@@ -29,19 +29,23 @@ from app.engine.stores import (
 )
 from app.engine.tags import TagHolder, economy_tags
 from app.models import (
+    ActiveActionRecord,
     Character,
     Estate,
     EstateLarder,
     EstateOwnershipHistory,
     EstateUpgrade,
     GoldLedger,
+    ItemInstance,
     RealmContribution,
     RealmProjectRun,
     RealmShipment,
     RealmState,
     RealmStore,
     RealmTag,
+    RewardLog,
 )
+from app.services.keys import invalidate_keys, realm_keys
 from app.services.projects import apply_project_payment, begin_build
 from app.services.realms import (
     TimedEventKind,
@@ -61,6 +65,10 @@ class RealmTickContext:
     """
 
     active_run: RealmProjectRun | None
+    keys: list[ItemInstance] = field(default_factory=list)
+    key_actions: list[ActiveActionRecord] = field(default_factory=list)
+    stopped_key_actions: list[ActiveActionRecord] = field(default_factory=list)
+    key_logs: list[RewardLog] = field(default_factory=list)
     shipments: list[RealmShipment] = field(default_factory=list)
     ledger: list[GoldLedger] = field(default_factory=list)
     estates: list[Estate] = field(default_factory=list)
@@ -108,6 +116,14 @@ def load_context(
         or content.estate_form(estate.form_id).production
     ]
     context = RealmTickContext(active_run=run, estates=estates)
+    context.keys = realm_keys(session, realm.id)
+    context.key_actions = list(
+        session.scalars(
+            select(ActiveActionRecord)
+            .join(ItemInstance, ActiveActionRecord.key_instance_id == ItemInstance.id)
+            .where(ItemInstance.realm_id == realm.id)
+        )
+    )
     context.shipments = list(
         session.scalars(
             select(RealmShipment)
@@ -196,6 +212,9 @@ def persist_context(
         session.delete(tag)
     for upgrade in context.removed_upgrades:
         session.delete(upgrade)
+    for action in context.stopped_key_actions:
+        session.delete(action)
+    session.add_all(context.key_logs)
     session.add_all(context.ledger)
     session.add_all(context.replacements)
     session.add_all(context.replacement_histories)
@@ -503,7 +522,14 @@ def decay_realm(
             realm.shed_progress = min(1.0, realm.shed_progress)
             regression = content.development_node(realm.current_node_id).regression
             if regression is not None:
-                start_transition(realm, regression.to_node, "regression", now, content)
+                start_transition(
+                    realm,
+                    regression.to_node,
+                    "regression",
+                    now,
+                    content,
+                    keys=context.keys,
+                )
                 realm.decay_stage = DecayStage.REGRESSED.value
 
 
@@ -613,6 +639,12 @@ def complete_tick_transition(
                 context.removed_tags.append(tag)
         elif pending["cause"] == "regression":
             tag.node_id = node.id
+    stopped, logs = invalidate_keys(context.keys, context.key_actions, now)
+    context.stopped_key_actions.extend(stopped)
+    context.key_logs.extend(logs)
+    context.key_actions = [
+        action for action in context.key_actions if action not in stopped
+    ]
     realm.current_node_id = node.id
     if pending["cause"] == "regression":
         realm.gauge = realm.shed_progress = 0

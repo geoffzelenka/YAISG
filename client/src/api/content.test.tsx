@@ -19,10 +19,12 @@ const manifest = {
     progression: 'j',
     tags: 'k',
     economy: 'l',
+    exploration: 'n',
     combatants: 'm',
   },
 }
 const packBodies = {
+  exploration: { templates: [], actions: [] },
   combatants: { combatants: [] },
   skills: { skills: [] },
   items: { items: [] },

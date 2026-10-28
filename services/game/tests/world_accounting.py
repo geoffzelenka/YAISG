@@ -25,6 +25,7 @@ from app.models import (
     CharacterEquipment,
     EstateLarder,
     Inventory,
+    ItemInstance,
     MarketOrder,
     RealmShipment,
     RealmState,
@@ -37,6 +38,9 @@ from app.services.realm_ticks import RealmTickContext, daily_share, production_f
 def goods(session: Session) -> Counter[str]:
     """Count each physical holder in milli-items, never audit/history rows."""
     result: Counter[str] = Counter()
+    for instance in session.scalars(select(ItemInstance)):
+        # Invalid/depleted keys remain physical trophies until explicit disposal.
+        result[f"instance:{instance.template_id}"] += 1000
     for held in session.scalars(select(CharacterBelt)):
         result[held.item_id] += held.quantity * 1000
     for equipped in session.scalars(select(CharacterEquipment)):

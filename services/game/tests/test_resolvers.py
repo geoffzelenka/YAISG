@@ -41,6 +41,7 @@ def test_uniform_matches_pre_refactor_goldens() -> None:
         # Compare every pre-existing field; the new seam adds explicit state,
         # consumed time and details without changing those recorded outcomes.
         actual = json.loads(json.dumps(asdict(state), default=str))
+        assert actual.pop("instances") == []
         assert actual.pop("hp") is None
         assert actual.pop("equipment") == {}
         assert actual.pop("utility_quantity") == 0

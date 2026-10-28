@@ -3,6 +3,7 @@
 from app.content.loader import ContentIndex
 from app.engine.core import CharacterState, resolve_caps
 from app.engine.equipment import EquipmentError
+from app.engine.inventory import inventory_fits
 
 
 def belt_capacity(
@@ -35,11 +36,7 @@ def transfer_stack(
         if not inventory[item_id]:
             del inventory[item_id]
     limit = resolve_caps(state, content).inventory_slots
-    if (len(inventory) > limit and len(inventory) > len(state.inventory)) or any(
-        amount > content.item(identifier).stack_limit
-        for identifier, amount in inventory.items()
-        if amount > state.inventory.get(identifier, 0)
-    ):
+    if not inventory_fits(state, inventory, limit, content):
         raise EquipmentError(
             "INVENTORY_FULL", "Inventory cannot hold the returned stack"
         )

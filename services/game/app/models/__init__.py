@@ -18,6 +18,7 @@ from app.models.character import (
 )
 from app.models.equipment import CharacterBelt, CharacterBuff, CharacterEquipment
 from app.models.gold import GoldLedger
+from app.models.instances import ItemInstance
 from app.models.market import MarketMatch, MarketOrder
 from app.models.player import Player
 from app.models.shipments import RealmShipment
@@ -57,3 +58,5 @@ __all__ += ["MarketMatch", "MarketOrder"]
 
 
 __all__ += ["CharacterEquipment", "CharacterBelt", "CharacterBuff"]
+
+__all__ += ["ItemInstance"]

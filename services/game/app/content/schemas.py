@@ -165,6 +165,108 @@ class Action(ContentModel):
         return self
 
 
+class IntegerRange(ContentModel):
+    """An inclusive positive roll range."""
+
+    min: int = Field(gt=0)
+    max: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def ascending(self) -> "IntegerRange":
+        """Reject reversed ranges."""
+        if self.min > self.max:
+            raise ValueError("range must ascend")
+        return self
+
+
+class GatherDiscovery(ContentModel):
+    """An inline gathering action rolled into a private key."""
+
+    skill_id: str
+    tier: int = Field(ge=1, le=5)
+    unlock_level: int = Field(ge=1, le=100)
+    base_cycle_ms: int = Field(gt=0)
+    outputs: tuple[Drop, ...]
+    xp: int = Field(gt=0)
+    tool_class: str | None = None
+
+
+class CombatDiscovery(ContentModel):
+    """An encounter made accessible by a key."""
+
+    combatant_id: str
+
+
+class DiscoveryTemplate(ContentModel):
+    """Content-only source for independently rolled keys."""
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    flavour: str
+    rarity: int = Field(ge=1)
+    kind: Literal["gather", "combat"]
+    gather: GatherDiscovery | None = None
+    combat: CombatDiscovery | None = None
+    uses: IntegerRange
+    keys: IntegerRange
+    requires_realm_tags: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def matching_kind(self) -> "DiscoveryTemplate":
+        """Require exactly the payload matching the template kind."""
+        if (self.gather is not None) != (self.kind == "gather") or (
+            self.combat is not None
+        ) != (self.kind == "combat"):
+            raise ValueError("discovery payload must match kind")
+        return self
+
+
+class DiscoveryWeight(ContentModel):
+    """One weighted candidate in an expedition's discovery table."""
+
+    template_id: str
+    weight: float = Field(gt=0, allow_inf_nan=False)
+
+
+class DiscoveryConsumableEffect(ContentModel):
+    """A timed buff's discovery chance or rarity shaping effect."""
+
+    item_id: str
+    chance_pct: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    weight_shift: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def one_effect(self) -> "DiscoveryConsumableEffect":
+        """Author exactly one effect per entry."""
+        if (self.chance_pct is None) == (self.weight_shift is None):
+            raise ValueError("exactly one discovery consumable effect is required")
+        return self
+
+
+class ExplorationAction(Action):
+    """An ordinary uniform action with a discovery table."""
+
+    discovery_chance: float = Field(ge=0, le=1, allow_inf_nan=False)
+    table: tuple[DiscoveryWeight, ...] = Field(min_length=1)
+    consumable_effects: tuple[DiscoveryConsumableEffect, ...] = ()
+    resolver: Literal["uniform"] = "uniform"
+
+
+class ExplorationPack(ContentModel):
+    """Discovery templates and node-offered exploration actions."""
+
+    templates: tuple[DiscoveryTemplate, ...]
+    actions: tuple[ExplorationAction, ...]
+
+
+class ExplorationTierBenefit(ContentModel):
+    """Absolute group P benefits at an Exploration tier."""
+
+    cycle_speed_pct: float = Field(ge=0, allow_inf_nan=False)
+    keys_per_discovery_bonus: int = Field(ge=0)
+    rarity_weight_shift: float = Field(ge=0, allow_inf_nan=False)
+
+
 class Skill(ContentModel):
     """A skill and its available actions."""
 
@@ -685,7 +787,10 @@ class ProgressionPack(ContentModel):
     basic_mobile_form: str = Field(min_length=1)
     visit_profile: TravelProfile
     travel_xp_per_second: float = Field(gt=0, allow_inf_nan=False)
-    tier_benefits: dict[Literal["travel"], tuple[TravelTierBenefit, ...]]
+    tier_benefits: dict[
+        Literal["travel", "exploration"],
+        tuple[TravelTierBenefit, ...] | tuple[ExplorationTierBenefit, ...],
+    ]
     lint: LintConfig
     tier_thresholds: tuple[StrictInt, ...]
     tier_titles: tuple[str, ...]
@@ -714,8 +819,12 @@ class ProgressionPack(ContentModel):
             raise ValueError("thresholds must strictly increase")
         if len(t) != len(self.tier_titles) or not all(self.tier_titles):
             raise ValueError("each tier requires a title")
-        if len(self.tier_benefits.get("travel", ())) != len(self.tier_thresholds):
-            raise ValueError("Travel benefits require one row per tier")
+        if set(self.tier_benefits) != {"travel", "exploration"}:
+            raise ValueError("Travel and Exploration tier benefits are required")
+        for name, rows in self.tier_benefits.items():
+            kind = TravelTierBenefit if name == "travel" else ExplorationTierBenefit
+            if len(rows) != len(t) or not all(isinstance(row, kind) for row in rows):
+                raise ValueError(f"{name} benefits require one matching row per tier")
         if len(self.combat_effectiveness) != len(self.tier_thresholds):
             raise ValueError(
                 "combat effectiveness requires one entry per tier distance"

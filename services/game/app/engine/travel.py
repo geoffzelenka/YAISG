@@ -16,6 +16,7 @@ from app.content.schemas import (
     MapEdge,
     ModifierType,
     TravelProfile,
+    TravelTierBenefit,
 )
 from app.engine.core import (
     CharacterState,
@@ -113,6 +114,7 @@ def travel_total(
         state.skill_levels.get("travel", 1), content.progression.tier_thresholds
     )
     benefit = content.progression.tier_benefits["travel"][tier - 1]
+    assert isinstance(benefit, TravelTierBenefit)
     percent = (
         Fraction(str(benefit.journey_speed_pct))
         if kind == ModifierType.JOURNEY_SPEED_PCT

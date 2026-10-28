@@ -13,7 +13,7 @@ from app.clock import ServerNow
 from app.content.loader import ContentIndex
 from app.content.schemas import EquipmentSlot
 from app.engine.consumables import change_consumable
-from app.engine.core import effective_cycle_time
+from app.engine.core import action_definition, effective_cycle_time
 from app.engine.equipment import EquipmentError, change_equipment
 from app.errors import api_error
 from app.models import CharacterBelt, CharacterEquipment
@@ -59,7 +59,11 @@ def _change(
     content: ContentIndex = request.app.state.content
     resolution = resolve_character(session, character.id, now, content)
     active = resolution.active
-    if active is not None and content.action(active.action_id).resolver == "combat":
+    if (
+        active is not None
+        and action_definition(active.action_id, active.meta, content).resolver
+        == "combat"
+    ):
         raise api_error(
             409, "EQUIPMENT_IN_COMBAT", "Equipment cannot change during combat"
         )
@@ -90,12 +94,13 @@ def _change(
     changed_state = load_character_state(session, character.id, content, now)
     if (
         active is not None
-        and content.action(active.action_id).resolver == "uniform"
+        and action_definition(active.action_id, active.meta, content).resolver
+        == "uniform"
         and now >= as_utc(active.last_resolved_at)
     ):
         # Preserve fractional cycle progress, without applying the new speed to
         # wall time already spent under the old gear. Journeys snapshot paid edges.
-        action = content.action(active.action_id)
+        action = action_definition(active.action_id, active.meta, content)
         old_cycle = effective_cycle_time(action, state, content)
         new_cycle = effective_cycle_time(action, changed_state, content)
         fraction = (
@@ -103,7 +108,9 @@ def _change(
         )
         active.last_resolved_at = now - timedelta(milliseconds=fraction * new_cycle)
     if active is not None:
-        required_tool = content.action(active.action_id).requires.tool_class
+        required_tool = action_definition(
+            active.action_id, active.meta, content
+        ).requires.tool_class
         if (
             required_tool is not None
             and required_tool != changed_state.right_hand_tool_class
@@ -190,7 +197,10 @@ def _setup_stack(
     resolution = resolve_character(session, character.id, now, content)
     if (
         resolution.active is not None
-        and content.action(resolution.active.action_id).resolver == "combat"
+        and action_definition(
+            resolution.active.action_id, resolution.active.meta, content
+        ).resolver
+        == "combat"
     ):
         raise api_error(
             409, "EQUIPMENT_IN_COMBAT", "Consumable setup cannot change during combat"
