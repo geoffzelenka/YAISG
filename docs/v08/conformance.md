@@ -23,6 +23,13 @@ These authoritative rulings are separate from outstanding ratification:
 - 36, §23.6: load generation uses existing httpx + asyncio; metrics are plain
   JSON, without prometheus_client.
 - APScheduler was approved as a dependency (phase 14 records 2026-10-27).
+- Q3, 14 §14.4 / V§9.4.6 (ruled 2026-10-28): use a fixed amortization rate.
+  At kickoff, each cost line's per-tick realm payment is fixed at the original
+  requirement / (tick.per_day × realm_completion_days), capped at what the line
+  still needs and still taken only from stock above the reserve. An unhelped
+  project then completes in realm_completion_days. Player help makes it finish
+  sooner but does not reduce the per-tick draw. Not yet implemented: the code
+  still uses remaining / D, which decays geometrically. Follow-up F9.
 
 ## Vision traceability (§28)
 
@@ -329,7 +336,6 @@ No new gameplay decision is taken here.
 |---|---|---|
 | Q1 | 11 §13.3–13.4; 12 payment reading | Should build/transform gold go to the estate realm treasury? It currently does, following D14/conservation. |
 | Q2 | 12 §13.4 | Forbid zero-valued fixed forms? Formula permits zero buy/surrender prices, so strict loss cannot hold at zero. Formula retained; positive values tested. |
-| Q3 | 14 §14.4 / V§9.4.6 | Fixed amortization or remaining/D overlay? Literal remaining/D decays geometrically, leaves ~37% at D days, and rounding/erosion can prevent completion. No completion rule invented. |
 | Q4 | 16 §15.5 / V§9.4.8 (orchestrator question) | Required funded_total and visible weights allow close treasury estimates. Retain fields or change privacy/visibility requirements? Raw balances remain hidden. |
 | Q5 | 19 §12.5–12.6 / §14.7 | Ratify interim conflict precedence? A yes-majority with pending transition or vanished edge fails, fee retained, cooldown from exact close; existing transition preserved. |
 | Q6 | 17/22 §15.3 / §22 | Align NO_DEMAND statuses? Quote returns 400, trade 409; client handles both by code. |
@@ -352,6 +358,7 @@ None authorizes a new dependency. No §25 excluded feature was added.
 | F6 Content/lint projections | 09/18/26/27/28 → 36 | Consolidate tag/mint helpers; public lint projection API; style-specific standard gear; damage-type reference validation. Optimize selectors/gear/buff enumeration only with bottleneck evidence and preserved conservative upper bounds. |
 | F7 Read/API scale | 22/32 → 36 | Batched map health with server below_reserve; sparse key-market scan cursor/cap policy; transition-due buy commit-before-error and MARKET_RETRY automatic retry need explicit transaction/idempotency rules. Durable key-sale history is separate schema work, not a conformance requirement. |
 | F8 Reset/migration isolation | 01/28 → 36 | Host alias/DNS identity policy for destructive reset guard; decouple old stance migration from evolving application content loader. Existing guard and migration tests retained. |
+| F9 Project overlay amortization | 14 → Q3 ruling | Implement the Q3 ruling in tick step 5: fix each cost line's per-tick realm payment at kickoff (original requirement / (per_day × realm_completion_days), rounded up to whole milli-units), cap it at the remaining need and at stock above the reserve. Replace the pinned geometric test; make test_realm_overlay_completes_without_player_contributions cover the default hourly cadence and D > 1, and check that a fully funded line stops drawing. |
 
 ## Verification
 
