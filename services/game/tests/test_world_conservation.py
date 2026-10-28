@@ -185,6 +185,9 @@ async def test_random_world_operations_conserve_goods_and_gold(
         # operation from OPERATIONS must not silently delete its coverage check.
         required = {
             "exploration",
+            "key_trade",
+            "key_cancel",
+            "key_listing_invalidate",
             "key_use",
             "key_delete",
             "key_invalidate",

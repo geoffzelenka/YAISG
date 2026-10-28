@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     JSON,
@@ -13,9 +13,12 @@ from sqlalchemy import (
     String,
     Uuid,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.key_market import KeyListing
 
 
 class ItemInstance(Base):
@@ -43,6 +46,8 @@ class ItemInstance(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    listing: Mapped["KeyListing | None"] = relationship(passive_deletes="all")
+
     __table_args__ = (
         CheckConstraint(
             "uses_total > 0 AND uses_remaining >= 0 AND uses_remaining <= uses_total",

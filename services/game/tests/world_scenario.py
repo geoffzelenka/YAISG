@@ -56,6 +56,9 @@ PROJECT_IDS = (
 )
 OPERATIONS = (
     "exploration",
+    "key_trade",
+    "key_cancel",
+    "key_listing_invalidate",
     "key_use",
     "key_delete",
     "key_invalidate",
@@ -657,7 +660,12 @@ class WorldScenario:
         identifier = await self.discovery()
         if operation == "exploration":
             return
-        response = await self.post("/actions/start", {"key_id": identifier})
+        if operation == "key_listing_invalidate":
+            response = await self.post(
+                "/keys/market", {"instance_id": identifier, "price_gold": 3}
+            )
+        else:
+            response = await self.post("/actions/start", {"key_id": identifier})
         await self.check()
         if operation == "key_use":
             self.clock["now"] += timedelta(milliseconds=response.json()["cycle_ms"])
@@ -699,13 +707,35 @@ class WorldScenario:
                 session.commit()
                 key = session.get(ItemInstance, uuid.UUID(identifier))
                 assert key is not None and key.state == "invalid"
-            response = await self.post("/actions/stop")
-            assert response.json()["stop_reason"] == "KEY_INVALIDATED"
+            if operation == "key_listing_invalidate":
+                assert key.holder_character_id == self.characters[0]
+            else:
+                response = await self.post("/actions/stop")
+                assert response.json()["stop_reason"] == "KEY_INVALIDATED"
         await self.check()
 
     async def run(self, operation: str) -> None:
         """Execute one valid generated intent, checking all required preparation."""
-        if operation in {"exploration", "key_use", "key_delete", "key_invalidate"}:
+        if operation in {"key_trade", "key_cancel"}:
+            identifier = await self.discovery()
+            response = await self.post(
+                "/keys/market", {"instance_id": identifier, "price_gold": 3}
+            )
+            listing_id = response.json()["id"]
+            await self.check()
+            if operation == "key_trade":
+                await self.post(f"/keys/market/{listing_id}/buy", owner=1)
+            else:
+                await self.post(f"/keys/market/{listing_id}/cancel")
+            await self.check()
+            return
+        if operation in {
+            "exploration",
+            "key_use",
+            "key_delete",
+            "key_invalidate",
+            "key_listing_invalidate",
+        }:
             await self.key_operation(operation)
             return
         if operation in {"utility", "belt"}:

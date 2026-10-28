@@ -19,6 +19,7 @@ from app.api.content import PUBLIC_CONTENT_PATHS
 from app.api.content import router as content_router
 from app.api.equipment import router as equipment_router
 from app.api.estates import router as estates_router
+from app.api.key_market import router as key_market_router
 from app.api.keys import router as keys_router
 from app.api.market import router as market_router
 from app.api.players import router as players_router
@@ -64,6 +65,7 @@ app.state.content = CONTENT
 app.middleware("http")(log_request)
 app.include_router(admin_router)
 app.include_router(market_router)
+app.include_router(key_market_router)
 app.include_router(keys_router)
 app.include_router(content_router)
 app.include_router(players_router)
