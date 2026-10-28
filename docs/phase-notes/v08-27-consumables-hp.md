@@ -134,3 +134,14 @@ None.
 - Reused UNKNOWN_ITEM (404), MISSING_INPUTS, INVENTORY_FULL and
   EQUIPMENT_IN_COMBAT (409); malformed request shapes use INVALID_REQUEST (422).
 - No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Verified on SQLite (`make ci`: auth 15, game 675 passed / 20 skipped, client 90) and PostgreSQL (game 694 passed / 1 skipped); alembic check clean; app boot 200.
+- Review round 1: APPROVE, no blocking findings. Non-blocking hand-offs:
+  - `_load_state` filters active buffs by `hp_updated_at` as an implicit "now"; pass an explicit `now` (actions.py).
+  - `create_character` duplicates the max-HP formula; use `engine.health.maximum_hp`.
+  - The §7.5 fit check is duplicated in engine/consumables.py and engine/equipment.py; extract one shared helper.
+  - `regenerate_character_hp` skips the max-HP clamp when the clock moves backward; always clamp.
+  - No test covers `EQUIPMENT_IN_COMBAT` on `PUT /equipment/utility` or `/equipment/belt/{slot}`; prompt 29 (combat resolver) should add it.
+  - The belt column is named `slot`, but design §21 says `slot_index`. This is cosmetic; recorded here as a deviation.
