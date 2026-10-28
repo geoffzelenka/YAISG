@@ -243,12 +243,12 @@ async def test_upgrade_changes_subsequent_action_resolution(
         "/estates/me/upgrades/upgrade.painted_sign", headers=headers
     )
     started = await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "manufacturing.demo_crate"},
     )
     clock["now"] += timedelta(seconds=6)
-    resolved = await client.get("/characters/me/action", headers=headers)
+    resolved = await client.get("/actions/poll", headers=headers)
 
     assert purchased.status_code == 200
     assert purchased.json()["installed_upgrades"][0]["slot_index"] == 0

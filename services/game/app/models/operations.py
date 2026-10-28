@@ -9,7 +9,7 @@ from app.db import Base
 
 
 class MetricDelta(Base):
-    """Append-only counter deltas committed with the events they describe."""
+    """Counter deltas committed with events and compacted without losing totals."""
 
     __tablename__ = "metric_deltas"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -22,5 +22,5 @@ class MutationWindow(Base):
 
     __tablename__ = "mutation_windows"
     auth_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    window: Mapped[int] = mapped_column(BigInteger, index=True)
+    window: Mapped[int] = mapped_column(BigInteger)
     attempts: Mapped[int] = mapped_column(Integer)

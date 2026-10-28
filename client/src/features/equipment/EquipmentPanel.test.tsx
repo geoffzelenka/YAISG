@@ -102,7 +102,9 @@ it('blocks the left hand for a two-handed item and permits removing the right ha
     expect(screen.getByText('Unequip right hand')).toBeEnabled(),
   )
   expect(screen.getByText('Equip Shield in left hand')).toBeDisabled()
-  expect(screen.getAllByText('Requirements: Magic 4').length).toBeGreaterThan(0)
+  expect(
+    screen.getAllByText('Requirements: Magic 4 (current 4; met)').length,
+  ).toBeGreaterThan(0)
 })
 it('equips a two-handed item using the concrete right-hand slot and refreshes views', async () => {
   const { fetcher } = setup(false)
@@ -295,4 +297,31 @@ it('clears the inline threshold error when a healing trigger is corrected', () =
     quantity: 1,
     trigger: { hp_below_pct: 0.001 },
   })
+})
+
+it('keeps unequip and assigned stack returns disabled during combat', async () => {
+  setup(true, true, {
+    equipment: {
+      right_hand: { item_id: 'staff', quantity: 1 },
+      utility: { item_id: 'ammo', quantity: 3 },
+    },
+    belt: {
+      0: { item_id: 'food', quantity: 2, trigger: { hp_below_pct: 50 } },
+    },
+  })
+  expect(await screen.findByText('Unequip right hand')).toBeDisabled()
+  for (const button of await screen.findAllByText('Return stack'))
+    expect(button).toBeDisabled()
+  expect(
+    screen.getByRole('group', { name: 'Equipment doll' }),
+  ).toBeInTheDocument()
+  expect(screen.getByRole('group', { name: 'Position 1' })).toBeInTheDocument()
+})
+
+it('shows unmet equipment requirements with the default level for a missing skill', async () => {
+  setup(false, false, { skills: [] })
+  expect(
+    await screen.findByText('Requirements: magic 4 (current 1; unmet)'),
+  ).toBeInTheDocument()
+  expect(screen.getByText('Equip Staff in right hand')).toBeDisabled()
 })

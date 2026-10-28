@@ -48,7 +48,7 @@ async def test_rate_limit_shared_across_mutations_reads_free_and_window_resets(
     monkeypatch.setattr(rate_limit, "MUTATION_LIMIT", 2)
     clock.advance(timedelta(minutes=1))
     for _ in range(2):
-        result = await client.post("/characters/me/action", headers=headers, json={})
+        result = await client.post("/actions/start", headers=headers, json={})
         assert result.status_code == 422
     result = await client.delete(
         "/keys/00000000-0000-0000-0000-000000000000", headers=headers
@@ -59,10 +59,10 @@ async def test_rate_limit_shared_across_mutations_reads_free_and_window_resets(
     assert (await client.get("/characters/me", headers=headers)).status_code == 200
     clock.advance(timedelta(minutes=1))
     assert (
-        await client.post("/characters/me/action", headers=headers, json={})
+        await client.post("/actions/start", headers=headers, json={})
     ).status_code == 422
     assert (await client.get("/map")).status_code == 200
-    assert (await client.post("/characters/me/action", json={})).status_code == 401
+    assert (await client.post("/actions/start", json={})).status_code == 401
 
 
 @pytest.mark.anyio
