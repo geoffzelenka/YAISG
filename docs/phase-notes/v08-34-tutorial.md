@@ -59,6 +59,15 @@
   comparison, application lifespan/manifest smoke test and thirty-day seed-check
   pass. git diff --check is clean.
 
+- Pre-review fix: the PostgreSQL realm-list locking regression now selects the
+  two lowest non-isolated world ids, initializes only world rows, and expects
+  only world response ids. Its observed lock wait and higher-id NOWAIT probe
+  remain unchanged. The late-realm market regression now matches the enumeration
+  SELECT with its isolation WHERE clause and explicitly creates a non-isolated
+  late realm. The failure was a stale exact-SQL test hook, not a production
+  enumeration/locking regression; retry and subsequent settlement assertions
+  remain unchanged.
+
 ## Removed
 
 - Starting-realm request field and client picker. Starting-realm validity tests

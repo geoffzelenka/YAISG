@@ -593,9 +593,10 @@ async def test_get_realms_locks_in_id_order(
     if factory.kw["bind"].dialect.name != "postgresql":
         pytest.skip("Row lock ordering requires PostgreSQL")
     content = app.state.content
-    lower_id, higher_id = sorted(realm.id for realm in content.realms)
+    world_realms = [realm for realm in content.realms if not realm.isolated]
+    lower_id, higher_id = sorted(realm.id for realm in world_realms)[:2]
     with factory() as setup:
-        for realm in content.realms:
+        for realm in world_realms:
             if setup.get(RealmState, realm.id) is None:
                 setup.add(
                     RealmState(
@@ -655,7 +656,7 @@ async def test_get_realms_locks_in_id_order(
             worker.join(timeout=6)
     assert not worker.is_alive()
     assert thread_errors == []
-    assert returned_ids == [realm.id for realm in content.realms]
+    assert returned_ids == [realm.id for realm in world_realms]
 
 
 @pytest.mark.parametrize(
