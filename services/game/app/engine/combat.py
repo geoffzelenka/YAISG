@@ -11,6 +11,8 @@ from app.engine.core import CharacterState, scoped_bonus_total
 from app.engine.health import maximum_hp
 from app.engine.levels import tier_for_level
 
+COMBAT_SKILL_IDS = ("melee", "ranged", "magic", "accuracy", "defense", "vigor")
+
 
 class AttackRng(Protocol):
     """The random operations needed by one attack."""
@@ -53,7 +55,7 @@ def eff(skill_id: str, level: int, content: ContentIndex) -> float:
     """Apply the uniform tier multiplier to the five non-Vigor combat skills."""
     if skill_id == "vigor":
         return float(level)
-    if skill_id not in {"melee", "ranged", "magic", "accuracy", "defense"}:
+    if skill_id not in COMBAT_SKILL_IDS:
         raise ValueError(f"not a combat skill: {skill_id}")
     tier = tier_for_level(level, content.progression.tier_thresholds)
     return level * (1 + content.progression.combat.tier_multiplier * (tier - 1))

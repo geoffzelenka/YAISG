@@ -34,7 +34,6 @@ from app.models import (
 from app.services.actions import (
     character_max_hp,
     load_character_state,
-    lock_character_and_load_action,
     resolve_character,
 )
 
@@ -439,19 +438,26 @@ class StanceRequest(BaseModel):
     stance: str
 
 
-@router.put("/me/stance", response_model=StanceRequest)
+class StanceResponse(BaseModel):
+    """The character's persisted combat stance."""
+
+    stance: str
+
+
+@router.put("/me/stance", response_model=StanceResponse)
 async def change_stance(
     body: StanceRequest,
     request: Request,
+    now: ServerNow,
     player: CurrentPlayer,
     session: DatabaseSession,
-) -> StanceRequest:
-    """Persist a standing stance; the next resolution uses this setting."""
+) -> StanceResponse:
+    """Resolve prior work under the old stance, then persist the new setting."""
     content = _content(request)
     if body.stance not in content.progression.stances:
         raise api_error(422, "INVALID_STANCE", "Choose an authored combat stance")
     character = _character_for_player(session, player.id)
-    lock_character_and_load_action(session, character.id)
+    resolve_character(session, character.id, now, content)
     character.stance = body.stance
     session.commit()
-    return StanceRequest(stance=character.stance)
+    return StanceResponse(stance=character.stance)

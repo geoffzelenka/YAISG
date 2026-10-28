@@ -7,6 +7,7 @@ from types import MappingProxyType
 from app.content.loader import ContentIndex
 from app.content.schemas import Action, Combatant
 from app.engine.combat import (
+    COMBAT_SKILL_IDS,
     CombatStats,
     damage_on_hit,
     hit_chance,
@@ -71,10 +72,7 @@ def _standard_player(
     )
     state = CharacterState(
         {},
-        {
-            skill: action.unlock_level
-            for skill in ("melee", "ranged", "magic", "accuracy", "defense", "vigor")
-        },
+        {skill: action.unlock_level for skill in COMBAT_SKILL_IDS},
         {},
         0,
         form.id,

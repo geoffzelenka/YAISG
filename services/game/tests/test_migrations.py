@@ -1,6 +1,8 @@
 """The disposable v0.8 baseline works on either supported database."""
 
+import json
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -10,15 +12,22 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
+from app.config import CONTENT_DIR
+from app.content.runtime import CONTENT
 from app.db import Base
 from app.models import CharacterSkill
 
 
-def _alembic(database_url: str, *arguments: str) -> None:
+def _alembic(
+    database_url: str, *arguments: str, content_dir: Path | None = None
+) -> None:
+    environment = {**os.environ, "GAME_DATABASE_URL": database_url}
+    if content_dir is not None:
+        environment["CONTENT_DIR"] = str(content_dir)
     subprocess.run(
         [sys.executable, "-m", "alembic", *arguments],
         cwd=Path(__file__).parents[1],
-        env={**os.environ, "GAME_DATABASE_URL": database_url},
+        env=environment,
         check=True,
         capture_output=True,
         text=True,
@@ -134,3 +143,73 @@ def test_db_reset_refuses_shared_database(tmp_path: Path, backend: str) -> None:
     assert "game and auth must use different databases" in result.stderr
     if backend == "sqlite":
         assert path.read_text() == "must survive"
+
+
+def test_stance_migration_backfills_existing_characters(tmp_path: Path) -> None:
+    """Upgrade populated v08_0014 using the selected content's default stance."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "progression.json"
+    progression = json.loads(path.read_text())
+    default = next(
+        stance
+        for stance in CONTENT.progression.stances
+        if stance != CONTENT.progression.default_stance
+    )
+    progression["default_stance"] = default
+    path.write_text(json.dumps(progression))
+    url = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'stance.db'}")
+    engine = sa.create_engine(url)
+    try:
+        Base.metadata.drop_all(engine)
+        with engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+        _alembic(url, "upgrade", "v08_0014_consumables_hp")
+        metadata = sa.MetaData()
+        players = sa.Table(
+            "players",
+            metadata,
+            sa.Column("id", sa.Uuid(), primary_key=True),
+            sa.Column("auth_user_id", sa.Uuid()),
+            autoload_with=engine,
+        )
+        characters = sa.Table(
+            "characters",
+            metadata,
+            sa.Column("id", sa.Uuid(), primary_key=True),
+            sa.Column("player_id", sa.Uuid()),
+            sa.Column("home_estate_id", sa.Uuid()),
+            autoload_with=engine,
+        )
+        assert "stance" not in characters.c
+        player_id, character_id = uuid.uuid4(), uuid.uuid4()
+        with engine.begin() as connection:
+            connection.execute(
+                players.insert().values(
+                    id=player_id,
+                    auth_user_id=uuid.uuid4(),
+                    created_at=datetime.now(UTC),
+                )
+            )
+            connection.execute(
+                characters.insert().values(
+                    id=character_id,
+                    player_id=player_id,
+                    name="Existing Hero",
+                    name_normalized="existing hero",
+                    current_realm_id="placeholder",
+                    home_estate_id=uuid.uuid4(),
+                    created_at=datetime.now(UTC),
+                    hp=47,
+                )
+            )
+        _alembic(url, "upgrade", "head", content_dir=directory)
+        upgraded = sa.Table("characters", sa.MetaData(), autoload_with=engine)
+        with engine.connect() as connection:
+            assert connection.execute(
+                sa.select(upgraded.c.stance, upgraded.c.hp)
+            ).one() == (default, 47)
+        assert upgraded.c.stance.nullable is False
+        _alembic(url, "check", content_dir=directory)
+    finally:
+        engine.dispose()

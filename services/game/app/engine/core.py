@@ -313,18 +313,7 @@ def bonus_total(
 ) -> float:
     """Add matching percentages within groups, then multiply group factors."""
     category = content.skill(action.skill_id).category
-    effectiveness_types = {
-        ModifierType.COMBAT_ACCURACY_PCT,
-        ModifierType.COMBAT_POWER_PCT,
-        ModifierType.COMBAT_DEFENSE_PCT,
-    }
-    if category == "combat" and modifier_type in effectiveness_types:
-        percent = content.progression.combat_effectiveness[
-            tier_distance(action, state, content)
-        ]
-    else:
-        percent = 0
-    percent += (
+    percent = (
         proficiency_pct(action, state, content)
         if modifier_type == ModifierType.CYCLE_SPEED_PCT
         else 0

@@ -24,14 +24,14 @@ from test_estates import _wait_for_postgres_blocker
 from app.api import characters
 from app.config import CONTENT_DIR
 from app.content.combat_lint import lint_combat
-from app.content.loader import ContentError, load_content
+from app.content.loader import ContentError, ContentIndex, load_content
 from app.content.runtime import CONTENT
 from app.content.schemas import Armour, Equipment, Modifier, ModifierType, Weapon
 from app.engine.combat import attack, eff, hit_chance, opponent_stats, player_stats
-from app.engine.core import bonus_total
 from app.main import app
 from app.models import ActiveActionRecord, Character, CharacterEquipment, CharacterSkill
-from app.services.actions import as_utc, lock_character_and_load_action
+from app.services import actions as action_service
+from app.services.actions import Resolution, as_utc, lock_character_and_load_action
 
 __all__ = ["action_client", "anyio_backend"]
 
@@ -86,29 +86,27 @@ def test_attack_damage_partition(seed: int) -> None:
 
 
 def test_effectiveness_three_stats_only() -> None:
-    """P applies to accuracy/power/defense independently of other sources."""
-    action = CONTENT.action("placeholder.fight")
+    """Only accuracy, power and defense receive P, independently of G and C."""
     character = replace(state(), skill_levels={"melee": 95})
-    for kind in ModifierType:
-        expected = (
-            1.4
-            if kind
-            in {
-                ModifierType.COMBAT_ACCURACY_PCT,
-                ModifierType.COMBAT_POWER_PCT,
-                ModifierType.COMBAT_DEFENSE_PCT,
-            }
-            else 1
-        )
-        assert bonus_total(kind, action, character, CONTENT) == pytest.approx(expected)
+    gear = {"chest": "item.fake_armour"}
+    opponent = CONTENT.combatants[0]
+    base = player_stats(
+        character, gear, opponent.model_copy(update={"tier": 5}), CONTENT
+    )
+    effective = player_stats(character, gear, opponent, CONTENT)
+    assert effective.accuracy == pytest.approx(base.accuracy * 1.4)
+    assert effective.max_hit == int(base.max_hit * 1.4)
+    assert effective.defense == pytest.approx(base.defense * 1.4)
+    assert effective.max_hp == base.max_hp
+    assert effective.armour == base.armour == 10
+    assert effective.cycle_ms == base.cycle_ms
     character = replace(
         character,
         gear_modifiers=(Modifier(type=ModifierType.COMBAT_POWER_PCT, value=50),),
         consumable_modifiers=(Modifier(type=ModifierType.COMBAT_POWER_PCT, value=20),),
     )
-    assert bonus_total(
-        ModifierType.COMBAT_POWER_PCT, action, character, CONTENT
-    ) == pytest.approx(1.4 * 1.5 * 1.2)
+    stacked = player_stats(character, gear, opponent, CONTENT)
+    assert stacked.max_hit == int(base.max_hit * 1.4 * 1.5 * 1.2)
 
 
 def test_player_stats_weapon_armour_hp_and_speed() -> None:
@@ -310,27 +308,44 @@ async def test_combat_actions_wait_for_registered_resolver(
 
 
 @pytest.mark.anyio
-async def test_stance_change_leaves_elapsed_work_for_next_resolve(
+async def test_stance_change_resolves_elapsed_work_before_changing(
     action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Changing stance persists immediately without resolving old elapsed work."""
+    """A stance mutation credits past work under the old stance up to the change."""
     client, factory, clock, headers = action_client
     start = await client.post(
         "/actions/start", headers=headers, json={"action_id": "gathering.fake_sprigs"}
     )
     assert start.status_code == 200
-    clock.advance(timedelta(seconds=30))
+    clock.advance(timedelta(milliseconds=start.json()["cycle_ms"] * 10))
+    original_resolve = action_service.resolve_character
+    observed_stances: list[str] = []
+
+    def observe_resolution(
+        session: Session, identifier: uuid.UUID, now: datetime, content: ContentIndex
+    ) -> Resolution:
+        character = session.get(Character, identifier)
+        assert character is not None
+        observed_stances.append(character.stance)
+        return original_resolve(session, identifier, now, content)
+
+    monkeypatch.setattr(characters, "resolve_character", observe_resolution)
     changed = await client.put(
         "/characters/me/stance", headers=headers, json={"stance": "aggressive"}
     )
     assert changed.status_code == 200
+    assert observed_stances == [CONTENT.progression.default_stance]
     with factory() as session:
         active = session.scalar(select(ActiveActionRecord))
         assert active is not None
-        assert active.last_resolved_at.replace(
-            tzinfo=clock.now.tzinfo
-        ) == clock.now - timedelta(seconds=30)
-        assert all(skill.xp == 0 for skill in session.scalars(select(CharacterSkill)))
+        assert as_utc(active.last_resolved_at) == clock.now
+        skill = session.scalar(
+            select(CharacterSkill).where(CharacterSkill.skill_id == "gathering")
+        )
+        assert skill is not None and skill.xp == 100
+        character = session.scalar(select(Character))
+        assert character is not None and character.stance == "aggressive"
 
 
 @pytest.mark.anyio
@@ -354,7 +369,7 @@ async def test_postgres_stance_waits_for_character_lock(
         entering_lock.set()
         return original_lock(session, identifier)
 
-    monkeypatch.setattr(characters, "lock_character_and_load_action", observed_lock)
+    monkeypatch.setattr(action_service, "lock_character_and_load_action", observed_lock)
     with factory() as blocker, ThreadPoolExecutor(max_workers=1) as pool:
         blocker.scalar(select(Character).with_for_update())
         blocker_pid = blocker.scalar(text("SELECT pg_backend_pid()"))
