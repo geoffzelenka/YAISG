@@ -86,12 +86,17 @@ export function ActionExperience() {
           ].slice(-30),
         )
       }
-      if (hasAuthoritativeChanges(next)) {
+      // HP also regenerates while idle; display the server snapshot after polls.
+      void client.invalidateQueries({
+        queryKey: ['characters', 'me'],
+        exact: true,
+      })
+      if (
+        hasAuthoritativeChanges(next) ||
+        next.active !== null ||
+        next.stop_reason !== null
+      ) {
         void client.invalidateQueries({ queryKey: ['estates', 'me'] })
-        void client.invalidateQueries({
-          queryKey: ['characters', 'me'],
-          exact: true,
-        })
         void client.invalidateQueries({
           queryKey: ['characters', 'me', 'inventory'],
         })
@@ -359,7 +364,7 @@ function RewardSummary({
       />
       {entry.reason && (
         <p className="text-amber-300">
-          Stopped: {entry.reason.replaceAll('_', ' ')}
+          Stopped: {stopReasonLabel(entry.reason)}
         </p>
       )}
     </div>
@@ -454,7 +459,7 @@ export function WelcomeBack({
         ))}
         {rewards.stop_reason && (
           <p className="mt-4 text-amber-300">
-            Stopped: {rewards.stop_reason.replaceAll('_', ' ')}
+            Stopped: {stopReasonLabel(rewards.stop_reason)}
           </p>
         )}
         <button autoFocus className="primary-button mt-6" onClick={onClose}>
@@ -463,4 +468,10 @@ export function WelcomeBack({
       </div>
     </div>
   )
+}
+
+function stopReasonLabel(reason: string): string {
+  return ['OUT_OF_AMMO', 'DEFEATED', 'OFFLINE_CAP'].includes(reason)
+    ? reason
+    : reason.replaceAll('_', ' ')
 }

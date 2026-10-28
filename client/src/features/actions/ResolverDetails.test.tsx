@@ -80,3 +80,43 @@ it('renders generic reward details in resolution order', () => {
   )
   expect(container.textContent).toBe('customfirstcustomsecond')
 })
+
+it.each(['OUT_OF_AMMO', 'DEFEATED', 'OFFLINE_CAP'])(
+  'renders offline combat summary and %s',
+  (reason) => {
+    render(
+      <WelcomeBack
+        rewards={{
+          ...emptyRewards(),
+          cycles_completed: 20,
+          xp_gained: { melee: 32 },
+          items_consumed: { food: 2 },
+          items_gained: { loot: 3 },
+          stop_reason: reason,
+          details: {
+            resolutions: [
+              {
+                kills: 4,
+                defeats: reason === 'DEFEATED' ? 1 : 0,
+                damage_dealt: 123,
+                damage_taken: 40,
+                xp_by_skill: { melee: 32 },
+                consumables_used: { food: 2 },
+                loot: { loot: 3 },
+              },
+            ],
+          },
+        }}
+        onClose={() => {}}
+      />,
+    )
+    const modal = screen.getByRole('dialog')
+    expect(modal).toHaveTextContent('Combat summary')
+    expect(modal).toHaveTextContent('kills4')
+    expect(modal).toHaveTextContent('damage dealt123')
+    expect(modal).toHaveTextContent('damage taken40')
+    expect(modal).toHaveTextContent('2 food consumed')
+    expect(modal).toHaveTextContent('melee XP: 32')
+    expect(modal).toHaveTextContent(`Stopped: ${reason}`)
+  },
+)

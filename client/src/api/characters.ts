@@ -8,6 +8,7 @@ export type CharacterProfile = {
     id: string
     name: string
     current_realm_id: string
+    stance?: string
     created_at: string
   }
   skills: {
@@ -20,6 +21,19 @@ export type CharacterProfile = {
     tier: number
     tier_title: string
   }[]
+  hp?: number
+  max_hp?: number
+  hp_updated_at?: string
+  equipment?: Partial<
+    Record<
+      import('./content').EquipmentSlot,
+      { item_id: string; quantity: number }
+    >
+  >
+  belt?: Record<
+    string,
+    { item_id: string; quantity: number; trigger: import('./content').Trigger }
+  >
   gold: number
   realm: {
     id: string

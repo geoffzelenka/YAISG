@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { EquipmentPanel } from './features/equipment/EquipmentPanel'
+import { CombatPanel } from './features/combat/CombatPanel'
 import {
   Navigate,
   NavLink,
@@ -239,7 +241,10 @@ function Shell({ profile }: { profile: CharacterProfile }) {
       { name: 'Realm', path: '/realm' },
       { name: 'Map', path: '/realm/map' },
     ],
-    [{ name: 'Combat' }],
+    [
+      { name: 'Combat', path: '/combat' },
+      { name: 'Equipment', path: '/equipment' },
+    ],
     [
       { name: 'Gathering', path: '/skills/gathering' },
       { name: 'Refining', path: '/skills/refining' },
@@ -300,6 +305,11 @@ function Shell({ profile }: { profile: CharacterProfile }) {
         <main className="flex-1 p-8">
           <Routes>
             <Route index element={<ProfilePanel profile={profile} />} />
+            <Route
+              path="equipment"
+              element={<EquipmentPanel profile={profile} />}
+            />
+            <Route path="combat" element={<CombatPanel profile={profile} />} />
             <Route
               path="market"
               element={<GlobalMarketPanel profile={profile} />}
