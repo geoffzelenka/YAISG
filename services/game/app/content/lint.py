@@ -274,7 +274,7 @@ def lint_content(content: ContentIndex) -> tuple[SkillReport, ...]:
 
 def render_text(reports: tuple[SkillReport, ...]) -> str:
     """Render anchor comparisons and all action rates for a designer."""
-    lines = ["XP-rate content lint (warning only; combat skipped)"]
+    lines = ["XP-rate content lint (warning only; combat reported separately)"]
     for report in reports:
         lines.append(
             f"{report.skill_id}: optimal={report.optimal_hours} h / 720; "
@@ -329,12 +329,29 @@ def main() -> int:
     args = parser.parse_args()
     content = load_content(args.content_dir)
     reports = lint_content(content)
+    from app.content.combat_lint import lint_combat
+
+    combat_reports = lint_combat(content)
     if args.format in {"text", "both"}:
         print(render_text(reports))
+        for report in combat_reports:
+            print(
+                f"Combat {report.combatant_id} / {report.stance}: "
+                f"kill={report.time_to_kill_ms} ms; "
+                f"encounter={report.encounter_ms} ms; "
+                f"XP/h={report.xp_per_hour}; target={report.target_xp_per_hour}; "
+                f"warnings={report.warnings}"
+            )
         for warning in upkeep_overlaps(content):
             print(warning)
     if args.format in {"json", "both"}:
-        print(json.dumps([asdict(report) for report in reports], indent=2))
+        print(
+            json.dumps(
+                [asdict(report) for report in reports]
+                + [asdict(combat_report) for combat_report in combat_reports],
+                indent=2,
+            )
+        )
     return 0
 
 

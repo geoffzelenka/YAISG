@@ -29,6 +29,11 @@ class ContentModel(BaseModel):
 class ModifierType(StrEnum):
     """Modifier mechanics understood by the game engine."""
 
+    COMBAT_ACCURACY_PCT = "combat_accuracy_pct"
+    COMBAT_POWER_PCT = "combat_power_pct"
+    COMBAT_DEFENSE_PCT = "combat_defense_pct"
+    COMBAT_ARMOUR_PCT = "combat_armour_pct"
+    COMBAT_HP_PCT = "combat_hp_pct"
     JOURNEY_SPEED_PCT = "journey_speed_pct"
     SUPPLY_REDUCTION_PCT = "supply_reduction_pct"
     CYCLE_SPEED_PCT = "cycle_speed_pct"
@@ -143,7 +148,21 @@ class Action(ContentModel):
     xp: int = Field(gt=0)
     requires: Requirements = Requirements()
     resolver: Literal["uniform", "combat", "travel"] | None = None
+    combatant_id: str | None = None
+    location: str | None = Field(default=None, min_length=1)
     off_curve: str | None = None
+
+    @model_validator(mode="after")
+    def validate_combat(self) -> "Action":
+        """Combat actions identify an opponent and a presentation location."""
+        if self.resolver == "combat":
+            if not self.combatant_id or not self.location:
+                raise ValueError("combat actions require combatant_id and location")
+        elif self.resolver is not None and (
+            self.combatant_id is not None or self.location is not None
+        ):
+            raise ValueError("only combat actions may name a combatant or location")
+        return self
 
 
 class Skill(ContentModel):
@@ -195,7 +214,7 @@ EquipmentSlot = Literal[
 
 
 class Weapon(ContentModel):
-    """Authored weapon data; combat interprets it in a later phase."""
+    """Weapon style, base damage contributions and attack cadence."""
 
     style: Literal["melee", "ranged", "magic"]
     attack_interval_ms: int = Field(gt=0)
@@ -209,6 +228,48 @@ class Armour(ContentModel):
 
     armour: float = Field(ge=0, allow_inf_nan=False)
     max_hp: float = Field(ge=0, allow_inf_nan=False)
+
+
+class Combatant(ContentModel):
+    """An encounter definition; drops grant goods, never currency."""
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    tier: int = Field(ge=1, le=5)
+    style: Literal["melee", "ranged", "magic"]
+    max_hp: int = Field(gt=0)
+    accuracy: float = Field(ge=0, allow_inf_nan=False)
+    power: int = Field(ge=1)
+    defense: float = Field(ge=0, allow_inf_nan=False)
+    armour: float = Field(ge=0, allow_inf_nan=False)
+    attack_interval_ms: int = Field(gt=0)
+    respawn_ms: int = Field(ge=0)
+    weak_to: tuple[str, ...] = ()
+    resistant_to: tuple[str, ...] = ()
+    xp_pool_offense: float = Field(ge=0, allow_inf_nan=False)
+    xp_pool_defense: float = Field(ge=0, allow_inf_nan=False)
+    defense_xp_per_damage: float = Field(ge=0, allow_inf_nan=False)
+    drops: tuple[Drop, ...] = ()
+
+
+class CombatantsPack(ContentModel):
+    """Top-level encounter content."""
+
+    combatants: tuple[Combatant, ...]
+
+
+class Stance(ContentModel):
+    """Offensive pool shares assigned to style and Accuracy."""
+
+    style: float = Field(ge=0, le=1, allow_inf_nan=False)
+    accuracy: float = Field(ge=0, le=1, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_split(self) -> "Stance":
+        """Shares must distribute the whole pool."""
+        if abs(self.style + self.accuracy - 1) > 1e-9:
+            raise ValueError("stance shares must sum to one")
+        return self
 
 
 class Equipment(ContentModel):
@@ -596,6 +657,18 @@ class LintConfig(ContentModel):
 class CombatProgression(ContentModel):
     """HP formula constants and regeneration settings, authored in progression."""
 
+    base_hit: float = Field(gt=0, allow_inf_nan=False)
+    hit_per_level: float = Field(ge=0, allow_inf_nan=False)
+    tier_multiplier: float = Field(ge=0, allow_inf_nan=False)
+    min_hit_chance: float = Field(gt=0, le=1, allow_inf_nan=False)
+    max_hit_chance: float = Field(gt=0, le=1, allow_inf_nan=False)
+    weakness_multiplier: float = Field(gt=0, allow_inf_nan=False)
+    resistance_multiplier: float = Field(gt=0, allow_inf_nan=False)
+    armour_k: float = Field(gt=0, allow_inf_nan=False)
+    taken_to_defense_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    max_cycles_per_resolve: int = Field(gt=0)
+    unarmed: Weapon
+    standard_gear: dict[EquipmentSlot, str] = Field(default_factory=dict)
     base_hp: float = Field(gt=0, allow_inf_nan=False)
     hp_per_level: float = Field(ge=0, allow_inf_nan=False)
     regen_per_min: float = Field(default=0.01, ge=0, allow_inf_nan=False)
@@ -605,6 +678,9 @@ class CombatProgression(ContentModel):
 class ProgressionPack(ContentModel):
     """Content-defined tier thresholds and titles."""
 
+    stances: dict[str, Stance]
+    default_stance: str
+    combat_effectiveness: tuple[Annotated[float, Field(ge=0, allow_inf_nan=False)], ...]
     combat: CombatProgression
     basic_mobile_form: str = Field(min_length=1)
     visit_profile: TravelProfile
@@ -622,6 +698,10 @@ class ProgressionPack(ContentModel):
     @model_validator(mode="after")
     def validate_tiers(self) -> "ProgressionPack":
         """Require increasing thresholds and matching titles."""
+        if self.default_stance not in self.stances:
+            raise ValueError("default_stance must name an authored stance")
+        if self.combat.min_hit_chance > self.combat.max_hit_chance:
+            raise ValueError("hit chance bounds must ascend")
         for table in (self.proficiency, self.taper):
             if set(table) != set(get_args(SkillCategory)):
                 raise ValueError("bonus tables require every skill category")
@@ -636,6 +716,10 @@ class ProgressionPack(ContentModel):
             raise ValueError("each tier requires a title")
         if len(self.tier_benefits.get("travel", ())) != len(self.tier_thresholds):
             raise ValueError("Travel benefits require one row per tier")
+        if len(self.combat_effectiveness) != len(self.tier_thresholds):
+            raise ValueError(
+                "combat effectiveness requires one entry per tier distance"
+            )
         return self
 
 

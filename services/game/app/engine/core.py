@@ -313,21 +313,34 @@ def bonus_total(
 ) -> float:
     """Add matching percentages within groups, then multiply group factors."""
     category = content.skill(action.skill_id).category
-    factors = []
-    for group in modifier_groups(state, content):
-        percent = sum(
-            m.value
-            for m in group
-            if m.type == modifier_type
-            and modifier_applies(m, action.skill_id, category)
-        )
-        factors.append(max(content.progression.min_factor, 1 + percent / 100))
     percent = (
         proficiency_pct(action, state, content)
         if modifier_type == ModifierType.CYCLE_SPEED_PCT
         else 0
     )
-    factors.append(max(content.progression.min_factor, 1 + percent / 100))
+    return scoped_bonus_total(
+        modifier_type, action.skill_id, category, state, content, percent
+    )
+
+
+def scoped_bonus_total(
+    modifier_type: ModifierType,
+    skill_id: str,
+    category: SkillCategory,
+    state: CharacterState,
+    content: ContentIndex,
+    proficiency_percent: float = 0,
+) -> float:
+    """Multiply additive G/E/R/C totals and an explicit group P percentage."""
+    factors = []
+    for group in modifier_groups(state, content):
+        percent = sum(
+            m.value
+            for m in group
+            if m.type == modifier_type and modifier_applies(m, skill_id, category)
+        )
+        factors.append(max(content.progression.min_factor, 1 + percent / 100))
+    factors.append(max(content.progression.min_factor, 1 + proficiency_percent / 100))
     return math.prod(factors)
 
 

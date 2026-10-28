@@ -229,7 +229,20 @@
       "id": "melee",
       "name": "Melee",
       "category": "combat",
-      "actions": []
+      "actions": [
+        {
+          "id": "placeholder.fight",
+          "name": "Fight Placeholder Target",
+          "skill_id": "melee",
+          "tier": 1,
+          "unlock_level": 1,
+          "base_cycle_ms": 2000,
+          "xp": 1,
+          "resolver": "combat",
+          "combatant_id": "placeholder.target",
+          "location": "Placeholder Grounds"
+        }
+      ]
     },
     {
       "id": "ranged",

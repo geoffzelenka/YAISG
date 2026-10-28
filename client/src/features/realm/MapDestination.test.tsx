@@ -67,6 +67,7 @@ it('estate travel link preselects the home realm on the map without reloading', 
                 estate={estate}
                 content={
                   {
+                    combatants: { combatants: [] },
                     estate_forms: { forms: [] },
                     items: { items: [] },
                   } as unknown as Content
@@ -103,6 +104,7 @@ it('surrender confirmation shows an uncapped upper bound and donation stays expl
           estate={estate}
           content={
             {
+              combatants: { combatants: [] },
               estate_forms: { forms: [] },
               items: { items: [] },
             } as unknown as Content

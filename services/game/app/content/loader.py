@@ -14,6 +14,8 @@ from pydantic import BaseModel, ValidationError
 from app.content.schemas import (
     Action,
     CapsConfig,
+    Combatant,
+    CombatantsPack,
     DevelopmentNode,
     DevelopmentPack,
     EconomyPack,
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
     from app.engine.caravans import Route
 
 PUBLIC_PACKS = (
+    "combatants",
     "skills",
     "items",
     "realms",
@@ -77,6 +80,7 @@ class ContentManifest:
 class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
+    combatants: tuple[Combatant, ...]
     world_seed: WorldSeedPack
     world_seed_version: str
     tags: tuple[Tag, ...]
@@ -110,6 +114,14 @@ class ContentIndex:
         from app.engine.caravans import remoteness
 
         return remoteness(self.map)
+
+    @cached_property
+    def _combatants_by_id(self) -> MappingProxyType[str, Combatant]:
+        return MappingProxyType({value.id: value for value in self.combatants})
+
+    def combatant(self, combatant_id: str) -> Combatant:
+        """Look up an encounter definition."""
+        return self._combatants_by_id[combatant_id]
 
     def skill(self, skill_id: str) -> Skill:
         """Look up a skill."""
@@ -403,11 +415,36 @@ def _validate(
             raise ContentError(f"unknown realm tags in upgrade {upgrade.id}")
 
 
+def _validate_standard_gear(
+    progression: ProgressionPack, items: dict[str, Item], actions: dict[str, Action]
+) -> None:
+    """Reject impossible standard layouts rather than silently mispricing pools."""
+    gear = progression.combat.standard_gear
+    for slot, item_id in gear.items():
+        item = items.get(item_id)
+        equip = item.equip if item else None
+        if equip is None or slot == "utility":
+            raise ContentError(f"invalid standard combat gear {slot}: {item_id}")
+        allowed: set[str] = {equip.slot}
+        if equip.slot in {"ring", "arm"}:
+            allowed = {f"left_{equip.slot}", f"right_{equip.slot}"}
+        if slot not in allowed:
+            raise ContentError(f"standard combat gear {item_id} does not fit {slot}")
+        if equip.two_handed and "left_hand" in gear:
+            raise ContentError("standard combat gear has a two-handed conflict")
+        for action in actions.values():
+            if action.resolver == "combat" and any(
+                level > action.unlock_level for level in equip.requires.values()
+            ):
+                raise ContentError(f"standard combat gear is locked at {action.id}")
+
+
 def load_content(content_dir: Path) -> ContentIndex:
     """Load all required JSON packs and return an immutable content index."""
     unknown = {path.stem for path in content_dir.rglob("*.json")} - _KNOWN_PACKS
     if unknown:
         raise ContentError(f"unrecognized content packs: {sorted(unknown)}")
+    combatants_pack = _load_model(content_dir, "combatants", CombatantsPack)
     skills_pack = _load_model(content_dir, "skills", SkillsPack)
     items_pack = _load_model(content_dir, "items", ItemsPack)
     realms_pack = _load_model(content_dir, "realms", RealmsPack)
@@ -425,6 +462,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     progression = _load_model(content_dir, "progression", ProgressionPack)
     world_seed = _load_model(content_dir, "world_seed", WorldSeedPack)
     packs: dict[str, BaseModel] = {
+        "combatants": combatants_pack,
         "world_seed": world_seed,
         "tags": tags_pack,
         "economy": economy,
@@ -447,6 +485,20 @@ def load_content(content_dir: Path) -> ContentIndex:
     upgrades = _unique(upgrades_pack.upgrades, "upgrade")
     nodes = _unique(development.nodes, "development node")
     projects = _unique(projects_pack.projects, "project")
+    combatants = _unique(combatants_pack.combatants, "combatant")
+    for opponent in combatants.values():
+        _require_items(
+            (drop.item_id for drop in opponent.drops), set(items), opponent.id
+        )
+    for action in actions.values():
+        if action.resolver == "combat":
+            if action.combatant_id not in combatants or not action.location:
+                raise ContentError(f"invalid combat encounter in {action.id}")
+            if combatants[action.combatant_id].tier != action.tier:
+                raise ContentError(f"combatant tier differs in {action.id}")
+        elif action.combatant_id is not None or action.location is not None:
+            raise ContentError(f"non-combat action names an encounter in {action.id}")
+    _validate_standard_gear(progression, items, actions)
     tag_ids = set(_unique(tags_pack.tags, "tag"))
     holders: tuple[DevelopmentNode | EstateForm | EstateUpgrade, ...] = (
         *nodes.values(),
@@ -552,6 +604,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     }
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
+        tuple(combatants.values()),
         world_seed,
         seed_version,
         tags_pack.tags,

@@ -44,6 +44,7 @@ def seed(session: Session) -> tuple[Character, RealmState]:
     session.add(estate)
     session.flush()
     character = Character(
+        stance=CONTENT.progression.default_stance,
         player_id=player.id,
         name=str(player.id)[:20],
         name_normalized=str(player.id)[:20],

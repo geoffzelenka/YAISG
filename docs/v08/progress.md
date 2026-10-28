@@ -35,7 +35,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 25 | `25-client-global-market` | Client: global market | done | v08/25-client-global-market | c7cbe1f | Client global market: book, orders, slots, collect/cancel, history |
 | 26 | `26-equipment` | Equipment slots and gear bonuses | done | v08/26-equipment | fce64c4 | Equipment slots, equip/unequip, group G gear, tool_class, §7.5 caps |
 | 27 | `27-consumables-hp` | Belt, utility, buffs, hit points | done | v08/27-consumables-hp | 8f9b123 | Utility/belt holders, timed group C buffs, lazy HP |
-| 28 | `28-combat-model` | Combatants, stats, the hit, stance, combat lint | pending | — | — | — |
+| 28 | `28-combat-model` | Combatants, stats, the hit, stance, combat lint | ready for review | v08/28-combat-model | — | Combatants, pure combat stats/attacks, standing stances and combat pool lint |
 | 29 | `29-combat-resolver` | The combat resolver | pending | — | — | — |
 | 30 | `30-client-equipment-combat` | Client: equipment and combat | pending | — | — | — |
 | 31 | `31-keys` | Instanced items, exploration, key actions | pending | — | — | — |

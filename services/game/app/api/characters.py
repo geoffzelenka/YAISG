@@ -55,6 +55,7 @@ class CharacterSummary(BaseModel):
     id: uuid.UUID
     name: str
     current_realm_id: str
+    stance: str
     created_at: datetime
 
 
@@ -210,8 +211,9 @@ async def create_character(
         current_realm_id=body.realm_id,
         home_estate_id=estate_id,
         created_at=now,
-        hp=content.progression.combat.base_hp + content.progression.combat.hp_per_level,
+        hp=0,
         hp_updated_at=now,
+        stance=content.progression.default_stance,
     )
     session.add(character)
     for skill in content.skills:
@@ -243,6 +245,7 @@ async def create_character(
         )
     )
     try:
+        character.hp = character_max_hp(session, character.id, content)
         session.commit()
     except IntegrityError:
         session.rollback()
@@ -427,3 +430,34 @@ async def get_inventory(
             for stack in stacks
         ]
     )
+
+
+class StanceRequest(BaseModel):
+    """An authored stance identifier."""
+
+    stance: str
+
+
+class StanceResponse(BaseModel):
+    """The character's persisted combat stance."""
+
+    stance: str
+
+
+@router.put("/me/stance", response_model=StanceResponse)
+async def change_stance(
+    body: StanceRequest,
+    request: Request,
+    now: ServerNow,
+    player: CurrentPlayer,
+    session: DatabaseSession,
+) -> StanceResponse:
+    """Resolve prior work under the old stance, then persist the new setting."""
+    content = _content(request)
+    if body.stance not in content.progression.stances:
+        raise api_error(422, "INVALID_STANCE", "Choose an authored combat stance")
+    character = _character_for_player(session, player.id)
+    resolve_character(session, character.id, now, content)
+    character.stance = body.stance
+    session.commit()
+    return StanceResponse(stance=character.stance)

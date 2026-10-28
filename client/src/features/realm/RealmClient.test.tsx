@@ -30,6 +30,7 @@ const contentBodies: Record<string, unknown> = {
     belt_slots: 2,
   },
   map: { edges: [], positions: {} },
+  combatants: { combatants: [] },
   estate_forms: { forms: [] },
   development: {
     nodes: [

@@ -146,6 +146,49 @@
     "base_hp": 100,
     "hp_per_level": 10,
     "regen_per_min": 0.01,
-    "min_engage_hp_pct": 25
-  }
+    "min_engage_hp_pct": 25,
+    "base_hit": 1,
+    "hit_per_level": 1,
+    "tier_multiplier": 0.05,
+    "min_hit_chance": 0.05,
+    "max_hit_chance": 0.95,
+    "weakness_multiplier": 1.25,
+    "resistance_multiplier": 0.75,
+    "armour_k": 100,
+    "taken_to_defense_pct": 20,
+    "max_cycles_per_resolve": 50000,
+    "unarmed": {
+      "style": "melee",
+      "attack_interval_ms": 2000,
+      "power": 0,
+      "accuracy": 0,
+      "damage_type": "blunt"
+    },
+    "standard_gear": {
+      "right_hand": "item.fake_sword",
+      "chest": "item.fake_armour"
+    }
+  },
+  "stances": {
+    "aggressive": {
+      "style": 0.75,
+      "accuracy": 0.25
+    },
+    "balanced": {
+      "style": 0.5,
+      "accuracy": 0.5
+    },
+    "precise": {
+      "style": 0.25,
+      "accuracy": 0.75
+    }
+  },
+  "default_stance": "balanced",
+  "combat_effectiveness": [
+    0,
+    10,
+    20,
+    30,
+    40
+  ]
 }

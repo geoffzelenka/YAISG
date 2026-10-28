@@ -257,8 +257,8 @@ async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
     assert groups["travel"]["actions"][0]["action_id"] == "action.fake_journey"
     assert gathering["gathering.fake_sprigs"]["startable"] is True
     assert gathering["gathering.test_crystal"]["blocked_by"] == ["INSUFFICIENT_LEVEL"]
+    assert groups["melee"]["actions"][0]["action_id"] == "placeholder.fight"
     for skill_id in (
-        "melee",
         "ranged",
         "magic",
         "accuracy",
