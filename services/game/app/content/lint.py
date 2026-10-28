@@ -152,6 +152,24 @@ def gear_bound(skill: Skill, content: ContentIndex) -> float:
     )
 
 
+def consumable_bound(skill: Skill, content: ContentIndex) -> float:
+    """Bound group C over simultaneous distinct buffs, permitting expired maluses.
+
+    Acquisition and duration restrictions are relaxed, as with other lint sources.
+    Utility has no non-combat modifier block; combat lint belongs to Prompt 28.
+    """
+    buffs = tuple(
+        item.consumable.buff.modifiers
+        for item in content.items
+        if item.consumable is not None and item.consumable.buff is not None
+    )
+    return max(
+        _group_bound(tuple(m for group in chosen for m in group), skill, content)
+        for count in range(len(buffs) + 1)
+        for chosen in combinations(buffs, count)
+    )
+
+
 def stack_bound(skill: Skill, content: ContentIndex) -> float:
     """Bound uncapped external XP × speed, using distinct upgrades within slots."""
     content = replace(
@@ -202,7 +220,12 @@ def stack_bound(skill: Skill, content: ContentIndex) -> float:
                 groups = modifier_groups(candidate, content)
                 realm_best = max(realm_best, _group_bound(groups[2], skill, content))
                 estate_best = max(estate_best, _group_bound(groups[1], skill, content))
-    return gear_bound(skill, content) * realm_best * estate_best
+    return (
+        gear_bound(skill, content)
+        * realm_best
+        * estate_best
+        * consumable_bound(skill, content)
+    )
 
 
 def lint_content(content: ContentIndex) -> tuple[SkillReport, ...]:

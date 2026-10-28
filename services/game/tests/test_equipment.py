@@ -1,9 +1,13 @@
 """Permanent equipment, content rules and mid-action integration."""
 
+import asyncio
 import json
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
+from functools import partial
 
 import pytest
 from httpx import AsyncClient
@@ -12,12 +16,31 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from test_actions import FakeClock, action_client, anyio_backend
 
-from app.content.lint import gear_bound
+from app.content.lint import gear_bound, stack_bound
 from app.content.runtime import CONTENT
-from app.content.schemas import Equipment, EquipmentSlot, Item, Requirements
-from app.engine.core import CharacterState, effective_cycle_time, unmet_requirements
+from app.content.schemas import (
+    CapType,
+    Equipment,
+    EquipmentSlot,
+    EstateUpgrade,
+    Item,
+    Modifier,
+    ModifierType,
+    Requirements,
+)
+from app.engine import UniformResolver, resolve
+from app.engine.core import (
+    ACTION_RESOLVERS,
+    CharacterState,
+    effective_cycle_time,
+    resolve_caps,
+    unmet_requirements,
+    xp_factors,
+)
 from app.engine.equipment import EquipmentError, change_equipment
+from app.main import app
 from app.models import Character, CharacterEquipment, Inventory
+from app.services import actions
 from app.services.actions import load_character_state
 
 __all__ = ["action_client", "anyio_backend"]
@@ -211,9 +234,6 @@ async def test_equipment_caps_xp_and_failed_changes_are_atomic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cape bonuses reach profiles; rejected intents leave every holder intact."""
-    from app.content.schemas import CapType
-    from app.engine.core import resolve_caps
-    from app.main import app
 
     client, factory, _, headers = action_client
     cape = CONTENT.item("item.fake_cape")
@@ -264,7 +284,6 @@ async def test_equipment_caps_xp_and_failed_changes_are_atomic(
             assert equipped is not None and equipped.item_id == cape.id
     profile = (await client.get("/characters/me", headers=headers)).json()
     action = content.skill("gathering").actions[0]
-    from app.engine.core import xp_factors
 
     without_cape = replace(current, gear_modifiers=())
     baseline_factor, _ = xp_factors(action, without_cape, content)
@@ -292,9 +311,6 @@ async def test_concurrent_equips_transfer_single_item_once(
     action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
 ) -> None:
     """Independent requests serialize one inventory item on either database."""
-    import asyncio
-    import threading
-    from concurrent.futures import ThreadPoolExecutor
 
     client, factory, _, headers = action_client
     with factory() as session:
@@ -382,7 +398,6 @@ async def test_equipped_tool_unlocks_action_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Availability and action start share the persisted main-hand tool check."""
-    from app.main import app
 
     client, factory, clock, headers = action_client
     action = CONTENT.skill("gathering").actions[0]
@@ -430,12 +445,6 @@ async def test_equipment_changes_rejected_during_combat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Combat resolution runs before either equipment mutation is rejected."""
-    from functools import partial
-
-    from app.engine import UniformResolver, resolve
-    from app.engine.core import ACTION_RESOLVERS
-    from app.main import app
-    from app.services import actions
 
     client, _, _, headers = action_client
     action = (
@@ -463,8 +472,6 @@ async def test_equipment_changes_rejected_during_combat(
 
 def test_gear_lint_includes_estate_slot_grants() -> None:
     """A gear cap grant must not hide the estate stack it makes possible."""
-    from app.content.lint import stack_bound
-    from app.content.schemas import CapType, EstateUpgrade, Modifier, ModifierType
 
     ring = CONTENT.item("item.fake_cape").model_copy(
         update={
@@ -499,7 +506,7 @@ def test_gear_lint_includes_estate_slot_grants() -> None:
     )
     skill = content.skill("gathering")
     assert stack_bound(skill, content) == pytest.approx(
-        gear_bound(skill, content) * 1.2
+        gear_bound(skill, content) * 1.2 * 1.1
     )
 
 
@@ -539,7 +546,6 @@ def test_over_cap_swap_is_allowed() -> None:
 
 def test_unequip_capacity_gear_uses_resulting_cap() -> None:
     """Returning a capacity item must check the cap after its grant is removed."""
-    from app.content.schemas import CapType
 
     cape = CONTENT.item("item.fake_cape")
     assert cape.equip is not None
@@ -570,7 +576,6 @@ async def test_custom_equipment_content_in_estate_and_travel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Estate and travel loaders accept equipment absent from default content."""
-    from app.main import app
 
     client, factory, _, headers = action_client
     item = CONTENT.item("item.fake_cape").model_copy(update={"id": "test.custom_cape"})

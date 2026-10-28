@@ -21,6 +21,7 @@ from app.engine.levels import level_for_xp, tier_for_level, xp_progress
 from app.errors import api_error
 from app.models import (
     Character,
+    CharacterBelt,
     CharacterEquipment,
     CharacterSkill,
     Currency,
@@ -30,7 +31,11 @@ from app.models import (
     Inventory,
     RealmState,
 )
-from app.services.actions import load_character_state, resolve_character
+from app.services.actions import (
+    character_max_hp,
+    load_character_state,
+    resolve_character,
+)
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 _VALID_NAME = re.compile(r"^[A-Za-z0-9 ]{3,20}$")
@@ -105,6 +110,12 @@ class EquippedStack(BaseModel):
     quantity: int
 
 
+class BeltStack(EquippedStack):
+    """A belt stack and its server-validated trigger."""
+
+    trigger: dict[str, float | bool]
+
+
 class ProfileResponse(BaseModel):
     """Complete character profile response."""
 
@@ -115,6 +126,10 @@ class ProfileResponse(BaseModel):
     estate: EstateSummary
     caps: dict[CapType, CapSummary]
     actions: dict[str, ActionValues]
+    hp: float
+    max_hp: float
+    hp_updated_at: datetime
+    belt: dict[int, BeltStack]
     equipment: dict[str, EquippedStack]
 
 
@@ -195,6 +210,8 @@ async def create_character(
         current_realm_id=body.realm_id,
         home_estate_id=estate_id,
         created_at=now,
+        hp=content.progression.combat.base_hp + content.progression.combat.hp_per_level,
+        hp_updated_at=now,
     )
     session.add(character)
     for skill in content.skills:
@@ -318,6 +335,17 @@ def _profile(
         CapType.ESTATE_UPGRADE_SLOTS: resolved.estate_upgrade_slots,
     }
     return ProfileResponse(
+        hp=character.hp,
+        max_hp=character_max_hp(session, character.id, content),
+        hp_updated_at=character.hp_updated_at or character.created_at,
+        belt={
+            row.slot: BeltStack(
+                item_id=row.item_id, quantity=row.quantity, trigger=row.trigger
+            )
+            for row in session.scalars(
+                select(CharacterBelt).where(CharacterBelt.character_id == character.id)
+            )
+        },
         equipment={
             row.slot: EquippedStack(item_id=row.item_id, quantity=row.quantity)
             for row in session.scalars(

@@ -1,8 +1,9 @@
 """Permanent character equipment holders."""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -30,3 +31,31 @@ class CharacterEquipment(Base):
             name="ck_equipment_slot",
         ),
     )
+
+
+class CharacterBelt(Base):
+    """A physical stack with one reactive trigger at a zero-based position."""
+
+    __tablename__ = "character_belt"
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
+    )
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(128))
+    quantity: Mapped[int] = mapped_column(Integer)
+    trigger: Mapped[dict[str, float | bool]] = mapped_column(JSON)
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_belt_quantity"),
+        CheckConstraint("slot >= 0", name="ck_belt_slot"),
+    )
+
+
+class CharacterBuff(Base):
+    """One active or historical timed effect per source item."""
+
+    __tablename__ = "character_buffs"
+    character_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

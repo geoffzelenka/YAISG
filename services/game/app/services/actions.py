@@ -14,9 +14,11 @@ from app.content import ContentIndex
 from app.content.runtime import CONTENT
 from app.content.schemas import CapType, DecayStage
 from app.engine import ActiveAction, CharacterState, ResolveResult, StopReason, resolve
+from app.engine.health import maximum_hp, regenerate_hp
 from app.models import (
     ActiveActionRecord,
     Character,
+    CharacterBuff,
     CharacterEquipment,
     CharacterSkill,
     Currency,
@@ -104,7 +106,19 @@ def _load_state(
             )
         )
     )
-    gear = [(row.slot, content.item(row.item_id).equip) for row in equipment]
+    gear = [
+        (row.slot, content.item(row.item_id).equip)
+        for row in equipment
+        if row.slot != "utility"
+    ]
+    buffs = []
+    for row in session.scalars(
+        select(CharacterBuff).where(CharacterBuff.character_id == character_id)
+    ):
+        consumable = content.item(row.item_id).consumable
+        if consumable is None or consumable.buff is None:
+            raise RuntimeError(f"buff {row.item_id} has no buff content")
+        buffs.append((as_utc(row.expires_at), consumable.buff.modifiers))
     caps: defaultdict[CapType, float] = defaultdict(float)
     for _, equip in gear:
         if equip is not None:
@@ -129,6 +143,14 @@ def _load_state(
         realm_stack_tags=stack_tags(session, character.current_realm_id),
         estate_stage=DecayStage(estate.decay_stage),
         installed_upgrades=tuple(upgrades),
+        timed_buffs=tuple(buffs),
+        consumable_modifiers=tuple(
+            modifier
+            for end, values in buffs
+            if character.hp_updated_at is not None
+            and end > as_utc(character.hp_updated_at)
+            for modifier in values
+        ),
         gear_modifiers=tuple(
             m for _, equip in gear if equip is not None for m in equip.modifiers
         ),
@@ -241,6 +263,7 @@ def resolve_locked_character(
     session.scalar(
         select(Estate).where(Estate.id == character.home_estate_id).with_for_update()
     )
+    regenerate_character_hp(session, character, now, resolved_content)
     if record is None:
         return Resolution(None, empty_result())
     state = replace(
@@ -270,6 +293,8 @@ def resolve_locked_character(
         random.Random(secrets.randbits(256)),
     )
     _persist_state(session, character_id, new_state)
+    session.flush()
+    regenerate_character_hp(session, character, now, resolved_content)
     if new_active is None:
         session.delete(record)
         remaining = None
@@ -361,3 +386,39 @@ def clear_active_action(session: Session, character_id: uuid.UUID) -> None:
             ActiveActionRecord.character_id == character_id
         )
     )
+
+
+def character_max_hp(
+    session: Session, character_id: uuid.UUID, content: ContentIndex
+) -> float:
+    """Load armour contributions and evaluate the pure maximum-health formula."""
+    armour_hp = 0.0
+    for row in session.scalars(
+        select(CharacterEquipment).where(
+            CharacterEquipment.character_id == character_id,
+            CharacterEquipment.slot != "utility",
+        )
+    ):
+        equip = content.item(row.item_id).equip
+        if equip is not None and equip.armour is not None:
+            armour_hp += equip.armour.max_hp
+    return maximum_hp(_load_state(session, character_id, content), armour_hp, content)
+
+
+def regenerate_character_hp(
+    session: Session, character: Character, now: datetime, content: ContentIndex
+) -> None:
+    """Materialize lazy HP under the existing character serialization lock."""
+    maximum = character_max_hp(session, character.id, content)
+    if character.hp_updated_at is None:
+        character.hp = maximum
+        character.hp_updated_at = now
+    elif now >= as_utc(character.hp_updated_at):
+        character.hp = regenerate_hp(
+            character.hp,
+            maximum,
+            as_utc(character.hp_updated_at),
+            now,
+            content.progression.combat.regen_per_min,
+        )
+        character.hp_updated_at = now
