@@ -147,3 +147,18 @@ unchanged; this prompt adds no rules for either.
 - UNAUTHORIZED (401) is now also used by auth upgrade for missing, invalid or
   inactive bearer identities. Reused EMAIL_TAKEN, INVALID_EMAIL, WEAK_PASSWORD,
   RATE_LIMITED and existing request-validation envelopes.
+
+## Orchestrator verification and review hand-offs
+
+- Verified:
+  - SQLite `make ci`: auth 35, game 818 passed / 27 skipped, client 100.
+  - PostgreSQL: game 844 passed / 1 skipped; auth 36 passed.
+  - Fresh PostgreSQL upgrade and `alembic check` are clean for both services. Boot 200.
+- Round 1: CHANGES_REQUESTED, three blocking findings, all fixed in 18cc6df together with N1–N4:
+  - B1: a 30-day session guard made the TTL inert.
+  - B2: every GET took write intent.
+  - B3: the upgrade guards were untested.
+- Round 2 (Sonnet): APPROVE. B2 and B3 were mutation-checked.
+- Hand-offs:
+  - 36: rightmost-untrusted XFF hop; the purge's all-realm lock.
+  - 35: call /players/me right after an upgrade. Without that call, an upgraded player can still be purged as a guest.
