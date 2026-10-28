@@ -76,3 +76,11 @@
 ## New error codes
 
 - None. No new dependencies.
+
+## Orchestrator verification and review hand-offs
+
+- Verified at c784c20 (docs only): SQLite make ci green; PostgreSQL game 887 / 2 skipped, auth 40; boot 200.
+- Review round 1: APPROVE; the reviewer checked 31 factual claims against the code, and all match. Non-blocking hand-offs:
+  - **Code/CI gap, needs human approval:** `services/auth/pyproject.toml` doesn't list `psycopg`. The GitHub `auth (postgres)` matrix job installs only `services/auth[dev]`, so a `postgresql+psycopg://` URL can't import its driver there, nor in the auth Docker image. Local runs pass only because the shared venv also installs the game service. Fix: add `psycopg[binary]>=3.2,<4` (already approved for game) to auth's dependencies.
+  - README: running `TEST_DATABASE_URL=... make ci` against one database runs both suites against it in turn. That appears safe, but per-service `make auth-ci` / `make game-ci` would mirror CI.
+  - docs/auth.md: any authenticated game request promotes an upgraded player, not only `GET /players/me`.
