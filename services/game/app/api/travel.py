@@ -82,7 +82,7 @@ async def preview(
         content,
         additional_realm_ids={realm.id for realm in content.realms},
     )
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     steps = _route(state, destination_realm_id, mode, content)
     edges = {edge.id: edge for edge in content.map.edges}
     state = replace(
@@ -126,7 +126,7 @@ async def start(
         content,
         additional_realm_ids={realm.id for realm in content.realms},
     )
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     steps = _route(state, body.destination_realm_id, body.mode, content)
     action = next(
         a for a in content.actions_for_skill("travel") if a.resolver == "travel"

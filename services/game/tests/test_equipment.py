@@ -41,6 +41,22 @@ def test_validator_rejects_xp_outside_cape() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "definition,message",
+    [
+        ({"slot": "left_hand", "two_handed": True}, "require right_hand"),
+        ({"slot": "head", "tool_class": "fake_pickaxe"}, "require right_hand"),
+        ({"slot": "cape", "belt_slots": 1}, "requires the belt slot"),
+    ],
+)
+def test_validator_rejects_incompatible_equipment_fields(
+    definition: dict[str, object], message: str
+) -> None:
+    """Hand and belt metadata cannot be authored on incompatible slots."""
+    with pytest.raises(ValidationError, match=message):
+        Equipment.model_validate_json(json.dumps(definition))
+
+
 def test_slots_two_handed_requirements_and_conservation() -> None:
     left = CONTENT.item("item.fake_cape").model_copy(
         update={"id": "test.left", "equip": Equipment(slot="left_hand")}
@@ -167,7 +183,9 @@ async def test_tool_group_g_and_mid_action_change(
             code.value == "MISSING_TOOL"
             for code in unmet_requirements(tool_action, after, CONTENT)
         )
-        assert after.gear_modifiers == CONTENT.item("item.fake_pickaxe").equip.modifiers  # type: ignore[union-attr]
+        tool = CONTENT.item("item.fake_pickaxe").equip
+        assert tool is not None
+        assert after.gear_modifiers == tool.modifiers
         new_cycle = effective_cycle_time(action, after, CONTENT)
         assert new_cycle == int(old_cycle / 1.1)
         assert session.get(Inventory, (identifier, "item.fake_pickaxe")) is None
@@ -221,10 +239,12 @@ async def test_equipment_caps_xp_and_failed_changes_are_atomic(
         "/equipment/equip", headers=headers, json={"item_id": cape.id, "slot": "cape"}
     )
     assert result.status_code == 200, result.text
+    assert result.json()["equipment"] == {"cape": {"item_id": cape.id, "quantity": 1}}
     with factory() as session:
         current = load_character_state(session, identifier, content)
         assert resolve_caps(current, content).inventory_slots == base + 3
-        assert current.gear_modifiers == cape.equip.modifiers  # type: ignore[union-attr]
+        assert cape.equip is not None
+        assert current.gear_modifiers == cape.equip.modifiers
     for path, body, code in (
         ("equip", {"item_id": "missing", "slot": "cape"}, "UNKNOWN_ITEM"),
         ("equip", {"item_id": "item.fake_sprig", "slot": "head"}, "NOT_EQUIPPABLE"),
@@ -232,7 +252,9 @@ async def test_equipment_caps_xp_and_failed_changes_are_atomic(
         ("equip", {"item_id": cape.id, "slot": "cape"}, "MISSING_INPUTS"),
     ):
         result = await client.post(f"/equipment/{path}", headers=headers, json=body)
-        assert result.status_code == 409, result.text
+        assert result.status_code == (404 if code == "UNKNOWN_ITEM" else 409), (
+            result.text
+        )
         assert result.json()["error"]["code"] == code
         with factory() as session:
             assert dict(
@@ -242,7 +264,25 @@ async def test_equipment_caps_xp_and_failed_changes_are_atomic(
             assert equipped is not None and equipped.item_id == cape.id
     profile = (await client.get("/characters/me", headers=headers)).json()
     action = content.skill("gathering").actions[0]
-    assert profile["actions"][action.id]["xp_bonus_uncapped"] > 5
+    from app.engine.core import xp_factors
+
+    without_cape = replace(current, gear_modifiers=())
+    baseline_factor, _ = xp_factors(action, without_cape, content)
+    assert cape.equip is not None
+    cape_percent = sum(modifier.value for modifier in cape.equip.modifiers)
+    expected_bonus = (baseline_factor * (1 + cape_percent / 100) - 1) * 100
+    assert profile["actions"][action.id]["xp_bonus_uncapped"] == pytest.approx(
+        expected_bonus
+    )
+    removed = await client.post(
+        "/equipment/unequip", headers=headers, json={"slot": "cape"}
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["equipment"] == {}
+    without_profile = (await client.get("/characters/me", headers=headers)).json()
+    assert without_profile["actions"][action.id]["xp_bonus_uncapped"] == pytest.approx(
+        (baseline_factor - 1) * 100
+    )
     assert profile["caps"]["inventory_slots"]["effective"] == base + 3
     assert profile["equipment"] == {"cape": {"item_id": cape.id, "quantity": 1}}
 
@@ -461,3 +501,102 @@ def test_gear_lint_includes_estate_slot_grants() -> None:
     assert stack_bound(skill, content) == pytest.approx(
         gear_bound(skill, content) * 1.2
     )
+
+
+def test_over_cap_equip_without_displacement_is_allowed() -> None:
+    """Existing over-cap stacks do not prevent moving an item out of inventory."""
+    content = replace(
+        CONTENT, caps=CONTENT.caps.model_copy(update={"inventory_slots": 1})
+    )
+    sprig = content.item("item.fake_sprig").model_copy(update={"stack_limit": 1})
+    content = content.with_overrides(items=[sprig])
+    current = replace(
+        state(), inventory={sprig.id: 2, "item.fake_pickaxe": 1, "item.fake_cape": 1}
+    )
+    inventory, equipped = change_equipment(
+        current, {}, "right_hand", "item.fake_pickaxe", content
+    )
+    assert inventory == {sprig.id: 2, "item.fake_cape": 1}
+    assert equipped == {"right_hand": "item.fake_pickaxe"}
+
+
+def test_over_cap_swap_is_allowed() -> None:
+    """A swap with unchanged distinct-stack usage is allowed above capacity."""
+    content = replace(
+        CONTENT, caps=CONTENT.caps.model_copy(update={"inventory_slots": 1})
+    )
+    current = replace(state(), inventory={"item.fake_pickaxe": 1, "item.fake_sprig": 1})
+    inventory, equipped = change_equipment(
+        current,
+        {"right_hand": "item.fake_two_hander"},
+        "right_hand",
+        "item.fake_pickaxe",
+        content,
+    )
+    assert inventory == {"item.fake_two_hander": 1, "item.fake_sprig": 1}
+    assert equipped == {"right_hand": "item.fake_pickaxe"}
+
+
+def test_unequip_capacity_gear_uses_resulting_cap() -> None:
+    """Returning a capacity item must check the cap after its grant is removed."""
+    from app.content.schemas import CapType
+
+    cape = CONTENT.item("item.fake_cape")
+    assert cape.equip is not None
+    cape = cape.model_copy(
+        update={
+            "equip": cape.equip.model_copy(
+                update={"cap_bonuses": {CapType.INVENTORY_SLOTS: 3}}
+            )
+        }
+    )
+    content = CONTENT.with_overrides(items=[cape])
+    content = replace(
+        content, caps=content.caps.model_copy(update={"inventory_slots": 1})
+    )
+    current = replace(
+        state(),
+        inventory={"item.fake_sprig": 1, "item.fake_pickaxe": 1},
+        cap_bonuses={CapType.INVENTORY_SLOTS: 3},
+    )
+    with pytest.raises(EquipmentError) as error:
+        change_equipment(current, {"cape": cape.id}, "cape", None, content)
+    assert error.value.code == "INVENTORY_FULL"
+
+
+@pytest.mark.anyio
+async def test_custom_equipment_content_in_estate_and_travel(
+    action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Estate and travel loaders accept equipment absent from default content."""
+    from app.main import app
+
+    client, factory, _, headers = action_client
+    item = CONTENT.item("item.fake_cape").model_copy(update={"id": "test.custom_cape"})
+    content = CONTENT.with_overrides(items=[item])
+    monkeypatch.setattr(app.state, "content", content)
+    with factory() as session:
+        identifier = session.scalar(select(Character.id))
+        assert identifier is not None
+        session.add(Inventory(character_id=identifier, item_id=item.id, quantity=1))
+        session.commit()
+    equipped = await client.post(
+        "/equipment/equip", headers=headers, json={"item_id": item.id, "slot": "cape"}
+    )
+    assert equipped.status_code == 200, equipped.text
+    estate = await client.get("/estates/me", headers=headers)
+    assert estate.status_code == 200, estate.text
+    for path, body in (
+        ("/estates/me/upgrades/upgrade.painted_sign", {}),
+        ("/estates/me/transform", {"form_id": "form.homestead"}),
+        ("/estates/build", {"form_id": "form.fake_workshop"}),
+    ):
+        rejected = await client.post(path, headers=headers, json=body)
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["error"]["code"] == "MISSING_INPUTS"
+    params = {"destination_realm_id": "realm.ashen_reach", "mode": "visit"}
+    preview = await client.get("/travel/preview", headers=headers, params=params)
+    assert preview.status_code == 200, preview.text
+    started = await client.post("/travel/start", headers=headers, json=params)
+    assert started.status_code == 200, started.text

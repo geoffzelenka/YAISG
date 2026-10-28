@@ -82,9 +82,10 @@ def change_equipment(
                 for cap, amount in definition.cap_bonuses.items():
                     caps[cap] = caps.get(cap, 0) + direction * amount
     limit = resolve_caps(replace(state, cap_bonuses=caps), content).inventory_slots
-    if len(inventory) > limit or any(
+    if (len(inventory) > limit and len(inventory) > len(state.inventory)) or any(
         qty > content.item(identifier).stack_limit
         for identifier, qty in inventory.items()
+        if qty > state.inventory.get(identifier, 0)
     ):
         raise EquipmentError(
             "INVENTORY_FULL", "Inventory cannot hold the displaced equipment"

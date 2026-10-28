@@ -19,9 +19,10 @@
   feed entry and preventing further tool-less work.
 - Equipped modifiers populate group G; cap grants populate additive caps, and
   main-hand tool_class feeds the shared action requirement check. Profiles
-  expose equipment as slot -> {item_id, quantity}; all affected action/profile
-  state loaders use the request's content index. Equipped goods are neither
-  consumed nor degraded.
+  expose equipment as slot -> {item_id, quantity}. Action/profile state loaders
+  use the request's content index. Review round 1 extends this to the previously
+  missed travel and estate loaders. Equipped goods are neither consumed nor
+  degraded.
 - Added the requested fake pickaxe, XP cape and two-handed item. Content lint
   enumerates legal concrete gear layouts, including empty slots, either-side
   jewellery and two-handed exclusions. Gear estate-slot grants also participate
@@ -45,10 +46,28 @@
   TEST_DATABASE_URL; the concurrent request test runs on either database.
 
 - Validation: repository-virtualenv make ci passes on SQLite: auth 15, game
-  640 with 20 database-specific skips, client 90. Formatting, lint, strict
+  650 with 20 database-specific skips, client 90 (review round 1). Formatting, lint, strict
   typing, production build, scripts and content lint pass. Disposable SQLite
   make db-reset, subsequent upgrade to head, alembic check and application
   lifespan/content-manifest smoke check pass. git diff --check is clean.
+
+- Review round 1: fixed B1's over-cap handling and limited stack-limit checks to
+  increased quantities. Added test_over_cap_equip_without_displacement_is_allowed,
+  test_over_cap_swap_is_allowed and test_unequip_capacity_gear_uses_resulting_cap.
+  The first also retains an untouched stack already above its stack limit.
+- Applied N1–N8: added test_validator_rejects_incompatible_equipment_fields
+  (two-handed/tool right-hand restrictions and belt-only capacity),
+  test_loader_rejects_unknown_equipment_skill (requires/modifier references),
+  test_loader_requires_equipped_tool_class (goods class alone is insufficient),
+  and test_custom_equipment_content_in_estate_and_travel (all six missed loader
+  calls). Unknown equip item ids now return 404. Changed
+  test_equipment_caps_xp_and_failed_changes_are_atomic to assert exact XP bonuses
+  with and without the cape, 404 for unknown items and matching mutation/profile
+  equipment shapes. Changed test_tool_group_g_and_mid_action_change and the cape
+  test to narrow optional equip definitions with explicit assertions.
+- Added services/equipment.py: inventory and equipment persistence updates only
+  changed rows, preserving unrelated holdings and existing slot quantities.
+  Equip/unequip responses reuse the profile's EquippedStack shape.
 
 ## Removed
 
@@ -67,8 +86,10 @@
 - §9.2: requests name {item_id, slot} or {slot}; ring/arm items require an explicit
   concrete side. Replacing an occupied slot returns its old item atomically.
   Capacity is checked after removing the incoming item and adding all displaced
-  items, against resulting caps and stack limits; existing stacks can receive
-  returned items without a new distinct-item slot.
+  items. A transfer above the resulting cap is rejected only when distinct-stack
+  usage increases; existing over-cap usage may stay constant or shrink (§7.5).
+  Stack limits gate only quantities increased by the transfer. Existing stacks
+  can receive returned items without a new distinct-item slot.
 - §7.3: lint independently maximizes the gear factor and gear estate-slot grant,
   as it already independently maximizes estate/realm sources. Requirements and
   acquisition history are relaxed, preserving an upper bound. Legal hand and
@@ -89,8 +110,8 @@ None.
 - 27-consumables-hp: implement utility/belt assignment and consumption. The
   utility slot and positive stack quantity are reserved in the equipment table;
   permanent equip/unequip rejects utility. When adding utility holders, exclude
-  utility from permanent group G and preserve its quantity when permanent slots
-  are rewritten. Read equip.belt_slots for the physical
+  utility from permanent group G. The changed-row persistence preserves
+  quantities on untouched slots. Read equip.belt_slots for the physical
   belt positions plus the resolved cap. Keep consumable modifiers in C rather
   than G, and extend holders and both generated-operation coverage sets again.
 - 28-combat-model / 29-combat-resolver: consume authored weapon/armour blocks and
@@ -98,7 +119,8 @@ None.
   active action's combat resolver after resolution; its test injects an ordinary
   resolver through the existing seam, without implementing combat mechanics.
 - 30-client-equipment-combat: profile equipment is slot -> {item_id, quantity};
-  mutations accept concrete slots and return {equipment: {slot: item_id}}.
+  mutations accept concrete slots and return
+  {equipment: {slot: {item_id, quantity}}}, matching the profile.
   Refresh profile, inventory and action data after changes. Render gear/tool
   requirements from the public items pack and extend client content types with
   equip; no equipment client UI is built here.
@@ -115,5 +137,5 @@ None.
 - TWO_HANDED_CONFLICT (409): a two-handed right-hand item blocks the left hand.
 - EQUIPMENT_SLOT_EMPTY (409): no item is available to unequip.
 - EQUIPMENT_IN_COMBAT (409): a combat action remains active after resolution.
-- Reused UNKNOWN_ITEM, MISSING_INPUTS and INVENTORY_FULL (409 here); malformed
+- Reused UNKNOWN_ITEM (404), MISSING_INPUTS and INVENTORY_FULL (409); malformed
   request shapes retain INVALID_REQUEST. No dependencies added.

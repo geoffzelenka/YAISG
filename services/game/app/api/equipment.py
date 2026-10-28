@@ -4,9 +4,10 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.api.actions import get_character
+from app.api.characters import EquippedStack
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.content.loader import ContentIndex
@@ -14,13 +15,14 @@ from app.content.schemas import EquipmentSlot
 from app.engine.core import effective_cycle_time
 from app.engine.equipment import EquipmentError, change_equipment
 from app.errors import api_error
-from app.models import CharacterEquipment, Inventory
+from app.models import CharacterEquipment
 from app.services.actions import (
     as_utc,
     load_character_state,
     resolve_character,
     resolve_locked_character,
 )
+from app.services.equipment import persist_equipment
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 
@@ -41,7 +43,7 @@ class EquipRequest(UnequipRequest):
 class EquipmentResponse(BaseModel):
     """The authoritative permanent equipment layout."""
 
-    equipment: dict[str, str]
+    equipment: dict[str, EquippedStack]
 
 
 def _change(
@@ -77,19 +79,10 @@ def _change(
             content,
         )
     except EquipmentError as exc:
-        raise api_error(409, exc.code, str(exc)) from None
-    for model in (Inventory, CharacterEquipment):
-        session.execute(delete(model).where(model.character_id == character.id))
-    session.add_all(
-        Inventory(character_id=character.id, item_id=item, quantity=qty)
-        for item, qty in inventory.items()
-    )
-    session.add_all(
-        CharacterEquipment(
-            character_id=character.id, slot=slot, item_id=item, quantity=1
-        )
-        for slot, item in equipment.items()
-    )
+        raise api_error(
+            404 if exc.code == "UNKNOWN_ITEM" else 409, exc.code, str(exc)
+        ) from None
+    persist_equipment(session, character.id, inventory, equipment)
     session.flush()
     changed_state = load_character_state(session, character.id, content)
     if (
@@ -116,7 +109,12 @@ def _change(
             # do not accrue another interval of work without the required item.
             resolve_locked_character(session, character.id, now, content, record=active)
     session.commit()
-    return EquipmentResponse(equipment=equipment)
+    return EquipmentResponse(
+        equipment={
+            slot: EquippedStack(item_id=item, quantity=1)
+            for slot, item in equipment.items()
+        }
+    )
 
 
 @router.post("/equip")
