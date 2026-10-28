@@ -209,6 +209,8 @@ async def start_action(
     character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
+    # Combat→combat starts seed HP from the resolved character row. The new
+    # action's empty meta must not inherit the previous encounter's hp_exact.
     state = load_character_state(session, character.id, content, now)
     try:
         action = content.action(body.action_id)

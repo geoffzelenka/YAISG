@@ -7,7 +7,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from time import perf_counter
 
 import pytest
@@ -262,8 +262,34 @@ def test_offensive_taper_drains_pool_defense_and_drops_unchanged(
 @given(seed=st.integers(0, 10000), step_ms=st.integers(137, 7000))
 def test_offline_equals_online_polling(seed: int, step_ms: int) -> None:
     """Serialization, partial cycles, respawn and fractional XP survive polling."""
-    pack = content(max_hp=4, xp_pool_offense=7, attack_interval_ms=100000)
-    character = replace(state(), hp=100)
+    buff = CONTENT.item("item.fake_buff").model_copy(
+        update={
+            "consumable": Consumable(
+                buff=TimedBuff(
+                    modifiers=(
+                        Modifier(
+                            type=ModifierType.COMBAT_DEFENSE_PCT,
+                            value=50,
+                            category="combat",
+                        ),
+                    ),
+                    duration_ms=3000,
+                )
+            )
+        }
+    )
+    pack = replace(
+        content(max_hp=4, xp_pool_offense=7, attack_interval_ms=1000, power=1),
+        progression=CONTENT.progression,
+    ).with_overrides(items=(buff,))
+    character = replace(
+        state(),
+        hp=40,
+        belt={
+            0: BeltStack(buff.id, 20, {"buff_missing": True}),
+            1: BeltStack("item.fake_food", 4, {"hp_below_pct": 50}),
+        },
+    )
     end_ms = 30000
     offline = resolve(
         character,
@@ -312,8 +338,14 @@ def test_regeneration_then_one_belt_item_in_slot_order(
         first[0], first[1], pack, NOW + timedelta(seconds=4), random.Random(1)
     )
     assert second[2].items_consumed == {"item.fake_food": 1}
-    # Regeneration can rescue a zero-HP player before the terminal check.
-    pack = replace(pack, progression=CONTENT.progression)
+
+
+def test_regeneration_rescues_zero_hp_before_terminal_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Isolate the literal zero-HP ruling so ratification changes one test."""
+    fixed_attacks(monkeypatch, taken=10)
+    pack = replace(content(attack_interval_ms=1000), progression=CONTENT.progression)
     result = resolve(
         replace(state(), hp=1),
         active(),
@@ -353,12 +385,22 @@ def test_twelve_hours_two_second_cycles_time_bound() -> None:
         progression=CONTENT.progression,
     )
     started = perf_counter()
+    character = replace(
+        state(),
+        skill_levels={"vigor": 100, "defense": 100},
+        skills_xp={
+            skill: pack.xp_curve.levels[99].xp for skill in ("vigor", "defense")
+        },
+    )
     result = resolve(
-        state(), active(), pack, NOW + timedelta(hours=12), random.Random(1)
+        character, active(), pack, NOW + timedelta(hours=12), random.Random(1)
     )
     elapsed = perf_counter() - started
     assert result[2].cycles_completed == 21600
-    assert elapsed < 30, f"12-hour pure combat simulation took {elapsed:.3f}s"
+    # This workload survives without zero-HP revival, independent of ratification.
+    assert result[0].hp is not None and result[0].hp > 1000
+    # Cached runtime is about 0.31s; use the requested 2s floor over 3× that.
+    assert elapsed < 2, f"12-hour pure combat simulation took {elapsed:.3f}s"
 
 
 @pytest.mark.anyio
@@ -399,9 +441,11 @@ async def test_engagement_gate_and_consumable_setup_combat_guards(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("existing_buff", [False, True])
 async def test_combat_persists_hp_consumption_buffs_and_claims_once(
     action_client: ApiFixture,
     monkeypatch: pytest.MonkeyPatch,
+    existing_buff: bool,
 ) -> None:
     client, factory, clock, headers = action_client
     fixed_attacks(monkeypatch)
@@ -429,6 +473,14 @@ async def test_combat_persists_hp_consumption_buffs_and_claims_once(
                 trigger={"buff_missing": True},
             )
         )
+        if existing_buff:
+            session.add(
+                CharacterBuff(
+                    character_id=character.id,
+                    item_id="item.fake_buff",
+                    expires_at=clock.now - timedelta(seconds=1),
+                )
+            )
         session.commit()
     await client.post("/actions/start", headers=headers, json={"action_id": ACTION})
     clock.advance(timedelta(seconds=2))
@@ -438,7 +490,13 @@ async def test_combat_persists_hp_consumption_buffs_and_claims_once(
     with factory() as session:
         character = session.scalar(select(Character))
         assert character is not None and character.hp == 78
-        assert session.get(CharacterBuff, (character.id, "item.fake_buff")) is not None
+        buff = session.get(CharacterBuff, (character.id, "item.fake_buff"))
+        assert buff is not None
+        definition = pack.item("item.fake_buff").consumable
+        assert definition is not None and definition.buff is not None
+        assert action_service.as_utc(buff.expires_at) == (
+            clock.now + timedelta(milliseconds=definition.buff.duration_ms)
+        )
         assert session.get(CharacterBelt, (character.id, 0)) is None
         utility = session.get(CharacterEquipment, (character.id, "utility"))
         assert utility is not None and utility.quantity == 2
@@ -524,6 +582,25 @@ async def test_combat_regeneration_is_not_applied_before_fighting_or_twice(
     for _ in range(2):
         profile = await client.get("/characters/me", headers=headers)
         assert profile.json()["hp"] == pytest.approx(70 + 110 * 0.01 / 30)
+    completed_at = clock.now
+    clock.advance(timedelta(milliseconds=750))
+    stopped = await client.post("/actions/stop", headers=headers)
+    assert stopped.status_code == 200 and stopped.json()["active"] is None
+    with factory() as session:
+        character = session.scalar(select(Character))
+        assert character is not None and character.hp_updated_at is not None
+        # Stopping discards the partial attack; its healing stays lazily pending.
+        assert action_service.as_utc(character.hp_updated_at) == completed_at
+    profile = await client.get("/characters/me", headers=headers)
+    assert (
+        action_service.as_utc(datetime.fromisoformat(profile.json()["hp_updated_at"]))
+        == clock.now
+    )
+    assert profile.json()["hp"] == pytest.approx(70 + 110 * 0.01 * 2.75 / 60)
+    with factory() as session:
+        character = session.scalar(select(Character))
+        assert character is not None and character.hp_updated_at is not None
+        assert action_service.as_utc(character.hp_updated_at) == clock.now
 
 
 def test_loot_overflow_discards_excess_and_stops(
@@ -602,3 +679,193 @@ def test_offline_budget_clips_respawn_wait() -> None:
     assert result[2].cycles_completed == 0
     assert result[2].elapsed_ms == 12 * 3600000
     assert result[1] is None and result[2].stop_reason == "OFFLINE_CAP"
+
+
+def test_offensive_taper_drains_untapered_pool_before_kill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pool accounting must be observable before a kill discards its remainder."""
+    fixed_attacks(monkeypatch, dealt=10)
+    pack = content(max_hp=1000, xp_pool_offense=1000, attack_interval_ms=1000)
+    results = [
+        resolve(
+            replace(
+                state(),
+                hp=100,
+                skill_levels={"melee": level},
+                skills_xp={"melee": pack.xp_curve.levels[level - 1].xp},
+            ),
+            active(),
+            pack,
+            NOW + timedelta(seconds=4),
+            random.Random(3),
+        )
+        for level in (1, 95)
+    ]
+    for result in results:
+        assert result[1] is not None
+        assert result[2].details["kills"] == 0
+        assert result[1].meta["opponent_hp"] == 980
+        assert result[1].meta["offense"] == [980, 1]
+    assert results[0][1] is not None and results[1][1] is not None
+    assert results[0][1].meta["offense"] == results[1][1].meta["offense"]
+    assert results[0][2].xp_gained["melee"] == 10
+    assert results[1][2].xp_gained.get("melee", 0) == 0
+
+
+@pytest.mark.parametrize("defensive_pool,defensive_share", [(100, 16), (16, 8)])
+def test_exact_offensive_stance_and_defensive_taken_mitigated_split(
+    monkeypatch: pytest.MonkeyPatch,
+    defensive_pool: int,
+    defensive_share: int,
+) -> None:
+    """Split two enemy attacks, including taken→Defense and pool clipping."""
+    fixed_attacks(monkeypatch, dealt=10, taken=5, mitigated=3)
+    pack = content(
+        max_hp=100,
+        xp_pool_offense=200,
+        xp_pool_defense=defensive_pool,
+        defense_xp_per_damage=2,
+        attack_interval_ms=1000,
+    )
+    result = resolve(
+        replace(state(), hp=100, stance="precise"),
+        active(),
+        pack,
+        NOW + timedelta(seconds=2),
+        random.Random(1),
+    )
+    # Offense: 10 * 200 / 100 = 20; precise splits 25% / 75%.
+    # Defense: taken=10, mitigated=6, rate=2. Vigor gets 10*2*80%=16;
+    # Defense gets 6*2 + 10*2*20%=16. A 16-point pool halves both.
+    assert result[2].xp_gained == {
+        "melee": 5,
+        "accuracy": 15,
+        "vigor": defensive_share,
+        "defense": defensive_share,
+    }
+    assert result[1] is not None
+    assert result[1].meta["offense"] == [180, 1]
+    assert result[1].meta["defense"] == [max(0, defensive_pool - 32), 1]
+
+
+@pytest.mark.anyio
+async def test_ranged_ammunition_quantity_persists_and_empty_row_is_deleted(
+    action_client: ApiFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Matching utility is consumed once per cycle, including across DB reloads."""
+    client, factory, clock, headers = action_client
+    _, pack = ranged_state()
+    monkeypatch.setattr(app.state, "content", pack)
+    fixed_attacks(monkeypatch, taken=0)
+    with factory() as session:
+        character = session.scalar(select(Character))
+        assert character is not None
+        character_id = character.id
+        session.add_all(
+            [
+                CharacterEquipment(
+                    character_id=character_id,
+                    slot="right_hand",
+                    item_id="item.fake_sword",
+                    quantity=1,
+                ),
+                CharacterEquipment(
+                    character_id=character_id,
+                    slot="utility",
+                    item_id="item.fake_ammo",
+                    quantity=2,
+                ),
+            ]
+        )
+        session.commit()
+    response = await client.post(
+        "/actions/start", headers=headers, json={"action_id": ACTION}
+    )
+    assert response.status_code == 200
+    for remaining in (1, 0):
+        clock.advance(timedelta(seconds=2))
+        response = await client.get("/actions/poll", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["since_last"]["items_consumed"] == {"item.fake_ammo": 1}
+        assert response.json()["stop_reason"] is None
+        with factory() as session:
+            utility = session.get(CharacterEquipment, (character_id, "utility"))
+            if remaining:
+                assert utility is not None and utility.quantity == remaining
+            else:
+                assert utility is None
+    clock.advance(timedelta(seconds=2))
+    response = await client.get("/actions/poll", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["active"] is None
+    assert response.json()["stop_reason"] == "OUT_OF_AMMO"
+    assert response.json()["since_last"]["cycles_completed"] == 0
+    with factory() as session:
+        assert session.get(CharacterEquipment, (character_id, "utility")) is None
+
+
+@pytest.mark.parametrize("starting_xp", [0, CONTENT.xp_curve.levels[1].xp - 1])
+@pytest.mark.parametrize("with_buff", [False, True])
+def test_level_up_and_buff_boundaries_refresh_combat_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+    starting_xp: int,
+    with_buff: bool,
+) -> None:
+    """Following attacks use a gained level, an activated buff, then its expiry."""
+    buff = CONTENT.item("item.fake_buff").model_copy(
+        update={
+            "consumable": Consumable(
+                buff=TimedBuff(
+                    modifiers=(
+                        Modifier(
+                            type=ModifierType.COMBAT_POWER_PCT,
+                            value=100,
+                            category="combat",
+                        ),
+                    ),
+                    duration_ms=2000,
+                )
+            )
+        }
+    )
+    pack = content(
+        max_hp=100,
+        xp_pool_offense=100,
+        attack_interval_ms=1000,
+    ).with_overrides(items=(buff,))
+    hits: list[int] = []
+
+    def hit(
+        attacker: CombatStats,
+        defender: CombatStats,
+        rng: object,
+    ) -> AttackResult:
+        if attacker.damage_type == "blunt":
+            hits.append(attacker.max_hit)
+            return AttackResult(attacker.max_hit, 0)
+        return AttackResult(0, 0)
+
+    monkeypatch.setattr(combat_resolver, "attack", hit)
+    character = replace(
+        state(),
+        hp=100,
+        stance="balanced",
+        skills_xp={"melee": starting_xp},
+        belt={0: BeltStack(buff.id, 1, {"buff_missing": True})} if with_buff else {},
+    )
+    result = resolve(
+        character,
+        active(),
+        pack,
+        NOW + timedelta(seconds=6),
+        random.Random(1),
+    )
+    next_hit = 3 if starting_xp else 2
+    expected = [2, next_hit * (2 if with_buff else 1), next_hit]
+    assert hits == expected
+    assert result[0].skill_levels["melee"] == (2 if starting_xp else 1)
+    assert result[2].details["damage_dealt"] == sum(expected)
+    assert result[1] is not None
+    assert result[1].meta["offense"] == [100 - sum(expected), 1]

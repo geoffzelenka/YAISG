@@ -22,6 +22,12 @@
   library Fraction, including fractional authored settings. Whole XP is credited
   with explicit per-skill carries. Clipped fractional damage is carried in the
   integer damage summary too. Level changes affect following cycles.
+- Cached CombatStats and derived cycle parameters until a level changes or a
+  buff starts/expires. Cached exact regen per millisecond/per cycle, offense per
+  dealt damage, taper-times-stance factors, defensive damage rate and the
+  taken-to-Vigor share. This removes repeated stat assembly and constant Fraction
+  construction in the cycle loop. Offensive and defensive XP steps have separate
+  helpers while preserving the literal cycle ordering and exact carries.
 - Replaced outer passive regeneration during combat with the simulated cycle and
   respawn healing. Persisted HP timestamps follow consumed simulation time;
   stopped characters regenerate for the remaining idle interval. Inventory,
@@ -46,6 +52,7 @@
   - test_offensive_taper_drains_pool_defense_and_drops_unchanged
   - test_offline_equals_online_polling (Hypothesis, JSON round trips)
   - test_regeneration_then_one_belt_item_in_slot_order
+  - test_regeneration_rescues_zero_hp_before_terminal_check
   - test_cycle_ceiling_stops_with_uppercase_offline_cap
   - test_twelve_hours_two_second_cycles_time_bound
   - test_engagement_gate_and_consumable_setup_combat_guards
@@ -55,14 +62,38 @@
   - test_loot_overflow_discards_excess_and_stops
   - test_respawn_wait_buff_expiry_and_regeneration_match_polling
   - test_offline_budget_clips_respawn_wait
+  - test_offensive_taper_drains_untapered_pool_before_kill
+  - test_exact_offensive_stance_and_defensive_taken_mitigated_split
+    (unclipped and proportionally clipped pools)
+  - test_ranged_ammunition_quantity_persists_and_empty_row_is_deleted
+  - test_level_up_and_buff_boundaries_refresh_combat_parameters
+    (independent level and buff changes, four cases)
 - The database fixtures honor TEST_DATABASE_URL. The PostgreSQL-only regression
   observes a real backend blocking relationship before releasing the first
   combat transaction, then verifies one cycle, one HP deduction and one claim.
-  Pure polling equivalence injects seeded randomness and clock values.
+  Pure polling equivalence injects seeded randomness and clock values, uses
+  one-second retaliation and authored regeneration, and exercises defensive
+  pools, repeated buffs, healing belt stacks and JSON round trips.
+- Review round 1 strengthened the API tests to verify ammunition quantity
+  decrements, deletion at zero and OUT_OF_AMMO on the next cycle, plus renewal of
+  a pre-existing expired CharacterBuff row, retaining the new-row creation case.
+  The stop/regen test verifies the last completed-cycle hp_updated_at, then the
+  partial-cycle healing and timestamp
+  handover to idle. Comments explain the combat-to-combat HP seed and that
+  meta.buffs is summary-only while loaded CharacterBuff rows are runtime truth.
+- Mutation checks reject all eight deliberate faults: tapered pool drain before
+  kill; omitted utility decrement; omitted utility-row deletion; omitted update
+  to an existing buff expiry; incorrect offensive stance share; all defensive XP
+  to Vigor; removal of taken-to-Defense share; and disabling the stats cache.
+  All mutated source files were restored after the checks.
 - Normal CI runs the twelve-hour performance regression against the pure core:
-  21,600 two-second cycles, including opponent attacks and regeneration, under a
-  generous 30-second bound. Measured targeted runtime: 4.93 seconds.
-- SQLite make ci passes: auth 15, game 740 with 22 dialect-specific skips,
+  21,600 two-second cycles, including opponent attacks and regeneration. Caching
+  reduced measured runtime from 4.69 seconds to 0.25 seconds (about 19 times
+  faster). The bound is now 2 seconds: the requested floor over three times the
+  measured runtime. A deliberately bypassed cache fails that bound. The workload
+  survives without zero-HP revival so only the dedicated rescue test locks in
+  the literal zero-HP behavior.
+- SQLite make ci passes: auth 15, game 750 with 22 dialect-specific skips,
   client 90; Ruff, strict mypy, TypeScript, ESLint, Vitest, production build,
   scripts and content lint pass. Existing migration/reset tests verify fresh
   schema creation and rebuild. No schema migration or content change is needed.
@@ -98,6 +129,11 @@
 - §9.3: utility content currently defines its attack-style purpose without a
   stat-effect payload. The resolver consumes the matching stack and enforces the
   ammunition gate; no unauthored numeric utility bonus is invented.
+- §7.2–§7.3 / §10.5 / V§4.5: combat does not apply xp_pct or the general XP
+  bonus cap to either stream. The specific damage/pool formulas in §10.5 and the
+  per-encounter pool ceilings in V§4.5 take precedence in this implementation.
+  The general "any action" rule is ambiguous against those specifics; the
+  existing behavior is retained and explicitly submitted for ratification below.
 - §10.5: details contain per-resolution deltas, and meta.totals contains
   cumulative action totals. Integer damage summaries carry fractional clipped
   damage between resolves, just as integer XP does. The existing reward feed
@@ -115,12 +151,21 @@
 ## Ratification needed
 
 - §10.5 steps 6–8 / V§6.2.2: should passive regeneration revive zero HP before
-  the terminal check? The literal ordering does so, meaning positive regeneration
-  prevents defeat even when opponent attacks exhaust HP every cycle. Implemented
-  the required ordering without a defeat latch; the regeneration/belt-order test
-  explicitly verifies this behavior. Defeat and simultaneous kill/defeat tests
-  use authored zero regeneration. A different zero-HP regeneration rule needs a
-  design ruling; no such rule was invented here.
+  the terminal check? The literal ordering does so, meaning DEFEATED is
+  unreachable with the default positive regeneration. Candidate rulings are
+  (a) defeat latches when HP reaches zero in step 3; (b) no regeneration at zero
+  HP, but belt food can rescue; or (c) keep the literal order and rebalance
+  content. The required literal implementation remains. Only
+  test_regeneration_rescues_zero_hp_before_terminal_check asserts the disputed
+  revival rule; defeat tests use authored zero regeneration. Deferred with this
+  ruling (review N3): remaining carried attacks against an already-zero-HP player
+  still resolve and can pay defensive XP from mitigation. No zero-HP exception
+  was introduced.
+- §7.2–§7.3 / §10.5 / V§4.5: should the general xp_pct multiplier and XP cap
+  apply to combat's pool-based streams, and how should they interact with the
+  stated pool ceilings? The implementation continues using §10.5's formulas,
+  without xp_pct or the general XP cap; pools remain the per-encounter ceilings.
+  No new bonus or pool-drain rule was invented while awaiting this decision.
 
 ## Hand-offs
 

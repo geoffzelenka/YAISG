@@ -2,8 +2,8 @@
 
 import random
 from collections import defaultdict
-from dataclasses import replace
-from datetime import timedelta
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from fractions import Fraction
 
 from app.content.schemas import Action
@@ -28,6 +28,20 @@ def _pack(value: Fraction) -> list[int]:
 
 def _unpack(value: list[int]) -> Fraction:
     return Fraction(*value)
+
+
+@dataclass(frozen=True)
+class CycleParameters:
+    """Combat values valid until a level change or the next buff expiry."""
+
+    player: CombatStats
+    maximum_hp: Fraction
+    regen_per_ms: Fraction
+    cycle_regen: Fraction
+    taper: Fraction
+    style_xp_factor: Fraction
+    accuracy_xp_factor: Fraction
+    expires_at: datetime | None
 
 
 class CombatSimulation:
@@ -56,8 +70,26 @@ class CombatSimulation:
         self.levels = dict(state.skill_levels)
         self.inventory = dict(state.inventory)
         self.belt = dict(state.belt)
+        # CharacterBuff rows, loaded into state, are runtime truth.
+        # meta["buffs"] is summary-only and must not restore stale expiries.
         self.buffs = dict(state.buff_expiries)
         self.utility = state.utility_quantity
+        self._parameters: CycleParameters | None = None
+        self._offense_pool = _fraction(self.opponent.xp_pool_offense)
+        self._defense_pool = _fraction(self.opponent.xp_pool_defense)
+        self._offense_per_dealt = self._offense_pool / self.opponent.max_hp
+        self._defense_rate = _fraction(self.opponent.defense_xp_per_damage)
+        self._regen_fraction_per_ms = (
+            _fraction(self.content.progression.combat.regen_per_min) / 60000
+        )
+        self._vigor_share = (
+            1 - _fraction(self.content.progression.combat.taken_to_defense_pct) / 100
+        )
+        stance = self.content.progression.stances[
+            state.stance or self.content.progression.default_stance
+        ]
+        self._style_share = _fraction(stance.style)
+        self._accuracy_share = _fraction(stance.accuracy)
         self.consumed: defaultdict[str, int] = defaultdict(int)
         self.gained: defaultdict[str, int] = defaultdict(int)
         self.overflow: defaultdict[str, int] = defaultdict(int)
@@ -73,7 +105,9 @@ class CombatSimulation:
         self.hp = (
             _unpack(self.meta["hp_exact"])
             if "hp_exact" in self.meta
-            else _fraction(state.hp if state.hp is not None else self.stats().max_hp)
+            else _fraction(
+                state.hp if state.hp is not None else self.parameters().player.max_hp
+            )
         )
         self.rng = random.Random(0)
         if "rng_state" in self.meta:
@@ -90,8 +124,8 @@ class CombatSimulation:
         """Refill pools only when a new encounter begins."""
         self.meta.update(
             opponent_hp=self.opponent.max_hp,
-            offense=_pack(_fraction(self.opponent.xp_pool_offense)),
-            defense=_pack(_fraction(self.opponent.xp_pool_defense)),
+            offense=_pack(self._offense_pool),
+            defense=_pack(self._defense_pool),
             attack_carry_ms=0,
             respawn_remaining_ms=0,
         )
@@ -119,32 +153,60 @@ class CombatSimulation:
             consumable_modifiers=modifiers,
         )
 
-    def stats(self) -> CombatStats:
-        """Resolve the player's current combat ratings."""
-        return player_stats(
+    def parameters(self) -> CycleParameters:
+        """Reuse stats and rational rates until a relevant input changes."""
+        cached = self._parameters
+        if cached is not None and (
+            cached.expires_at is None or self.at < cached.expires_at
+        ):
+            return cached
+        player = player_stats(
             self.current_state(), self.state.equipment, self.opponent, self.content
         )
+        maximum = _fraction(player.max_hp)
+        regen_per_ms = maximum * self._regen_fraction_per_ms
+        tier = tier_for_level(
+            self.levels.get(player.style, 1), self.content.progression.tier_thresholds
+        )
+        taper = _fraction(
+            self.content.progression.taper["combat"][max(0, tier - self.opponent.tier)]
+        )
+        expiries = (
+            self.buffs.values()
+            if self.buffs
+            else (expiry for expiry, _ in self.state.timed_buffs)
+        )
+        self._parameters = CycleParameters(
+            player=player,
+            maximum_hp=maximum,
+            regen_per_ms=regen_per_ms,
+            cycle_regen=regen_per_ms * player.cycle_ms,
+            taper=taper,
+            style_xp_factor=taper * self._style_share,
+            accuracy_xp_factor=taper * self._accuracy_share,
+            expires_at=min((end for end in expiries if end > self.at), default=None),
+        )
+        return self._parameters
 
     def advance(self, duration: int) -> None:
         """Spend simulation time without reading a clock."""
         self.at += timedelta(milliseconds=duration)
         self.elapsed += duration
 
-    def regenerate(self, duration: int, maximum: float) -> None:
-        """Carry every fractional HP unit explicitly."""
-        cap = _fraction(maximum)
-        self.hp = min(
-            cap,
-            self.hp
-            + cap
-            * _fraction(self.content.progression.combat.regen_per_min)
-            * duration
-            / 60000,
+    def regenerate(self, duration: int, values: CycleParameters) -> None:
+        """Apply cached healing, carrying every fractional HP unit explicitly."""
+        healing = (
+            values.cycle_regen
+            if duration == values.player.cycle_ms
+            else values.regen_per_ms * duration
         )
+        self.hp = min(values.maximum_hp, self.hp + healing)
 
     def award(self, skill: str, amount: Fraction) -> None:
         """Persist fractional XP across cycles and encounters, crediting integers."""
-        amount += self.carries.get(skill, Fraction())
+        if not amount:
+            return
+        amount += self.carries.get(skill, 0)
         whole = amount.numerator // amount.denominator
         self.carries[skill] = amount - whole
         if not whole:
@@ -153,6 +215,8 @@ class CombatSimulation:
         self.xp[skill] = self.xp.get(skill, 0) + whole
         level = level_for_xp(self.xp[skill], self.content.xp_curve.levels)
         self.levels[skill] = level
+        if level != previous:
+            self._parameters = None
         self.level_ups[skill].extend(range(previous + 1, level + 1))
 
     def use_utility(self, style: str) -> bool:
@@ -193,6 +257,7 @@ class CombatSimulation:
                 self.buffs[stack.item_id] = self.at + timedelta(
                     milliseconds=consumable.buff.duration_ms
                 )
+                self._parameters = None
             break
 
     def loot(self) -> None:
@@ -220,9 +285,30 @@ class CombatSimulation:
                 self.overflow[drop.item_id] += quantity - granted
                 self.reason = StopReason.INVENTORY_FULL
 
-    def cycle(self, duration: int) -> None:
+    def award_offense(self, dealt: int, values: CycleParameters) -> None:
+        """Drain raw offense before tapering and splitting the credited XP."""
+        if not self.offense:
+            return
+        raw = min(self.offense, dealt * self._offense_per_dealt)
+        self.offense -= raw
+        self.award(values.player.style, raw * values.style_xp_factor)
+        self.award("accuracy", raw * values.accuracy_xp_factor)
+
+    def award_defense(self, taken: Fraction, mitigated: int) -> None:
+        """Split the clipped stream in proportion to taken and mitigated damage."""
+        if not self.defense:
+            return
+        damage = taken + mitigated
+        paid = min(self.defense, damage * self._defense_rate)
+        self.defense -= paid
+        vigor = paid * taken / damage * self._vigor_share if damage else Fraction()
+        self.award("vigor", vigor)
+        self.award("defense", paid - vigor)
+
+    def cycle(self, values: CycleParameters) -> None:
         """Apply §10.5 steps 1–8 literally, including retaliation on a kill."""
-        player = self.stats()
+        player = values.player
+        duration = player.cycle_ms
         if not self.use_utility(player.style):
             return
         # Utility content currently names purpose only; no bonus is invented.
@@ -239,40 +325,9 @@ class CombatSimulation:
             self.hp -= damage
             taken += damage
             mitigated += retaliation.mitigated
-        raw = min(
-            self.offense,
-            Fraction(dealt, self.opponent.max_hp)
-            * _fraction(self.opponent.xp_pool_offense),
-        )
-        self.offense -= raw
-        tier = tier_for_level(
-            self.levels.get(player.style, 1), self.content.progression.tier_thresholds
-        )
-        taper = self.content.progression.taper["combat"][
-            max(0, tier - self.opponent.tier)
-        ]
-        stance = self.content.progression.stances[
-            self.state.stance or self.content.progression.default_stance
-        ]
-        self.award(player.style, raw * _fraction(taper) * _fraction(stance.style))
-        self.award("accuracy", raw * _fraction(taper) * _fraction(stance.accuracy))
-        defensive = (taken + mitigated) * _fraction(self.opponent.defense_xp_per_damage)
-        paid = min(self.defense, defensive)
-        self.defense -= paid
-        vigor = (
-            paid
-            * taken
-            / (taken + mitigated)
-            * (
-                1
-                - _fraction(self.content.progression.combat.taken_to_defense_pct) / 100
-            )
-            if taken + mitigated
-            else Fraction()
-        )
-        self.award("vigor", vigor)
-        self.award("defense", paid - vigor)
-        self.regenerate(duration, player.max_hp)
+        self.award_offense(dealt, values)
+        self.award_defense(taken, mitigated)
+        self.regenerate(duration, values)
         self.advance(duration)
         self.use_belt(player.max_hp)
         self.cycles += 1
@@ -298,20 +353,15 @@ class CombatSimulation:
             if wait:
                 duration = min(wait, budget - self.elapsed)
                 # Split waits at expiry so online polling cannot change healing.
-                future_expiries = [
-                    expiry for expiry in self.buffs.values() if expiry > self.at
-                ]
-                future_expiries.extend(
-                    expiry for expiry, _ in self.state.timed_buffs if expiry > self.at
-                )
-                if future_expiries:
-                    delta = min(future_expiries) - self.at
+                values = self.parameters()
+                if values.expires_at is not None:
+                    delta = values.expires_at - self.at
                     duration = min(
                         duration,
                         (delta + timedelta(microseconds=999))
                         // timedelta(milliseconds=1),
                     )
-                self.regenerate(duration, self.stats().max_hp)
+                self.regenerate(duration, values)
                 self.advance(duration)
                 self.meta["respawn_remaining_ms"] -= duration
                 if self.meta["respawn_remaining_ms"]:
@@ -320,10 +370,10 @@ class CombatSimulation:
                 self.spawn()
                 self.offense = _unpack(self.meta["offense"])
                 self.defense = _unpack(self.meta["defense"])
-            duration = self.stats().cycle_ms
-            if self.elapsed + duration > budget:
+            values = self.parameters()
+            if self.elapsed + values.player.cycle_ms > budget:
                 break
-            self.cycle(duration)
+            self.cycle(values)
             if self.cycles >= self.content.progression.combat.max_cycles_per_resolve:
                 self.reason = self.reason or StopReason.COMBAT_OFFLINE_CAP
         return self.result()
@@ -366,7 +416,7 @@ class CombatSimulation:
                 self.rng.getstate()[2],
             ],
             totals=totals,
-            cycle_ms=self.stats().cycle_ms,
+            cycle_ms=self.parameters().player.cycle_ms,
         )
         state = replace(
             self.state,
