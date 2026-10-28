@@ -193,3 +193,21 @@
   non-combat stop reasons remain compatible.
 - Reused EQUIPMENT_IN_COMBAT (409) for permanent equipment, utility and belt.
 - No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Verification:
+  - SQLite `make ci`: auth 15, game 750 passed / 22 skipped, client 90.
+  - PostgreSQL: game 771 passed / 1 skipped.
+  - Alembic check clean; app boot 200.
+- Round 1: CHANGES_REQUESTED.
+  - B1–B3: tests that surviving mutations did not catch (taper drain; utility/buff persistence; step 4/5 splits).
+  - B4: 12 h resolve cost about 5 s on the event loop.
+  - B5: unrecorded xp_pct/cap reading.
+  - All fixed in 53e3751. The 12 h resolve now runs in 0.25 s; the CI bound is 2 s.
+- Round 2 (Sonnet): APPROVE. All injected mutations were caught. Cache invalidation was checked.
+- Open for the human:
+  - Zero-HP regeneration: DEFEATED is unreachable with the default content. Options (a), (b) and (c) are above.
+  - Combat XP ignores xp_pct and the XP cap.
+  - Review nit N3 depends on the zero-HP ruling.
+- Hand-off for 36-hardening: the combat resolve runs synchronously inside `async def` handlers. It is now cheap, but consider sync `def` handlers or a threadpool for resolves in general. If CI flakes, revisit the 2 s timing bound.
