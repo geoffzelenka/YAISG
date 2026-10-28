@@ -23,6 +23,7 @@ import { SkillPanel } from './features/skills/SkillPanel'
 import { EstatePanel } from './features/estate/EstatePanel'
 import { MapPanel } from './features/realm/MapPanel'
 import { RealmPanel, TransitionBanner } from './features/realm/RealmPanel'
+import { GlobalMarketPanel } from './features/market/GlobalMarketPanel'
 import { RealmMarketPanel } from './features/market/RealmMarketPanel'
 import { useRealm } from './api/realms'
 
@@ -227,7 +228,7 @@ function Shell({ profile }: { profile: CharacterProfile }) {
   const groups: { name: string; path?: string }[][] = [
     [
       { name: 'Profile', path: '/' },
-      { name: 'Player Market' },
+      { name: 'Player Market', path: '/market' },
       { name: 'Realm Market', path: '/realm/market' },
       { name: 'Estate', path: '/estate' },
       { name: 'Realm', path: '/realm' },
@@ -294,6 +295,10 @@ function Shell({ profile }: { profile: CharacterProfile }) {
         <main className="flex-1 p-8">
           <Routes>
             <Route index element={<ProfilePanel profile={profile} />} />
+            <Route
+              path="market"
+              element={<GlobalMarketPanel profile={profile} />}
+            />
             <Route path="estate" element={<EstatePanel />} />
             <Route path="realm" element={<RealmPanel profile={profile} />} />
             <Route

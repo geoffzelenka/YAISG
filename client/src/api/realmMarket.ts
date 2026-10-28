@@ -5,8 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import type { Selector } from './content'
-import { gameRequest, readApiError } from './http'
-import { RealmApiError } from './realms'
+import { ApiError, gameRequest, readApiError } from './http'
 
 export type Market = {
   lines: {
@@ -66,10 +65,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
         error.message += ` (Maximum fundable: ${maximum} items)`
       }
     }
-    throw new RealmApiError(
-      error.code ?? 'MARKET_REQUEST_FAILED',
-      error.message,
-    )
+    throw new ApiError(error.code ?? 'MARKET_REQUEST_FAILED', error.message)
   }
   return response.status === 204
     ? (undefined as T)
@@ -106,7 +102,7 @@ export function useMarketTransfer(id: string) {
           })
         : request<void>(`${base(id)}/treasury/gift`, transfer),
     onError: async (error) => {
-      if (error instanceof RealmApiError && error.code === 'PRICE_MOVED') {
+      if (error instanceof ApiError && error.code === 'PRICE_MOVED') {
         await client.invalidateQueries({ queryKey: ['realms', id, 'market'] })
       }
     },

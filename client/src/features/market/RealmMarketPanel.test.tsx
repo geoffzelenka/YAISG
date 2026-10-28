@@ -426,3 +426,12 @@ it('shows an empty hungry list only after every market has loaded without short 
   ).toBeInTheDocument()
   expect(screen.queryByRole('link')).not.toBeInTheDocument()
 })
+
+it('requesting a quote clears the previous success line', async () => {
+  setup()
+  fireEvent.click(await getQuote())
+  await screen.findByText('Sold 1 sprig for 4 gold.')
+  fireEvent.click(screen.getByRole('button', { name: 'Get quote' }))
+  expect(screen.queryByText('Sold 1 sprig for 4 gold.')).not.toBeInTheDocument()
+  await screen.findByText(/Receive 4 gold/)
+})
