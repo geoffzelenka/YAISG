@@ -42,7 +42,9 @@ Their product is maximized jointly over each group's alternatives:
   and arm definitions can fill either or both sides. Two-handed right-hand items
   exclude left-hand equipment. Skill requirements and acquisition history are
   conservatively relaxed. Permanent item modifiers add within G.
-- Consumables: identity factor until their content schema exists.
+- Consumables: every subset of simultaneous distinct timed buffs, adding within C.
+  Acquisition and duration restrictions are relaxed, preserving an upper bound;
+  expired maluses can be omitted. Utility has no non-combat modifier block.
 - Proficiency: excluded, as required by §7.3.
 
 The realm and estate maxima are multiplied, even when they need different
@@ -56,5 +58,4 @@ warns even if the runtime XP cap would absorb some of the excess.
 Subset enumeration is exponential in the number of eligible upgrades; current
 placeholder packs are small. Larger packs may require a bounded optimization
 that preserves the conservative guarantee. Prompts 11/12 must adapt form/slot
-eligibility; 27 must add simultaneous consumable effects to group C. Prompt 28 owns combat checks. No unavailable schemas are guessed by
-this lint.
+eligibility when their rules change. Prompt 28 owns combat checks.

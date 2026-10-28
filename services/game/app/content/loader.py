@@ -302,6 +302,12 @@ def _validate(
     item_ids = set(items)
     tags = {tag.id for tag in tag_definitions}
     for item in items.values():
+        if item.consumable is not None and item.consumable.buff is not None:
+            for modifier in item.consumable.buff.modifiers:
+                if modifier.skill_id is not None and modifier.skill_id not in skills:
+                    raise ContentError(
+                        f"unknown consumable modifier skill in {item.id}"
+                    )
         if item.equip is not None:
             if set(item.equip.requires) - set(skills):
                 raise ContentError(f"unknown equipment skill in {item.id}")

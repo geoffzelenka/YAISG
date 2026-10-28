@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import CharacterEquipment, Inventory
+from app.models import CharacterBelt, CharacterEquipment, Inventory
 
 
 def persist_equipment(
@@ -51,5 +51,47 @@ def persist_equipment(
             session.add(
                 CharacterEquipment(
                     character_id=character_id, slot=slot, item_id=item_id, quantity=1
+                )
+            )
+
+
+def persist_consumable(
+    session: Session,
+    character_id: uuid.UUID,
+    previous: CharacterEquipment | CharacterBelt | None,
+    slot: int | None,
+    item_id: str | None,
+    quantity: int,
+    trigger: dict[str, float | bool] | None,
+) -> None:
+    """Write a validated assignment without touching unrelated holders."""
+    if previous is not None:
+        if item_id is None:
+            session.delete(previous)
+        else:
+            previous.item_id = item_id
+            previous.quantity = quantity
+            if isinstance(previous, CharacterBelt):
+                assert trigger is not None
+                previous.trigger = trigger
+    elif item_id is not None:
+        if slot is None:
+            session.add(
+                CharacterEquipment(
+                    character_id=character_id,
+                    slot="utility",
+                    item_id=item_id,
+                    quantity=quantity,
+                )
+            )
+        else:
+            assert trigger is not None
+            session.add(
+                CharacterBelt(
+                    character_id=character_id,
+                    slot=slot,
+                    item_id=item_id,
+                    quantity=quantity,
+                    trigger=trigger,
                 )
             )

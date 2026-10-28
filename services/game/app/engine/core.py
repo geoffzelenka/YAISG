@@ -59,6 +59,7 @@ class CharacterState:
     gear_modifiers: tuple[Modifier, ...] = ()
     right_hand_tool_class: str | None = None
     consumable_modifiers: tuple[Modifier, ...] = ()
+    timed_buffs: tuple[tuple[datetime, tuple[Modifier, ...]], ...] = ()
     installed_upgrades: tuple[str, ...] = ()
     realm_states: Mapping[str, tuple[str, DecayStage, tuple[str, ...]]] = field(
         default_factory=dict
@@ -483,6 +484,20 @@ def _milliseconds(delta: timedelta) -> int:
     return delta.days * 86_400_000 + delta.seconds * 1_000 + delta.microseconds // 1_000
 
 
+def consumable_modifiers_at(
+    state: CharacterState, at: datetime
+) -> tuple[Modifier, ...]:
+    """Read timed group C sources on the half-open interval ending at expiry."""
+    if not state.timed_buffs:
+        return state.consumable_modifiers
+    return tuple(
+        modifier
+        for expires_at, values in state.timed_buffs
+        if expires_at > at
+        for modifier in values
+    )
+
+
 def _resolve_uniform(
     state: CharacterState,
     action: Action,
@@ -500,6 +515,9 @@ def _resolve_uniform(
     overflowed: defaultdict[str, int] = defaultdict(int)
     level_ups: defaultdict[str, list[int]] = defaultdict(list)
     resolved_ms = 0
+    boundary = datetime.fromisoformat(
+        active.meta.get("buff_boundary_at", active.started_at.isoformat())
+    )
     cycles = 0
     stop_reason: StopReason | None = None
     effective_level: int | None = None
@@ -508,8 +526,16 @@ def _resolve_uniform(
     standard_drops: tuple[Drop, ...] = ()
 
     while True:
+        evaluation_at = max(
+            boundary, active.last_resolved_at + timedelta(milliseconds=resolved_ms)
+        )
+        modifiers = consumable_modifiers_at(state, evaluation_at)
         current_state = replace(
-            state, skills_xp=xp, skill_levels=levels, inventory=inventory
+            state,
+            skills_xp=xp,
+            skill_levels=levels,
+            inventory=inventory,
+            consumable_modifiers=modifiers,
         )
         current_level = levels.get(action.skill_id, 1)
         if current_level != effective_level:
@@ -517,6 +543,28 @@ def _resolve_uniform(
             standard_xp = effective_xp(action, current_state, content)
             standard_drops = effective_drops(action, current_state, content)
             effective_level = current_level
+        expiry = min(
+            (
+                expires_at
+                for expires_at, _ in state.timed_buffs
+                if expires_at > evaluation_at
+            ),
+            default=None,
+        )
+        if expiry is not None:
+            expiry_ms = _milliseconds(expiry - active.last_resolved_at)
+            if expiry_ms <= min(available_ms, resolved_ms + cycle_ms):
+                # Carry the unfinished fraction into the next bonus segment.
+                fraction = (expiry_ms - resolved_ms) / cycle_ms
+                after = replace(
+                    current_state,
+                    consumable_modifiers=consumable_modifiers_at(state, expiry),
+                )
+                next_cycle = effective_cycle_time(action, after, content)
+                resolved_ms = expiry_ms - round(fraction * next_cycle)
+                boundary = expiry
+                effective_level = None
+                continue
         if resolved_ms + cycle_ms > available_ms:
             break
         payment = input_payment(inventory, action, content)
@@ -564,7 +612,15 @@ def _resolve_uniform(
             stop_reason = StopReason.INPUTS_EXHAUSTED
             break
 
-    new_state = replace(state, skills_xp=xp, skill_levels=levels, inventory=inventory)
+    new_state = replace(
+        state,
+        skills_xp=xp,
+        skill_levels=levels,
+        inventory=inventory,
+        consumable_modifiers=consumable_modifiers_at(
+            state, active.last_resolved_at + timedelta(milliseconds=available_ms)
+        ),
+    )
     xp_delta = xp.get(action.skill_id, 0) - state.skills_xp.get(action.skill_id, 0)
     new_active = (
         None
@@ -573,6 +629,9 @@ def _resolve_uniform(
             active,
             last_resolved_at=active.last_resolved_at
             + timedelta(milliseconds=resolved_ms),
+            meta={**active.meta, "buff_boundary_at": boundary.isoformat()}
+            if state.timed_buffs
+            else active.meta,
         )
     )
     return ResolveResult(
@@ -585,7 +644,7 @@ def _resolve_uniform(
         stop_reason=stop_reason,
         state=new_state,
         active=new_active,
-        elapsed_ms=resolved_ms,
+        elapsed_ms=max(0, resolved_ms),
     )
 
 

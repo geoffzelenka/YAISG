@@ -118,7 +118,7 @@ def test_stack_warning_excludes_proficiency_and_xp_cap() -> None:
     )
     content = replace(content, skills=(skill,), development_nodes=(node,), upgrades=())
     report = lint_content(content)[0]
-    assert report.stack_bound == pytest.approx(2.1 * 1.155)  # form, realm, gear
+    assert report.stack_bound == pytest.approx(2.1 * 1.155 * 1.1)  # form, realm, gear
     assert report.stack_warning
     progression = content.progression.model_copy(
         update={
@@ -162,10 +162,10 @@ def test_stack_respects_slots_scope_and_inert_upgrades() -> None:
         estate_forms=(form,),
         upgrades=upgrades,
     )
-    assert stack_bound(skill, content) == pytest.approx(1.5 * 1.2 * 1.155)
+    assert stack_bound(skill, content) == pytest.approx(1.5 * 1.2 * 1.155 * 1.1)
     form = form.model_copy(update={"upgrade_slots": 2})
     assert stack_bound(skill, replace(content, estate_forms=(form,))) == pytest.approx(
-        2 * 1.4 * 1.155
+        2 * 1.4 * 1.155 * 1.1
     )
 
 
@@ -279,7 +279,7 @@ def test_stack_maximizes_joint_factors_and_keeps_groups_separate() -> None:
         upgrades=(xp, speed),
     )
     # XP upgrade yields 2 * 0.5 = 1; speed yields 1 * 1.5 = 1.5.
-    assert stack_bound(skill, content) == pytest.approx(1.2 * 1.5 * 1.155)
+    assert stack_bound(skill, content) == pytest.approx(1.2 * 1.5 * 1.155 * 1.1)
 
 
 def test_stack_bound_includes_project_and_carried_tags() -> None:

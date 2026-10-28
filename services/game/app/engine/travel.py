@@ -23,6 +23,7 @@ from app.engine.core import (
     ResolveContext,
     ResolveResult,
     StopReason,
+    consumable_modifiers_at,
     input_payment,
     modifier_applies,
     modifier_groups,
@@ -215,6 +216,10 @@ class TravelResolver:
         while index < len(steps):
             edge = edges[steps[index]["edge_id"]]
             if remaining == 0:
+                step_at = ctx.active.last_resolved_at + timedelta(milliseconds=elapsed)
+                state = replace(
+                    state, consumable_modifiers=consumable_modifiers_at(state, step_at)
+                )
                 duration, supplies = step_cost(
                     edge, state, travel_profile(state, meta["mode"], content), content
                 )
@@ -256,6 +261,12 @@ class TravelResolver:
             )
             if reason is None and index < len(steps)
             else None
+        )
+        state = replace(
+            state,
+            consumable_modifiers=consumable_modifiers_at(
+                state, ctx.active.last_resolved_at + timedelta(milliseconds=elapsed)
+            ),
         )
         xp_delta = state.skills_xp.get("travel", 0) - initial_xp
         return ResolveResult(

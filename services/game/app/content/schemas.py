@@ -244,6 +244,33 @@ class Equipment(ContentModel):
         return self
 
 
+class TimedBuff(ContentModel):
+    """A scoped bonus lasting a content-defined interval."""
+
+    modifiers: tuple["Modifier", ...]
+    duration_ms: int = Field(gt=0)
+
+
+class Consumable(ContentModel):
+    """Exactly one consumable purpose, selected by its setup holder."""
+
+    heal: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    buff: TimedBuff | None = None
+    utility_for: Literal["melee", "ranged", "magic"] | None = None
+
+    @model_validator(mode="after")
+    def validate_purpose(self) -> "Consumable":
+        """Prevent ambiguous consumable kinds."""
+        if (
+            sum(value is not None for value in (self.heal, self.buff, self.utility_for))
+            != 1
+        ):
+            raise ValueError(
+                "consumable requires exactly one of heal, buff, utility_for"
+            )
+        return self
+
+
 class Item(ContentModel):
     """A stackable inventory item."""
 
@@ -254,6 +281,7 @@ class Item(ContentModel):
     reference_price: int = Field(gt=0)
     warehouse_cap: int | None = Field(default=None, gt=0)
     equip: Equipment | None = None
+    consumable: Consumable | None = None
     instanced: bool = False
     bullion: bool = False
     spoilage_pct_per_day: float = Field(default=0, ge=0, le=100)
@@ -565,9 +593,19 @@ class LintConfig(ContentModel):
     tolerance_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
 
 
+class CombatProgression(ContentModel):
+    """HP formula constants and regeneration settings, authored in progression."""
+
+    base_hp: float = Field(gt=0, allow_inf_nan=False)
+    hp_per_level: float = Field(ge=0, allow_inf_nan=False)
+    regen_per_min: float = Field(default=0.01, ge=0, allow_inf_nan=False)
+    min_engage_hp_pct: float = Field(default=25, ge=0, le=100, allow_inf_nan=False)
+
+
 class ProgressionPack(ContentModel):
     """Content-defined tier thresholds and titles."""
 
+    combat: CombatProgression
     basic_mobile_form: str = Field(min_length=1)
     visit_profile: TravelProfile
     travel_xp_per_second: float = Field(gt=0, allow_inf_nan=False)
@@ -788,3 +826,7 @@ class WorldSeedPack(ContentModel):
 
 
 Equipment.model_rebuild()
+
+TimedBuff.model_rebuild()
+Consumable.model_rebuild()
+Item.model_rebuild()

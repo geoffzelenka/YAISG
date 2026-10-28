@@ -44,6 +44,8 @@ PROJECT_IDS = (
     *(f"project.{name}" for name in EXTRA_PROJECT_NAMES),
 )
 OPERATIONS = (
+    "utility",
+    "belt",
     "equip",
     "unequip",
     "buy",
@@ -587,7 +589,27 @@ class WorldScenario:
 
     async def run(self, operation: str) -> None:
         """Execute one valid generated intent, checking all required preparation."""
-        if operation in {"equip", "unequip"}:
+        if operation in {"utility", "belt"}:
+            path = (
+                "/equipment/utility" if operation == "utility" else "/equipment/belt/0"
+            )
+            body = (
+                {"item_id": "item.fake_ammo", "quantity": 3}
+                if operation == "utility"
+                else {
+                    "item_id": "item.fake_food",
+                    "quantity": 3,
+                    "trigger": {"hp_below_pct": 50},
+                }
+            )
+            response = await self.client.put(path, headers=self.headers[0], json=body)
+            assert response.status_code == 200, response.text
+            await self.check()
+            response = await self.client.put(
+                path, headers=self.headers[0], json={"item_id": None, "quantity": 0}
+            )
+            assert response.status_code == 200, response.text
+        elif operation in {"equip", "unequip"}:
             await self.post(
                 "/equipment/equip", {"item_id": "item.fake_cape", "slot": "cape"}
             )

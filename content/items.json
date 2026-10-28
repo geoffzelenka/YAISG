@@ -187,6 +187,56 @@
         "slot": "right_hand",
         "two_handed": true
       }
+    },
+    {
+      "id": "item.fake_food",
+      "name": "Placeholder Food",
+      "tier": 1,
+      "classes": [],
+      "reference_price": 1,
+      "consumable": {
+        "heal": 10
+      }
+    },
+    {
+      "id": "item.fake_buff",
+      "name": "Placeholder Buff",
+      "tier": 1,
+      "classes": [],
+      "reference_price": 1,
+      "consumable": {
+        "buff": {
+          "duration_ms": 60000,
+          "modifiers": [
+            {
+              "type": "cycle_speed_pct",
+              "value": 10,
+              "category": "gathering"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "item.fake_ammo",
+      "name": "Placeholder Ammunition",
+      "tier": 1,
+      "classes": [],
+      "reference_price": 1,
+      "consumable": {
+        "utility_for": "ranged"
+      }
+    },
+    {
+      "id": "item.fake_belt",
+      "name": "Placeholder Belt",
+      "tier": 1,
+      "classes": [],
+      "reference_price": 1,
+      "equip": {
+        "slot": "belt",
+        "belt_slots": 2
+      }
     }
   ]
 }

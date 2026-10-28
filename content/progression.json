@@ -141,5 +141,11 @@
       }
     ]
   },
-  "basic_mobile_form": "form.camp"
+  "basic_mobile_form": "form.camp",
+  "combat": {
+    "base_hp": 100,
+    "hp_per_level": 10,
+    "regen_per_min": 0.01,
+    "min_engage_hp_pct": 25
+  }
 }

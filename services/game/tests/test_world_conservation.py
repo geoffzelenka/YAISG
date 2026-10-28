@@ -76,7 +76,14 @@ async def setup_scenario(
             wallet = session.get(Currency, identifier)
             assert wallet is not None
             wallet.gold = 1000000
-            for item in (BULLION, SPRIG, PLANK, "item.fake_cape"):
+            for item in (
+                BULLION,
+                SPRIG,
+                PLANK,
+                "item.fake_cape",
+                "item.fake_food",
+                "item.fake_ammo",
+            ):
                 session.add(
                     Inventory(character_id=identifier, item_id=item, quantity=10000)
                 )
@@ -177,6 +184,8 @@ async def test_random_world_operations_conserve_goods_and_gold(
         # Keep the specification independent of the generator: deleting an
         # operation from OPERATIONS must not silently delete its coverage check.
         required = {
+            "utility",
+            "belt",
             "equip",
             "unequip",
             "buy",
