@@ -43,4 +43,4 @@ Merge commits are populated by the orchestrator after approval and merge.
 | 35 | `35-client-keys-tutorial` | Client: keys, tutorial, guest upgrade | done | v08/35-client-keys-tutorial | 3809c39 | Guest entry, tutorial hints, departure with upgrade, keys panel and key market UI |
 | 36 | `36-hardening` | Rate limits, counters, load, seed-check in CI | done | v08/36-hardening | 3a9ed4b | Per-account rate limits, JSON metrics, httpx load script, fatal seed-check in CI, advisory lock |
 | 37 | `37-conformance` | Final design conformance audit | done | v08/37-conformance | 389b192 | Design conformance audit, traceability, ratification list Q1-Q9, small gap fixes |
-| 38 | `38-docs` | Documentation refresh | ready for review | v08/38-docs | — | Refresh operational and developer documentation against the shipped v0.8 code. |
+| 38 | `38-docs` | Documentation refresh | done | v08/38-docs | 14cd7af | README, auth, CLAUDE.md and tech-debt docs checked against the shipped v0.8 code |
