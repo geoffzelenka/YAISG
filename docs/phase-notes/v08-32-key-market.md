@@ -140,3 +140,19 @@ unchanged; this prompt adds no combat or commodity-matching rules.
   gives no information about the seller's wallet (replaces the new GOLD_CAP code).
 - Reused KEY_UNAVAILABLE, UNKNOWN_KEY, INVENTORY_FULL, NO_MARKET_ACCESS,
   INSUFFICIENT_GOLD and MARKET_RETRY. No new dependencies.
+
+## Orchestrator verification and review hand-offs
+
+- Verified:
+  - SQLite `make ci`: auth 15, game 804 passed / 26 skipped, client 100.
+  - PostgreSQL: game 829 passed / 1 skipped.
+  - Alembic check clean; boot 200.
+- Round 1: CHANGES_REQUESTED.
+  - B1: relisting reused the listing id, so a stale buy paid the new price.
+  - Fixed in c94a44e, with N1–N10: fresh ids, an optional expected-price guard, paginated browse, the seller-lock PG test, and indexes.
+- Round 2 (Sonnet): APPROVE. B1 and the N3 change were mutation-checked.
+- Hand-offs for 35/36:
+  - When a buy lands on a due transition it returns 409 and rolls back. The transition is committed by the next request that resolves the world. Optionally, commit before raising.
+  - Repeating a cancel on a key that went invalid in inventory returns 200. That is harmless.
+  - A browse with a sparse content filter can scan every open listing in limit+1 batches. Consider a scan cap that returns a mid-scan cursor.
+  - Relisting deletes the closed row, so there is no durable key-sale history. A ledger would need a separate table.
