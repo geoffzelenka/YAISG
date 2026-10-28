@@ -189,3 +189,18 @@ questions remain unchanged. Keys use the existing combat resolver as required.
 - KEY_DEPLETED and KEY_INVALIDATED (409 on start, or automatic stop reasons).
 - Reused existing level/tool/HP, inventory and validation error envelopes.
 - No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Verified:
+  - SQLite `make ci`: auth 15, game 784 passed / 24 skipped, client 100.
+  - PostgreSQL: game 807 passed / 1 skipped.
+  - alembic check clean; boot 200.
+- Round 1: CHANGES_REQUESTED.
+  - B1: realm completion deleted key actions and discarded unpolled work.
+  - B2: keys discovered before a completion were persisted as active.
+  - Both fixed in ec86ba9 (invalidated_at cutoffs, transition_history), along with N1–N3, N6, N7 and N8.
+- Round 2 (Sonnet): APPROVE. Mutation-checked.
+- Hand-offs for 32/36:
+  - No test pins first-cutoff-wins across repeated transitions (keys.py:58; a mutation survived).
+  - `transition_history` grows without bound and is re-parsed per new key row. Consider storing only the completion timestamps.
