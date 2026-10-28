@@ -676,7 +676,7 @@ class VoteResponse(BaseModel):
 
     id: uuid.UUID
     upgrade_id: str
-    called_by: uuid.UUID
+    called_by: uuid.UUID | None
     called_at: datetime
     closes_at: datetime
     status: str

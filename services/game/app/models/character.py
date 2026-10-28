@@ -266,7 +266,7 @@ class RealmProjectRun(Base):
     realm_id: Mapped[str] = mapped_column(ForeignKey("realm_state.id"), nullable=False)
     project_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
-    kicked_off_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id"))
+    kicked_off_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("characters.id"))
     kicked_off_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     required: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     contributed: Mapped[list[int]] = mapped_column(JSON, nullable=False)

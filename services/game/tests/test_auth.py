@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth import JwksCache, jwks_cache
-from app.db import Base, get_db
+from app.db import Base, configure_sqlite_engine, get_db
 from app.main import app
 from app.models import Player
 
@@ -59,6 +59,7 @@ def _token(
     return jwt.encode(
         {
             "sub": str(uuid.uuid4()),
+            "kind": "full",
             "iss": issuer,
             "exp": expires_at or datetime.now(UTC) + timedelta(minutes=5),
         },
@@ -75,6 +76,7 @@ async def client() -> AsyncGenerator[tuple[AsyncClient, sessionmaker[Session]], 
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    configure_sqlite_engine(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
 
@@ -245,3 +247,239 @@ async def test_jwks_cache_maps_malformed_and_http_errors(
         cache = JwksCache("https://auth.test/jwks", 60, client=client)
         with pytest.raises(jwt.InvalidTokenError):
             await cache.get_key(KEY_ID)
+
+
+async def test_guest_claim_upgrade_preserves_player_and_character(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """Verified refreshed claims promote the existing player without replacing it."""
+    from app.content.runtime import CONTENT
+    from app.models import Character, Estate
+
+    http, factory = client
+    identifier = uuid.uuid4()
+
+    def token(kind: str) -> str:
+        return jwt.encode(
+            {
+                "sub": str(identifier),
+                "kind": kind,
+                "iss": ISSUER,
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            PRIVATE_KEY,
+            algorithm="RS256",
+            headers={"kid": KEY_ID},
+        )
+
+    guest = await _get_me(http, token("guest"))
+    assert guest.status_code == 200
+    assert guest.json()["kind"] == "guest"
+    with factory() as session:
+        player = session.scalar(select(Player).where(Player.auth_user_id == identifier))
+        assert player is not None
+        estate = Estate(
+            realm_id=CONTENT.realms[0].id, form_id=CONTENT.estate_forms[0].id
+        )
+        session.add(estate)
+        session.flush()
+        character = Character(
+            player_id=player.id,
+            name="Guest",
+            name_normalized="guest",
+            stance=CONTENT.progression.default_stance,
+            current_realm_id=estate.realm_id,
+            home_estate_id=estate.id,
+            created_at=datetime.now(UTC),
+        )
+        session.add(character)
+        session.commit()
+        character_id = character.id
+    upgraded = await _get_me(http, token("full"))
+    assert upgraded.json()["id"] == guest.json()["id"]
+    assert upgraded.json()["kind"] == "full"
+    assert (await _get_me(http, token("guest"))).json()["kind"] == "full"
+    with factory() as session:
+        assert session.get(Character, character_id) is not None
+        player = session.scalar(select(Player).where(Player.auth_user_id == identifier))
+        assert player is not None and player.last_activity_at is not None
+
+
+async def test_untrusted_guest_kind_is_rejected(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """A forged token or an invalid signed kind cannot provision a guest."""
+    claims = {
+        "sub": str(uuid.uuid4()),
+        "kind": "administrator",
+        "iss": ISSUER,
+        "exp": datetime.now(UTC) + timedelta(minutes=5),
+    }
+    token = jwt.encode(claims, PRIVATE_KEY, algorithm="RS256", headers={"kid": KEY_ID})
+    assert (await _get_me(client[0], token)).status_code == 401
+    del claims["kind"]
+    token = jwt.encode(claims, PRIVATE_KEY, algorithm="RS256", headers={"kid": KEY_ID})
+    assert (await _get_me(client[0], token)).status_code == 401
+
+
+def _guest_token(identifier: uuid.UUID, kind: str = "guest") -> str:
+    """Issue a realistic signed identity independently of the injected game clock."""
+    return jwt.encode(
+        {
+            "sub": str(identifier),
+            "kind": kind,
+            "iss": ISSUER,
+            "iat": datetime.now(UTC),
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
+        },
+        PRIVATE_KEY,
+        algorithm="RS256",
+        headers={"kid": KEY_ID},
+    )
+
+
+async def test_real_guest_game_purge_uses_inactivity_ttl(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """A player provisioned by a verified guest token expires at TTL+1, not TTL-1."""
+    from app.clock import utc_now
+    from app.services.guest_purge import purge_guests
+
+    http, factory = client
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    async def frozen_now() -> datetime:
+        return now
+
+    app.dependency_overrides[utc_now] = frozen_now
+    response = await _get_me(http, _guest_token(uuid.uuid4()))
+    assert response.status_code == 200
+    identifier = uuid.UUID(response.json()["id"])
+    content = app.state.content
+    with factory() as session:
+        assert (
+            purge_guests(
+                session,
+                content,
+                content.auth,
+                now + timedelta(days=content.auth.guest_ttl_days - 1),
+            )
+            == 0
+        )
+        session.commit()
+        assert session.get(Player, identifier) is not None
+        session.rollback()
+        assert (
+            purge_guests(
+                session,
+                content,
+                content.auth,
+                now + timedelta(days=content.auth.guest_ttl_days + 1),
+            )
+            == 1
+        )
+        session.commit()
+        assert session.get(Player, identifier) is None
+
+
+async def test_game_activity_writes_only_after_content_interval(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """Two GETs within the interval are reads; a stale GET updates the timestamp."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Connection, ExecutionContext
+
+    from app.clock import utc_now
+    from app.services.realms import as_utc
+
+    http, factory = client
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+
+    async def frozen_now() -> datetime:
+        return clock[0]
+
+    app.dependency_overrides[utc_now] = frozen_now
+    token = _guest_token(uuid.uuid4())
+    created = await _get_me(http, token)
+    identifier = uuid.UUID(created.json()["id"])
+    original = clock[0]
+    interval = timedelta(minutes=app.state.content.auth.activity_write_interval_minutes)
+    statements: list[str] = []
+
+    def observe(
+        connection: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: ExecutionContext,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement.upper().strip())
+
+    with factory() as session:
+        engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", observe)
+    try:
+        for delta in (interval / 3, interval * 2 / 3):
+            clock[0] = original + delta
+            assert (await _get_me(http, token)).status_code == 200
+        assert statements and all(
+            statement.startswith("SELECT") or statement == "BEGIN"
+            for statement in statements
+        )
+        with factory() as session:
+            player = session.get(Player, identifier)
+            assert player is not None and player.last_activity_at is not None
+            assert as_utc(player.last_activity_at) == original
+        statements.clear()
+        clock[0] = original + interval + timedelta(seconds=1)
+        assert (await _get_me(http, token)).status_code == 200
+        assert (
+            sum(statement.startswith("UPDATE PLAYERS") for statement in statements) == 1
+        )
+        assert "BEGIN IMMEDIATE" in statements
+        with factory() as session:
+            player = session.get(Player, identifier)
+            assert player is not None and player.last_activity_at is not None
+            assert as_utc(player.last_activity_at) == clock[0]
+    finally:
+        event.remove(engine, "before_cursor_execute", observe)
+
+
+async def test_full_token_promotion_prevents_guest_purge(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """An upgraded identity observed by game survives even beyond the guest TTL."""
+    from app.services.guest_purge import purge_guests
+
+    http, factory = client
+    subject = uuid.uuid4()
+    created = await _get_me(http, _guest_token(subject))
+    identifier = uuid.UUID(created.json()["id"])
+    promoted = await _get_me(http, _guest_token(subject, "full"))
+    assert promoted.status_code == 200 and promoted.json()["kind"] == "full"
+    assert uuid.UUID(promoted.json()["id"]) == identifier
+    content = app.state.content
+    with factory() as session:
+        assert (
+            purge_guests(
+                session,
+                content,
+                content.auth,
+                datetime.now(UTC) + timedelta(days=content.auth.guest_ttl_days + 1),
+            )
+            == 0
+        )
+        session.commit()
+        assert session.get(Player, identifier) is not None
+
+
+@pytest.mark.parametrize("interval", [0, -1, 841])
+async def test_game_activity_interval_must_be_well_under_ttl(interval: int) -> None:
+    """The independently owned game schema enforces the shared interval contract."""
+    from pydantic import ValidationError
+
+    from app.guest_settings import GuestSettings
+
+    with pytest.raises(ValidationError):
+        GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=interval)

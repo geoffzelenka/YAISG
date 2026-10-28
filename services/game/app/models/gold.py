@@ -22,13 +22,31 @@ class GoldLedger(Base):
     __table_args__ = (
         CheckConstraint(
             "cause IN ('world_seed', 'mint', 'tutorial_seed', "
-            "'tutorial_destroy', 'tax_burn', 'caravan_fee_burn')",
+            "'tutorial_destroy', 'tax_burn', 'caravan_fee_burn', 'guest_purge')",
             name="ck_gold_ledger_cause",
         ),
         CheckConstraint(
             "(cause IN ('world_seed', 'mint', 'tutorial_seed') AND amount >= 0) OR "
             "(cause IN ('tutorial_destroy', 'tax_burn', "
-            "'caravan_fee_burn') AND amount <= 0)",
+            "'caravan_fee_burn', 'guest_purge') AND amount <= 0)",
             name="ck_gold_ledger_sign",
+        ),
+    )
+
+
+class GoodsLedger(Base):
+    """Signed purge sinks in milli-items, with identifiers surviving deletion."""
+
+    __tablename__ = "goods_ledger"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    cause: Mapped[str] = mapped_column(String(32))
+    item_id: Mapped[str] = mapped_column(String(256))
+    amount_milli: Mapped[int] = mapped_column(BigInteger)
+    holder: Mapped[str] = mapped_column(String(256))
+    character_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "cause = 'guest_purge' AND amount_milli <= 0", name="ck_goods_ledger_sink"
         ),
     )

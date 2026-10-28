@@ -309,7 +309,8 @@ def test_scheduler_cadence_and_lifecycle() -> None:
             call.kwargs["id"]: call
             for call in constructor.return_value.add_job.call_args_list
         }
-        assert set(calls) == {"realm_tick", "market_lifecycle"}
+        assert set(calls) == {"realm_tick", "market_lifecycle", "guest_purge"}
+        assert calls["guest_purge"].kwargs["days"] == 1
         assert (
             calls["realm_tick"].kwargs["seconds"]
             == 86400 / CONTENT.economy.tick.per_day

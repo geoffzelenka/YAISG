@@ -17,7 +17,7 @@ from app.models.character import (
     RewardLog,
 )
 from app.models.equipment import CharacterBelt, CharacterBuff, CharacterEquipment
-from app.models.gold import GoldLedger
+from app.models.gold import GoldLedger, GoodsLedger
 from app.models.instances import ItemInstance
 from app.models.key_market import KeyListing
 from app.models.market import MarketMatch, MarketOrder
@@ -47,7 +47,7 @@ from app.models.stores import RealmLine, RealmStore, WorldState
 
 __all__ += ["RealmLine", "RealmStore", "WorldState"]
 
-__all__ += ["GoldLedger"]
+__all__ += ["GoldLedger", "GoodsLedger"]
 
 __all__ += ["RealmVote", "RealmVoteEligibility"]
 

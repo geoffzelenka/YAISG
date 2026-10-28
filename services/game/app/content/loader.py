@@ -40,6 +40,7 @@ from app.content.schemas import (
     WorldSeedPack,
     XpCurve,
 )
+from app.guest_settings import GuestSettings
 
 if TYPE_CHECKING:
     from app.engine.caravans import Route
@@ -60,7 +61,7 @@ PUBLIC_PACKS = (
     "tags",
     "economy",
 )
-_KNOWN_PACKS = {*PUBLIC_PACKS, "xp_curve", "world_seed"}
+_KNOWN_PACKS = {*PUBLIC_PACKS, "xp_curve", "world_seed", "auth"}
 
 
 class ContentError(RuntimeError):
@@ -83,6 +84,7 @@ class ContentManifest:
 class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
+    auth: GuestSettings
     exploration: ExplorationPack
     combatants: tuple[Combatant, ...]
     world_seed: WorldSeedPack
@@ -448,6 +450,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     unknown = {path.stem for path in content_dir.rglob("*.json")} - _KNOWN_PACKS
     if unknown:
         raise ContentError(f"unrecognized content packs: {sorted(unknown)}")
+    auth = _load_model(content_dir, "auth", GuestSettings)
     exploration = _load_model(content_dir, "exploration", ExplorationPack)
     combatants_pack = _load_model(content_dir, "combatants", CombatantsPack)
     skills_pack = _load_model(content_dir, "skills", SkillsPack)
@@ -467,6 +470,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     progression = _load_model(content_dir, "progression", ProgressionPack)
     world_seed = _load_model(content_dir, "world_seed", WorldSeedPack)
     packs: dict[str, BaseModel] = {
+        "auth": auth,
         "exploration": exploration,
         "combatants": combatants_pack,
         "world_seed": world_seed,
@@ -666,6 +670,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     }
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
+        auth,
         exploration,
         tuple(combatants.values()),
         world_seed,

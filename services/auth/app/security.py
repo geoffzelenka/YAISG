@@ -14,7 +14,11 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.config import ACCESS_TOKEN_SECONDS, AUTH_KEYS_DIR, JWT_ISSUER
+from app.config import (
+    ACCESS_TOKEN_SECONDS,
+    AUTH_KEYS_DIR,
+    JWT_ISSUER,
+)
 
 _password_hasher = PasswordHasher()
 _DUMMY_PASSWORD_HASH = (
@@ -114,11 +118,12 @@ class SigningKeys:
         )
         self.key_id = hashlib.sha256(public_der).hexdigest()[:16]
 
-    def issue_access_token(self, user_id: uuid.UUID) -> str:
+    def issue_access_token(self, user_id: uuid.UUID, kind: str = "full") -> str:
         """Issue a 15-minute RS256 access token for a user."""
         now = utc_now()
         claims = {
             "sub": str(user_id),
+            "kind": kind,
             "iat": now,
             "exp": now + timedelta(seconds=ACCESS_TOKEN_SECONDS),
             "iss": JWT_ISSUER,

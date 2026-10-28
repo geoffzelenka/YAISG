@@ -1,0 +1,45 @@
+"""Shared content contract for guest retention, loaded by each service locally."""
+
+import os
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class GuestSettings(BaseModel):
+    """Auth-owned retention content; both databases use the same pack."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    guest_ttl_days: int = Field(gt=0)
+    activity_write_interval_minutes: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_activity_interval(self) -> "GuestSettings":
+        """Allow at least 24 activity write intervals within the retention TTL."""
+        if self.activity_write_interval_minutes > self.guest_ttl_days * 60:
+            raise ValueError(
+                "activity_write_interval_minutes must be at most 1/24 of the guest TTL"
+            )
+        return self
+
+
+def load_guest_settings() -> GuestSettings:
+    """Load and validate the shared auth content pack."""
+    configured = os.environ.get("CONTENT_DIR")
+    directory = (
+        Path(configured)
+        if configured is not None
+        else next(
+            (
+                parent / "content"
+                for parent in Path(__file__).resolve().parents
+                if (parent / "content" / "auth.json").is_file()
+            ),
+            None,
+        )
+    )
+    if directory is None:
+        raise RuntimeError(
+            "Set CONTENT_DIR to the shared content directory containing auth.json"
+        )
+    return GuestSettings.model_validate_json((directory / "auth.json").read_bytes())

@@ -16,6 +16,7 @@ class PlayerResponse(BaseModel):
 
     id: uuid.UUID
     auth_user_id: uuid.UUID
+    kind: str
     created_at: datetime
 
 

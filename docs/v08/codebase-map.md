@@ -58,7 +58,8 @@ relevant query keys after mutations. Co-locate Vitest/Testing Library tests,
 using mocked transport/content/auth and fake timers when testing time.
 
 Tests live in each service's `tests/`; there is no shared conftest or factory
-package. Auth `test_auth.py` uses temporary SQLite, temporary signing keys,
+package. Auth `test_auth.py` uses TEST_DATABASE_URL when set (temporary SQLite otherwise),
+temporary signing keys,
 HTTPX ASGITransport and dependency overrides. Game `test_engine.py` provides
 `make_state`, `make_active`, `with_action` and loaded content; immutable content
 can be varied using ContentIndex.with_overrides or model_copy. Hypothesis checks
@@ -121,9 +122,10 @@ GAME_DATABASE_URL=postgresql+psycopg://yaisg:yaisg@localhost:5432/yaisg_test ale
 ```
 
 Use auth's own directory/AUTH_DATABASE_URL for its separate history. Do not
-interleave Alembic checks with metadata-dropping test fixtures. The matrix only
-runs the game suite on PostgreSQL; setting TEST_DATABASE_URL does not move the
-auth tests to PostgreSQL. If mypy crashes with an INTERNAL ERROR in zipimport.pyi,
+interleave Alembic checks with metadata-dropping test fixtures. The matrix currently runs the game suite on PostgreSQL. As of Prompt 33,
+auth lifecycle fixtures also honor TEST_DATABASE_URL; auth migration smoke tests
+use separate temporary SQLite files. The services still own separate databases and
+migration histories. If mypy crashes with an INTERNAL ERROR in zipimport.pyi,
 the orchestrator observed a stale game .mypy_cache; deleting that generated
 cache restored checks. See the audit for measured runs and sandbox limits.
 
@@ -155,3 +157,23 @@ hash. The public `progression` pack owns tier thresholds and placeholder titles.
 Profile skill rows include tier, tier_title and nullable xp_to_next (null at 100).
 New characters have zero gold. The historical baseline descriptions above and
 baseline audit remain records of v0.5, rather than current implementation advice.
+
+
+## Guest authentication update (33)
+
+- Auth routes now include POST /auth/guest and bearer-authenticated
+  POST /auth/upgrade. Access tokens carry verified kind; refresh issues the current database kind.
+  Guest refresh lifetimes are capped at guest_ttl_days. Game records kind and
+  coarse last activity, writing only for new players, promotion or stale activity.
+- content/auth.json is a strict private pack shared by both services, owning
+  guest_ttl_days and activity_write_interval_minutes. Compose mounts it read-only
+  for auth as well as game. Purge eligibility depends on inactivity alone, with
+  per-guest savepoints isolating failures.
+- services/auth/app/guest_purge.py and game services/guest_purge.py own atomic
+  cleanup, with daily lifecycle drivers and PostgreSQL advisory locks. The game
+  job locks candidate characters before sorted realms, estates and market rows.
+  Shared fixed estates become realm-owned; signed GoldLedger and GoodsLedger
+  guest_purge entries account for all destroyed holdings and survive deletion.
+- Auth migrations extend through 0003_guests; game through v08_0020_guests.
+  Project/vote initiators may be null after guest deletion. Instanced keys retain
+  copied discoverer names when their discoverer identity is removed.

@@ -8,11 +8,13 @@ services:
     environment:
       AUTH_DATABASE_URL: sqlite:////data/auth.db
       AUTH_KEYS_DIR: /data/auth-keys
+      CONTENT_DIR: /content
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "8001:8001"
     volumes:
       - ./services/auth:/app
+      - ./content:/content:ro
       - ./data:/data
 
   game:

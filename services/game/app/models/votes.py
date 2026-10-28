@@ -25,7 +25,7 @@ class RealmVote(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     realm_id: Mapped[str] = mapped_column(ForeignKey("realm_state.id"))
     upgrade_id: Mapped[str] = mapped_column(String(128))
-    called_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id"))
+    called_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("characters.id"))
     called_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closes_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), default="open")

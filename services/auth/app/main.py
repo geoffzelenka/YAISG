@@ -1,6 +1,10 @@
 """Authentication service application."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from threading import Event, Thread
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -9,11 +13,37 @@ from fastapi.responses import JSONResponse
 
 from app.api import router
 from app.config import CORS_ORIGINS, VERSION
+from app.db import SessionLocal
+from app.guest_purge import run_guest_purge
+from app.guest_settings import load_guest_settings
 from app.logging import log_request
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-app = FastAPI(title="YAISG Auth")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Own a single daily cleanup driver for this service's database."""
+    del application
+    settings = load_guest_settings()
+
+    stopping = Event()
+
+    def daily() -> None:
+        while not stopping.is_set():
+            run_guest_purge(SessionLocal, settings, datetime.now(UTC))
+            stopping.wait(86400)
+
+    worker = Thread(target=daily, name="auth_guest_purge", daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stopping.set()
+        worker.join()
+
+
+app = FastAPI(title="YAISG Auth", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

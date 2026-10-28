@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Uuid
+from sqlalchemy import CheckConstraint, DateTime, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -18,4 +18,10 @@ class Player(Base):
     auth_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+    kind: Mapped[str] = mapped_column(String(16), default="full", server_default="full")
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("kind IN ('guest', 'full')", name="ck_players_kind"),
     )
