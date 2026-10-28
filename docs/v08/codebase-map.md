@@ -1,3 +1,6 @@
+> Historical snapshot from prompt 00; this may be stale. See
+> [the current conformance report](conformance.md) for the v0.8 reference.
+
 # v0.8 codebase map
 
 Verified at `697dd2d6005ff7c616617c3d014e18760a87d7da`, 2026-10-26.
