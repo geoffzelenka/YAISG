@@ -37,7 +37,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 27 | `27-consumables-hp` | Belt, utility, buffs, hit points | done | v08/27-consumables-hp | 8f9b123 | Utility/belt holders, timed group C buffs, lazy HP |
 | 28 | `28-combat-model` | Combatants, stats, the hit, stance, combat lint | done | v08/28-combat-model | 075dd5b | Combatants pack, §10.3 stats/attack, stance endpoint, combat lint |
 | 29 | `29-combat-resolver` | The combat resolver | done | v08/29-combat-resolver | 7e11960 | §10.5 combat resolver, pools, offline sim; zero-HP regen pending ratification |
-| 30 | `30-client-equipment-combat` | Client: equipment and combat | ready for review | `v08/30-client-equipment-combat` | — | Equipment doll, belt/utility setup, combat controls and offline summaries. |
+| 30 | `30-client-equipment-combat` | Client: equipment and combat | done | v08/30-client-equipment-combat | d38887b | Equipment doll, belt/utility setup, combat panel, offline combat summary |
 | 31 | `31-keys` | Instanced items, exploration, key actions | pending | — | — | — |
 | 32 | `32-key-market` | The key market | pending | — | — | — |
 | 33 | `33-guest-auth` | Guest accounts | pending | — | — | — |
