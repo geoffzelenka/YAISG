@@ -21,6 +21,7 @@ from app.engine.realm_ticks import (
 )
 from app.engine.stores import Line, line_weight, membership, warehouse_cap
 from app.models import (
+    CharacterEquipment,
     EstateLarder,
     Inventory,
     MarketOrder,
@@ -35,6 +36,8 @@ from app.services.realm_ticks import RealmTickContext, daily_share, production_f
 def goods(session: Session) -> Counter[str]:
     """Count each physical holder in milli-items, never audit/history rows."""
     result: Counter[str] = Counter()
+    for equipped in session.scalars(select(CharacterEquipment)):
+        result[equipped.item_id] += equipped.quantity * 1000
     for row in session.scalars(select(Inventory)):
         result[row.item_id] += row.quantity * 1000
     for store in session.scalars(select(RealmStore)):

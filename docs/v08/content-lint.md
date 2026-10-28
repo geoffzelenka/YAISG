@@ -38,7 +38,11 @@ Their product is maximized jointly over each group's alternatives:
   empty requirement is unrestricted. Candidates cover both distinct stage
   behaviors (Fed and Faltering), since weakening a malus can raise a bound.
   Estate emissions stay in E while realm emissions stay in R.
-- Gear and consumables: identity factors until their content schemas exist.
+- Gear: every concrete slot can be empty or hold an authored item. Generic ring
+  and arm definitions can fill either or both sides. Two-handed right-hand items
+  exclude left-hand equipment. Skill requirements and acquisition history are
+  conservatively relaxed. Permanent item modifiers add within G.
+- Consumables: identity factor until their content schema exists.
 - Proficiency: excluded, as required by §7.3.
 
 The realm and estate maxima are multiplied, even when they need different
@@ -52,7 +56,5 @@ warns even if the runtime XP cap would absorb some of the excess.
 Subset enumeration is exponential in the number of eligible upgrades; current
 placeholder packs are small. Larger packs may require a bounded optimization
 that preserves the conservative guarantee. Prompts 11/12 must adapt form/slot
-eligibility; 26 and
-27 must add gear slot combinations and simultaneous consumable effects to their
-own groups. Prompt 28 owns combat checks. No unavailable schemas are guessed by
+eligibility; 27 must add simultaneous consumable effects to group C. Prompt 28 owns combat checks. No unavailable schemas are guessed by
 this lint.

@@ -175,6 +175,75 @@ class SkillsPack(ContentModel):
     skills: tuple[Skill, ...]
 
 
+EquipmentSlot = Literal[
+    "head",
+    "chest",
+    "gloves",
+    "legs",
+    "feet",
+    "neck",
+    "left_arm",
+    "right_arm",
+    "left_ring",
+    "right_ring",
+    "belt",
+    "cape",
+    "right_hand",
+    "left_hand",
+    "utility",
+]
+
+
+class Weapon(ContentModel):
+    """Authored weapon data; combat interprets it in a later phase."""
+
+    style: Literal["melee", "ranged", "magic"]
+    attack_interval_ms: int = Field(gt=0)
+    power: float = Field(ge=0, allow_inf_nan=False)
+    accuracy: float = Field(ge=0, allow_inf_nan=False)
+    damage_type: str = Field(min_length=1)
+
+
+class Armour(ContentModel):
+    """Authored defensive data for the combat phase."""
+
+    armour: float = Field(ge=0, allow_inf_nan=False)
+    max_hp: float = Field(ge=0, allow_inf_nan=False)
+
+
+class Equipment(ContentModel):
+    """Permanent equipment and its group G contributions."""
+
+    slot: EquipmentSlot | Literal["ring", "arm"]
+    two_handed: bool = False
+    requires: dict[str, Annotated[int, Field(ge=1, le=100)]] = Field(
+        default_factory=dict
+    )
+    modifiers: tuple["Modifier", ...] = ()
+    cap_bonuses: dict[CapType, Annotated[float, Field(ge=0, allow_inf_nan=False)]] = (
+        Field(default_factory=dict)
+    )
+    weapon: Weapon | None = None
+    armour: Armour | None = None
+    tool_class: str | None = Field(default=None, min_length=1)
+    belt_slots: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_equipment(self) -> "Equipment":
+        """Reject combinations incompatible with the slot rules."""
+        if self.slot != "cape" and any(
+            m.type == ModifierType.XP_PCT for m in self.modifiers
+        ):
+            raise ValueError("xp_pct gear requires the cape slot")
+        if (
+            self.two_handed or self.tool_class is not None
+        ) and self.slot != "right_hand":
+            raise ValueError("two-handed items and tools require right_hand")
+        if self.belt_slots is not None and self.slot != "belt":
+            raise ValueError("belt_slots requires the belt slot")
+        return self
+
+
 class Item(ContentModel):
     """A stackable inventory item."""
 
@@ -184,6 +253,7 @@ class Item(ContentModel):
     classes: tuple[str, ...]
     reference_price: int = Field(gt=0)
     warehouse_cap: int | None = Field(default=None, gt=0)
+    equip: Equipment | None = None
     instanced: bool = False
     bullion: bool = False
     spoilage_pct_per_day: float = Field(default=0, ge=0, le=100)
@@ -715,3 +785,6 @@ class WorldSeedPack(ContentModel):
     """Private, versioned world creation data."""
 
     realms: tuple[SeedRealm, ...]
+
+
+Equipment.model_rebuild()

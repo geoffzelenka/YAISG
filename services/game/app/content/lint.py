@@ -20,8 +20,10 @@ from app.config import CONTENT_DIR
 from app.content.loader import ContentIndex, load_content
 from app.content.schemas import (
     Action,
+    CapType,
     DecayStage,
     DevelopmentNode,
+    Equipment,
     Modifier,
     ModifierType,
     Skill,
@@ -118,6 +120,38 @@ def _possible_stacks(
         yield from combinations(ids, count)
 
 
+def gear_layouts(content: ContentIndex) -> Iterable[tuple[Equipment, ...]]:
+    """Enumerate legal permanent layouts, including empty slots and both sides."""
+    slots: dict[str, list[Equipment | None]] = {}
+    for item in content.items:
+        equip = item.equip
+        if equip is None or equip.slot == "utility":
+            continue
+        targets: tuple[str, ...] = (equip.slot,)
+        if equip.slot in {"ring", "arm"}:
+            targets = (f"left_{equip.slot}", f"right_{equip.slot}")
+        for target in targets:
+            slots.setdefault(target, [None]).append(equip)
+    for choices in product(*slots.values()):
+        layout = dict(zip(slots, choices, strict=True))
+        right = layout.get("right_hand")
+        if (
+            right is not None
+            and right.two_handed
+            and layout.get("left_hand") is not None
+        ):
+            continue
+        yield tuple(equip for equip in choices if equip is not None)
+
+
+def gear_bound(skill: Skill, content: ContentIndex) -> float:
+    """Maximize group G jointly over legal layouts, allowing empty slots."""
+    return max(
+        _group_bound(tuple(m for e in layout for m in e.modifiers), skill, content)
+        for layout in gear_layouts(content)
+    )
+
+
 def stack_bound(skill: Skill, content: ContentIndex) -> float:
     """Bound uncapped external XP × speed, using distinct upgrades within slots."""
     content = replace(
@@ -125,6 +159,10 @@ def stack_bound(skill: Skill, content: ContentIndex) -> float:
         _nodes_by_id=MappingProxyType({n.id: n for n in content.development_nodes}),
         _forms_by_id=MappingProxyType({f.id: f for f in content.estate_forms}),
         _upgrades_by_id=MappingProxyType({u.id: u for u in content.upgrades}),
+    )
+    gear_slots = max(
+        sum(e.cap_bonuses.get(CapType.ESTATE_UPGRADE_SLOTS, 0) for e in layout)
+        for layout in gear_layouts(content)
     )
     realm_best = 1.0
     estate_best = 1.0
@@ -148,6 +186,7 @@ def stack_bound(skill: Skill, content: ContentIndex) -> float:
             realm_stage=realm_stage,
             estate_stage=estate_stage,
             realm_stack_tags=stack,
+            cap_bonuses={CapType.ESTATE_UPGRADE_SLOTS: gear_slots},
         )
         realm = {tag.id for tag, _ in realm_active_tags(state, content)}
         upgrades = tuple(
@@ -163,7 +202,7 @@ def stack_bound(skill: Skill, content: ContentIndex) -> float:
                 groups = modifier_groups(candidate, content)
                 realm_best = max(realm_best, _group_bound(groups[2], skill, content))
                 estate_best = max(estate_best, _group_bound(groups[1], skill, content))
-    return realm_best * estate_best
+    return gear_bound(skill, content) * realm_best * estate_best
 
 
 def lint_content(content: ContentIndex) -> tuple[SkillReport, ...]:

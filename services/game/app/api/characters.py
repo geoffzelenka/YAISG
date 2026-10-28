@@ -21,6 +21,7 @@ from app.engine.levels import level_for_xp, tier_for_level, xp_progress
 from app.errors import api_error
 from app.models import (
     Character,
+    CharacterEquipment,
     CharacterSkill,
     Currency,
     Estate,
@@ -97,6 +98,13 @@ class CapSummary(BaseModel):
     effective: float
 
 
+class EquippedStack(BaseModel):
+    """One equipped holder, including its reserved stack quantity."""
+
+    item_id: str
+    quantity: int
+
+
 class ProfileResponse(BaseModel):
     """Complete character profile response."""
 
@@ -107,6 +115,7 @@ class ProfileResponse(BaseModel):
     estate: EstateSummary
     caps: dict[CapType, CapSummary]
     actions: dict[str, ActionValues]
+    equipment: dict[str, EquippedStack]
 
 
 class InventoryStack(BaseModel):
@@ -295,7 +304,7 @@ def _profile(
             .order_by(EstateUpgrade.slot_index)
         )
     )
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     resolved = resolve_caps(state, content)
     active_modifiers = [
         modifier for group in modifier_groups(state, content) for modifier in group
@@ -309,6 +318,14 @@ def _profile(
         CapType.ESTATE_UPGRADE_SLOTS: resolved.estate_upgrade_slots,
     }
     return ProfileResponse(
+        equipment={
+            row.slot: EquippedStack(item_id=row.item_id, quantity=row.quantity)
+            for row in session.scalars(
+                select(CharacterEquipment).where(
+                    CharacterEquipment.character_id == character.id
+                )
+            )
+        },
         actions={
             action.id: action_values(action, state, content)
             for skill in content.skills

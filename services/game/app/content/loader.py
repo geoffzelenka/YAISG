@@ -301,6 +301,13 @@ def _validate(
 
     item_ids = set(items)
     tags = {tag.id for tag in tag_definitions}
+    for item in items.values():
+        if item.equip is not None:
+            if set(item.equip.requires) - set(skills):
+                raise ContentError(f"unknown equipment skill in {item.id}")
+            for modifier in item.equip.modifiers:
+                if modifier.skill_id is not None and modifier.skill_id not in skills:
+                    raise ContentError(f"unknown equipment modifier skill in {item.id}")
     for action in actions.values():
         if action.skill_id not in skills:
             raise ContentError(
@@ -336,7 +343,8 @@ def _validate(
         if set(required.skill_levels) - set(skills):
             raise ContentError(f"unknown required skill in action {action.id}")
         if required.tool_class is not None and not any(
-            required.tool_class in item.classes for item in items.values()
+            item.equip is not None and item.equip.tool_class == required.tool_class
+            for item in items.values()
         ):
             raise ContentError(f"unknown tool class in action {action.id}")
     for realm in realms.values():

@@ -42,6 +42,7 @@ def test_uniform_matches_pre_refactor_goldens() -> None:
         # consumed time and details without changing those recorded outcomes.
         actual = json.loads(json.dumps(asdict(state), default=str))
         actual.pop("realm_states")
+        assert actual.pop("right_hand_tool_class") is None
         actual["realm_id"] = actual.pop("current_realm_id")
         assert actual == row["state"]
         actual_active = asdict(active) if active else None

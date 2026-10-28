@@ -17,6 +17,7 @@ from app.api.admin import router as admin_router
 from app.api.characters import router as characters_router
 from app.api.content import PUBLIC_CONTENT_PATHS
 from app.api.content import router as content_router
+from app.api.equipment import router as equipment_router
 from app.api.estates import router as estates_router
 from app.api.market import router as market_router
 from app.api.players import router as players_router
@@ -67,6 +68,7 @@ app.include_router(players_router)
 app.include_router(characters_router)
 app.include_router(estates_router)
 app.include_router(actions_router)
+app.include_router(equipment_router)
 app.include_router(realms_router)
 app.include_router(travel_router)
 

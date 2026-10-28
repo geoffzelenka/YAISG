@@ -57,6 +57,7 @@ class CharacterState:
     estate_stage: DecayStage = DecayStage.FED
     realm_stack_tags: tuple[str, ...] = ()
     gear_modifiers: tuple[Modifier, ...] = ()
+    right_hand_tool_class: str | None = None
     consumable_modifiers: tuple[Modifier, ...] = ()
     installed_upgrades: tuple[str, ...] = ()
     realm_states: Mapping[str, tuple[str, DecayStage, tuple[str, ...]]] = field(
@@ -460,7 +461,10 @@ def unmet_requirements(
         for skill, level in action.requires.skill_levels.items()
     ):
         blocked.append(ErrorCode.MISSING_SKILL_LEVEL)
-    if action.requires.tool_class is not None:
+    if (
+        action.requires.tool_class is not None
+        and action.requires.tool_class != state.right_hand_tool_class
+    ):
         blocked.append(ErrorCode.MISSING_TOOL)
     if input_payment(state.inventory, action, content) is None:
         blocked.append(ErrorCode.MISSING_INPUTS)

@@ -160,7 +160,7 @@ async def available_actions(
     character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     groups: list[AvailableSkillGroup] = []
     for skill in content.skills:
         actions: list[AvailableAction] = []
@@ -196,7 +196,7 @@ async def start_action(
     character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     try:
         action = content.action(body.action_id)
     except KeyError:
@@ -245,7 +245,7 @@ async def get_action(
     character = get_character(session, player.id)
     content = _content(request)
     resolution = resolve_character(session, character.id, now, content)
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     cycle_ms = None
     if resolution.active is not None:
         cycle_ms = effective_cycle_time(

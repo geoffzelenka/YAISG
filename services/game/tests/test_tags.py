@@ -296,4 +296,6 @@ def test_lint_accounts_for_weakened_malus(content: ContentIndex) -> None:
         estate_forms=(form,),
         upgrades=(),
     )
-    assert stack_bound(content.skill("gathering"), content) == 1.5
+    assert stack_bound(content.skill("gathering"), content) == pytest.approx(
+        1.5 * 1.155
+    )
