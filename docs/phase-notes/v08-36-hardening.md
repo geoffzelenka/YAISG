@@ -227,3 +227,9 @@
 - RATE_LIMITED (429), reused for game mutation exhaustion; Retry-After gives the
   remaining fixed-window seconds. OPERATOR_REQUIRED remains the operator gate.
 - No new dependencies.
+
+## Orchestrator verification and review hand-offs
+
+- Verified at baf654d outside the Codex sandbox (no asyncio shim): SQLite make ci (auth 39 / 1 skipped, game 850 / 33 skipped, client 122, seed-check); PostgreSQL game 881 / 2 skipped, auth 40; the two-process advisory-lock and stale-window race tests run on PG; alembic check clean; boot 200.
+- Review round 1: CHANGES_REQUESTED. B1: the request-path cross-account DELETE deadlocked on PG. B2: no route-coverage test for the limiter. Round 2: APPROVE.
+- Non-blocking hand-off for 37-conformance: the `mutation_windows.window` index is unused by request-path queries; keep it only if the future pruning job needs it, and note that in its comment.
