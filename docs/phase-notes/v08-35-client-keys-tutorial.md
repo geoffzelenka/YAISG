@@ -90,3 +90,14 @@ unchanged; no new gameplay rule depends on resolving them here.
   were saved but game identity confirmation must be retried. AUTH_FAILED and
   REQUEST_FAILED are transport fallbacks when no structured server code exists.
 - No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Verified at 60ba7bb: SQLite make ci (auth 35, game 832 / 30 skipped, client 113); PostgreSQL game 861 / 1 skipped, auth 36; alembic check clean; boot 200.
+- Review round 1: APPROVE, no blocking findings. Non-blocking hand-offs for 36-hardening:
+  - `client/src/api/http.ts`: the upgrade call never refreshes an expired guest access token; on 401 refresh once and retry, as `gameRequest` does.
+  - `KeysPanel.tsx`: "Cancel my listing" appears on other players' listings (browse has no seller identity); track own listing ids or label it.
+  - `KeysPanel.tsx`: key actions share one error slot; show errors next to the key or listing that caused them.
+  - `KeysPanel.tsx`: show the realm name from content and a friendly state label instead of raw ids.
+  - `KeysPanel.test.tsx`: add an unbound-key case, a destroy (confirm then DELETE) assertion and the "Fully paid at kickoff" text.
+  - `http.ts`: split `guestSession(credentials?)` into `createGuest` and `upgradeAccount`.
