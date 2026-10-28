@@ -167,3 +167,11 @@ questions remain unchanged.
 - INVALID_ARRIVAL_REALM (422): destination is outside tutorial.arrival_realms.
 - Reused UNKNOWN_REALM, NO_ROUTE, NO_MARKET_ACCESS and INVALID_REQUEST for
   isolation and obsolete starting-realm requests. No new dependencies.
+
+## Orchestrator verification and review hand-offs
+
+- Verified at 086df13: SQLite make ci (auth 35, game 832 / 30 skipped, client 101); PostgreSQL game 861 / 1 skipped, auth 36; alembic check clean; boot 200.
+- Review round 1: ESCALATE (raft-site soft-lock) plus B1–B3 test gaps. Human ruling: "the kickoff requirements for raft building should cover the whole cost of the project and the length of that project should be short, like a few seconds (just enough for the player to feel like something is happening)". Round 2: APPROVE.
+- Non-blocking hand-offs:
+  - Re-wrap the over-long Built bullet in this note.
+  - `test_postgres_concurrent_arrival_resolves_grant_seed_once` pins lock serialization, not the once-only guard; the guard is covered by the 2→1→2 round trip. Tighten its docstring.
