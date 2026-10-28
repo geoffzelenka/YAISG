@@ -1,5 +1,8 @@
 """Transactional counters; engine code never knows about instrumentation."""
 
+from typing import cast
+
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.models import MetricDelta
@@ -24,15 +27,21 @@ def record(session: Session, **amounts: int) -> None:
     Deltas survive holder deletion, but roll back with failed game transactions.
     Duration is total wall time in nanoseconds for completed realm tick batches.
     """
-    pending = {row.name: row for row in session.new if isinstance(row, MetricDelta)}
+    pending = cast(
+        dict[str, MetricDelta], session.info.setdefault("metric_deltas_pending", {})
+    )
     for name, amount in amounts.items():
         if name not in COUNTERS or amount < 0:
             raise ValueError(f"Invalid operational counter {name}={amount}")
         if not amount:
             continue
-        if name in pending:
-            pending[name].amount += amount
-        else:
-            row = MetricDelta(name=name, amount=amount)
-            session.add(row)
-            pending[name] = row
+        row = pending.get(name)
+        # Flushing makes a row persistent; rollback removes newly added rows.
+        # Check only this cached row so both cases start a fresh delta without
+        # scanning unrelated pending game objects or retaining rollback state.
+        if row is not None and inspect(row).pending and inspect(row).session is session:
+            row.amount += amount
+            continue
+        row = MetricDelta(name=name, amount=amount)
+        session.add(row)
+        pending[name] = row

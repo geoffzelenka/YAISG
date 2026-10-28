@@ -3,6 +3,9 @@
 Use disposable characters with market access, stock and free order slots. Tokens
 come from YAISG_LOAD_TOKENS (a JSON array), never command-line arguments. Inserted
 orders are cancelled and collected so each iteration returns their custody.
+Each worker round makes 3 mutations. The default allowance is 120 per account
+per minute; provide enough distinct account tokens or raise GAME_MUTATION_LIMIT
+for the intended load. Workers sharing a token also share its allowance.
 """
 
 import argparse

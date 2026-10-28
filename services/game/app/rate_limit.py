@@ -3,7 +3,7 @@
 import os
 
 from fastapi import Request
-from sqlalchemy import case, delete
+from sqlalchemy import case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -52,8 +52,6 @@ def limit_mutation(request: Request, session: DatabaseSession, now: ServerNow) -
         },
     ).returning(MutationWindow.attempts)
     attempts = session.scalar(counted)
-    # Expired subjects need no history; this also bounds abandoned creation keys.
-    session.execute(delete(MutationWindow).where(MutationWindow.window < window - 1))
     session.commit()
     if attempts is not None and attempts > MUTATION_LIMIT:
         retry_after = (window + 1) * MUTATION_WINDOW_SECONDS - int(now.timestamp())

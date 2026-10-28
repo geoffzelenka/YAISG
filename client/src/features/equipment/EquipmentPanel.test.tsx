@@ -252,8 +252,47 @@ it.each([0, -1, 100.01, NaN, Infinity, 0.001, 100])(
       />,
     )
     fireEvent.submit(container.querySelector('form')!)
-    expect(onSave).toHaveBeenCalledTimes(
-      Number(Number.isFinite(threshold) && threshold > 0 && threshold <= 100),
-    )
+    const valid =
+      Number.isFinite(threshold) && threshold > 0 && threshold <= 100
+    expect(onSave).toHaveBeenCalledTimes(Number(valid))
+    if (valid) {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    } else {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'HP threshold must be greater than 0 and at most 100.',
+      )
+      expect(screen.getByLabelText('HP below (%)')).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      )
+    }
   },
 )
+
+it('clears the inline threshold error when a healing trigger is corrected', () => {
+  const onSave = vi.fn()
+  const { container } = render(
+    <StackForm
+      items={[{ id: 'food', name: 'Food', consumable: { heal: 10 } } as Item]}
+      current={{ item_id: 'food', quantity: 1, trigger: { hp_below_pct: 0 } }}
+      belt
+      disabled={false}
+      onSave={onSave}
+    />,
+  )
+  expect(screen.getByRole('alert')).toHaveTextContent('HP threshold')
+  fireEvent.change(screen.getByLabelText('HP below (%)'), {
+    target: { value: '0.001' },
+  })
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('HP below (%)')).toHaveAttribute(
+    'aria-invalid',
+    'false',
+  )
+  fireEvent.submit(container.querySelector('form')!)
+  expect(onSave).toHaveBeenCalledWith({
+    item_id: 'food',
+    quantity: 1,
+    trigger: { hp_below_pct: 0.001 },
+  })
+})

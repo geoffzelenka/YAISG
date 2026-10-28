@@ -3,7 +3,7 @@
 import multiprocessing
 from datetime import datetime, timedelta
 from multiprocessing.connection import Connection
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -492,3 +492,134 @@ def test_scheduler_realm_lock_order_matches_python_sorting(
             sessionmaker(bind=realm_session.get_bind()), CONTENT, NOW
         )
     assert observed == sorted(identifiers)
+
+
+@pytest.mark.parametrize("accounts", [2, 4])
+def test_postgres_stale_rate_windows_do_not_deadlock(
+    realm_session: Session, accounts: int
+) -> None:
+    """Stale accounts retain independent row locks through allowance commit."""
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from sqlalchemy import event, text
+    from sqlalchemy.engine import Engine
+    from starlette.requests import Request
+
+    from app.auth import VerifiedIdentity
+    from app.models import MutationWindow
+
+    engine = realm_session.get_bind()
+    if engine.dialect.name != "postgresql":
+        pytest.skip("PostgreSQL cross-account row-lock regression")
+    assert isinstance(engine, Engine)
+    subjects = [uuid.uuid4() for _ in range(accounts)]
+    realm_session.add_all(
+        MutationWindow(auth_user_id=subject, window=0, attempts=1)
+        for subject in subjects
+    )
+    realm_session.commit()
+    factory = sessionmaker(bind=engine)
+    locked = Barrier(accounts)
+
+    def synchronize_upserts(
+        connection: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        if statement.startswith("INSERT INTO mutation_windows"):
+            # Each request now owns its row while every other row still appears
+            # stale to its snapshot. A cross-account DELETE here deadlocks.
+            locked.wait(timeout=10)
+
+    def mutate(subject: uuid.UUID) -> None:
+        request = Request({"type": "http", "method": "POST", "path": "/actions/start"})
+        request.state.identity = VerifiedIdentity(subject)
+        with factory() as session:
+            session.execute(text("SET LOCAL statement_timeout = '15s'"))
+            rate_limit.limit_mutation(request, session, NOW)
+
+    event.listen(engine, "after_cursor_execute", synchronize_upserts)
+    try:
+        with ThreadPoolExecutor(max_workers=accounts) as pool:
+            list(pool.map(mutate, subjects))
+    finally:
+        event.remove(engine, "after_cursor_execute", synchronize_upserts)
+    realm_session.expire_all()
+    rows = list(realm_session.scalars(select(MutationWindow)))
+    assert len(rows) == accounts
+    assert all(row.attempts == 1 for row in rows)
+    assert all(
+        row.window == int(NOW.timestamp()) // rate_limit.MUTATION_WINDOW_SECONDS
+        for row in rows
+    )
+
+
+def test_all_mutation_routes_include_limiter_and_reads_use_method_gate() -> None:
+    """Every mutation alias carries the limiter; GET dependencies exit before DB use."""
+    from unittest.mock import Mock
+
+    from fastapi import routing
+    from fastapi.dependencies.models import Dependant
+    from fastapi.routing import APIRoute
+    from starlette.requests import Request
+
+    from app.main import app
+
+    def includes_limiter(dependant: Dependant) -> bool:
+        return dependant.call is rate_limit.limit_mutation or any(
+            includes_limiter(child) for child in dependant.dependencies
+        )
+
+    mutations = 0
+    # Recent FastAPI keeps included routers lazy. Effective contexts include
+    # inherited dependencies; older versions already expose flattened routes.
+    walk_routes = getattr(routing, "iter_route_contexts", iter)
+    for candidate in walk_routes(app.routes):
+        if not isinstance(getattr(candidate, "original_route", candidate), APIRoute):
+            continue
+        # Effective contexts proxy the original APIRoute's dependency interface.
+        route = cast(APIRoute, candidate)
+        limited = includes_limiter(route.dependant)
+        methods = route.methods
+        assert methods is not None
+        if methods & {"POST", "PUT", "PATCH", "DELETE"}:
+            mutations += 1
+            assert limited, f"Mutation route lacks limiter: {route.path}"
+        if "GET" in methods and limited:
+            session = Mock(spec=Session)
+            request = Request({"type": "http", "method": "GET", "path": route.path})
+            rate_limit.limit_mutation(request, session, NOW)
+            assert session.mock_calls == [], f"GET consumed allowance: {route.path}"
+    assert mutations > 0
+
+
+def test_metric_cache_preserves_flush_and_rollback_boundaries(
+    realm_session: Session,
+) -> None:
+    """Cached rows combine only pending deltas, including after savepoint rollback."""
+    from app.services.metrics import record
+
+    record(realm_session, realm_trades=2)
+    record(realm_session, realm_trades=3)
+    realm_session.flush()
+    record(realm_session, realm_trades=7)
+    realm_session.flush()
+    assert sorted(realm_session.scalars(select(MetricDelta.amount))) == [5, 7]
+    realm_session.rollback()
+    record(realm_session, realm_trades=11)
+    realm_session.commit()
+    with (
+        pytest.raises(ValueError, match="Abort nested event"),
+        realm_session.begin_nested(),
+    ):
+        record(realm_session, realm_trades=13)
+        realm_session.flush()
+        raise ValueError("Abort nested event")
+    record(realm_session, realm_trades=17)
+    realm_session.commit()
+    assert sorted(realm_session.scalars(select(MetricDelta.amount))) == [11, 17]

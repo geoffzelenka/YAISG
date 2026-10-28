@@ -236,6 +236,11 @@ PATH=$PWD/.venv/bin:$PATH python scripts/load_pipeline.py \
 ```
 
 Each worker polls, reads a realm, inserts a sell order, cancels and collects it.
+Each round makes **3 mutations** against the default **120 per account per minute**.
+Provide enough tokens for distinct accounts or raise `GAME_MUTATION_LIMIT` for
+higher load. Workers sharing a token share its allowance: the example above
+uses all 120 attempts if its four workers share one token and finish in a minute.
+Leave headroom for setup and other game mutations.
 Use an empty book to avoid unintended fills; errors (including rate limits)
 count as failures and cause a nonzero exit. Tokens are never printed. The
 reproducible local ASGI baseline and its limits are recorded in

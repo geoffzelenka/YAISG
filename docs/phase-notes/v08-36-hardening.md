@@ -6,8 +6,8 @@
   operational environment settings. Authenticated attempts count across routes
   and worker processes, including failed validation/business intents. Reads do
   not count. Atomic dialect upserts and a separate committed allowance prevent
-  racing requests or game rollbacks from refunding attempts. Expired subjects
-  are cleaned using an indexed window column. Refusals include Retry-After.
+  racing requests or game rollbacks from refunding attempts. Stale account rows
+  reset in place; requests never prune other accounts. Refusals include Retry-After.
 - Added migration v08_0022_operations and transactional metric_deltas. Operator
   GET /admin/metrics returns JSON counters for ticks, cumulative tick duration
   in nanoseconds, matches, seller tax, realm trades, caravan dispatches and whole
@@ -15,7 +15,9 @@
   discoveries. Minted gold comes from mint ledger deltas; holder gauges include
   wallets, treasuries, order escrow and gold in slots. Counters survive holder
   and history deletion and roll back with failed transactions. Ordinary reads
-  never expose balances. Operator allowlist UUIDs are parsed at boot.
+  never expose balances. Operator allowlist UUIDs are parsed at boot. Pending
+  metric rows are cached in session.info with constant-time per-counter lookup;
+  flushed or rolled-back rows are replaced rather than reused.
 - FastAPI game handlers and synchronous player provisioning/database dependencies
   now run in the worker pool, preserving async JWT/JWKS handling. Direct-handler
   contention tests call their new synchronous interface without changing their
@@ -24,7 +26,10 @@
   SQL batching, private-instance and custody checks.
 - Trusted proxy traversal now selects the rightmost untrusted forwarded hop,
   walking past allowlisted proxies; an arbitrary client prefix cannot rotate
-  the auth limiter key. Guest purge retains its all-realm lock for the correctness
+  the auth limiter key. Trusted entries, peers and forwarded IP literals use
+  ipaddress normalization so equivalent IPv6 spellings share trust and buckets.
+  Malformed hops stop traversal as untrusted; malformed trusted entries fail
+  configuration validation. Guest purge retains its all-realm lock for the correctness
   reasons below. SQL realm-lock ordering uses C collation on PostgreSQL/BINARY
   on SQLite to agree with Python sorting independently of deployment locale.
 - A failing session advisory unlock invalidates the pooled connection and logs
@@ -56,7 +61,8 @@
   once before retrying and still confirms /players/me after promotion; realm
   errors reuse shared ApiError; listing cancellation says owner-only; belt
   healing thresholds validate finite 0 < value <= 100 on submission (including
-  tiny positive fractions). Corrected the tutorial concurrency docstring and
+  tiny positive fractions), show an inline alert/aria-invalid when rejected, and
+  clear that error after correction. Corrected the tutorial concurrency docstring and
   wrapped the earlier tutorial note. Existing upgrade retry/query refresh and
   key-combat identity behavior remain covered.
 - Added named tests in test_hardening.py:
@@ -84,16 +90,38 @@
   gameplay query budgets and independently require one telemetry INSERT batch.
 
 
-- Validation: repository-virtualenv make ci passes on SQLite with the external
-  sandbox wake-up shim: auth 36 passed / 1 skipped, game 847 passed / 31 skipped,
-  client 121 passed. The final realm-ordering regression was added after that
-  run's collection and passes in the focused hardening run (15 passed / 1
-  skipped). Final Ruff formatting/lint and strict game types pass. scripts-ci,
-  fatal seed-check, disposable SQLite db-reset, both subsequent migration-head
-  upgrades and Alembic schema comparisons, application lifespan/scheduler/health/
-  manifest smoke checks and git diff --check pass. The generated conservation
-  oracle retains both operation coverage sets; only its operator fixture's
-  UUID representation changed.
+- Validation after review round 1: repository-virtualenv make ci passes on
+  SQLite with the external sandbox wake-up shim described above: auth 39 passed /
+  1 skipped, game 850 passed / 33 skipped, client 122 passed. Ruff formatting/lint,
+  strict types, script checks, client build, fatal thirty-day seed-check and
+  git diff --check pass. Focused hardening tests pass (17 passed / 3 skipped);
+  auth limiter cases pass (6 cases), and equipment UI cases pass (15 cases).
+  The market dependency mutation check fails as intended. Original disposable
+  SQLite reset/migration/schema comparison and boot smoke checks remain valid;
+  this review introduces no migration changes. Generated conservation retains
+  both operation coverage sets.
+
+
+- Review round 1 fixes: removed the request-path cross-account DELETE that
+  deadlocked on PostgreSQL when stale accounts held their own upsert locks.
+  No pruning job is introduced: one allowance row per seen account is retained
+  and reset on its next mutation. Added
+  test_postgres_stale_rate_windows_do_not_deadlock (2 and 4 accounts), with a
+  post-upsert barrier that holds all own-row locks before requests proceed, so
+  restoring the DELETE recreates the lock cycle deterministically.
+- Added test_all_mutation_routes_include_limiter_and_reads_use_method_gate. It
+  walks app.routes (effective contexts on lazy-router FastAPI versions), checks
+  every mutation alias's dependency tree and verifies that limited GETs return
+  before touching the database. An in-memory mutation removing the market order
+  route's limiter is rejected with "Mutation route lacks limiter: /market/orders".
+- Added test_metric_cache_preserves_flush_and_rollback_boundaries, including a
+  nested savepoint rollback; auth
+  test_ipv6_proxy_and_client_spellings_share_allowance (two trusted spellings)
+  and test_malformed_forwarded_hop_stops_trusted_proxy_traversal; client
+  "clears the inline threshold error when a healing trigger is corrected".
+  The existing seven threshold boundaries now assert inline validation too.
+  Load script help and README explain the 3 mutations per worker round, default
+  120 attempts per account per minute, and shared-token budgeting.
 
 ## Removed
 
@@ -184,9 +212,15 @@
   is a separate call-site refactor; expired-token refresh is fixed without
   changing the existing session/confirmation contract. Cancellation now
   explicitly labels the owner restriction without exposing seller identity.
-- Operational metrics are append-only. Any later compaction must atomically
-  preserve totals and transaction semantics; never prune raw deltas without
-  rolling them into durable totals.
+- 37-conformance: metric_deltas roll-up remains required operational follow-up.
+  Deltas are append-only; roll-up/compaction must atomically preserve durable
+  totals and transaction semantics. Never prune raw deltas without rolling them
+  into durable totals.
+- 37-conformance: if abandoned account allowance rows need retention pruning,
+  use an independent maintenance transaction and a bounded FOR UPDATE SKIP LOCKED
+  selection on PostgreSQL before deletion, with concurrency tests against live
+  mutations. Never restore cross-account cleanup to the mutation request path.
+  There is no new pruning job in this phase.
 
 ## New error codes
 

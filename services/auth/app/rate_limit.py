@@ -2,6 +2,7 @@
 
 from collections import OrderedDict, deque
 from collections.abc import Collection
+from ipaddress import ip_address
 from threading import Lock
 from time import monotonic
 
@@ -12,6 +13,15 @@ from app.errors import api_error
 
 _SWEEP_INTERVAL = 256
 _MAX_TRACKED_IPS = 10_000
+
+
+def _normalize_hop(value: str) -> str:
+    """Canonicalize IP literals; malformed hops remain untrusted chain stops."""
+    value = value.strip()
+    try:
+        return str(ip_address(value))
+    except ValueError:
+        return value
 
 
 class IpRateLimiter:
@@ -28,14 +38,16 @@ class IpRateLimiter:
             raise ValueError("Rate limiter bounds must be positive")
         self.limit = limit
         self.window_seconds = window_seconds
-        self.trusted_proxy_ips = frozenset(trusted_proxy_ips)
+        self.trusted_proxy_ips = frozenset(
+            str(ip_address(value.strip())) for value in trusted_proxy_ips
+        )
         self.max_tracked_ips = max_tracked_ips
         self._requests: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = Lock()
         self._checks = 0
 
     def _client_ip(self, request: Request) -> str:
-        peer_ip = request.client.host if request.client else "unknown"
+        peer_ip = _normalize_hop(request.client.host if request.client else "unknown")
         if peer_ip not in self.trusted_proxy_ips:
             return peer_ip
         forwarded_for = request.headers.get("X-Forwarded-For")
@@ -44,7 +56,7 @@ class IpRateLimiter:
         # Walk toward the client only while the sender is trusted. A client can
         # prepend arbitrary addresses; those must never choose its limiter key.
         for hop in reversed(forwarded_for.split(",")):
-            candidate = hop.strip()
+            candidate = _normalize_hop(hop)
             if not candidate:
                 return peer_ip
             if candidate not in self.trusted_proxy_ips:
