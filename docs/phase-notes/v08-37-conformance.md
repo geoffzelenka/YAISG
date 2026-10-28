@@ -102,3 +102,14 @@
 ## New error codes
 
 None. No new dependencies.
+
+## Orchestrator verification and review hand-offs
+
+- Verified at 19ba7d9: SQLite make ci (auth 39 / 1 skipped, game 855 / 34 skipped, client 124); PostgreSQL game 887 / 2 skipped, auth 40; alembic check clean; boot 200.
+- Review round 1: APPROVE. The reviewer sampled 20 rows and resolved all 345 code and test citations. Non-blocking follow-ups:
+  - conformance.md: label `GET /admin/metrics` "Extension (36)" (§23.6, not §22); `/players/me` is not a §22 endpoint either.
+  - conformance.md: R8/R17 and R10/R11 cite identical evidence. Cite `test_remoteness_level_gates_direction_and_cheapest_path` and `test_remoteness_prefers_cheaper_two_hop_path` for R8, and `test_visitor_profile_excludes_estate_modifiers` for R11.
+  - market_lifecycle.py:53: compaction runs inside the all-realm lifecycle transaction. That is correct, but it could move to its own transaction after commit.
+  - metrics.py:63: `ORDER BY name, id LIMIT 1000` can starve later counters under sustained load (see F1).
+  - test_conformance.py:754: add `SET LOCAL lock_timeout` so a SKIP LOCKED regression fails instead of hanging.
+  - EquipmentPanel.tsx:118: no test pins the missing-skill default of level 1; add a level-1 requirement case.
