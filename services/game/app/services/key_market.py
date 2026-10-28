@@ -70,19 +70,23 @@ def list_key(
         raise api_error(
             409, "NO_KEY_LISTING_SLOT", "All key listing slots are occupied"
         )
-    listing = session.scalar(
+    previous = session.scalar(
         select(KeyListing).where(KeyListing.instance_id == identifier).with_for_update()
     )
-    if listing is None:
-        listing = KeyListing(instance_id=identifier)
-        session.add(listing)
-    listing.seller_character_id = character.id
-    listing.price_gold = price
-    listing.realm_id = character.current_realm_id
-    listing.status = "open"
-    listing.created_at = now
-    listing.sold_at = None
-    listing.buyer_character_id = None
+    if previous is not None:
+        # The unique instance constraint permits one row, but a buyer's stale
+        # intent must never address a later sale at a different price.
+        session.delete(previous)
+        session.flush()
+    listing = KeyListing(
+        instance_id=identifier,
+        seller_character_id=character.id,
+        price_gold=price,
+        realm_id=character.current_realm_id,
+        status="open",
+        created_at=now,
+    )
+    session.add(listing)
     key.listing = listing
     key.holder_character_id = None
     session.flush()
@@ -96,6 +100,7 @@ def transfer_listing(
     operation: str,
     now: datetime,
     content: ContentIndex,
+    expected_price_gold: int | None = None,
 ) -> KeyListing:
     """Lock participants before realms, then revalidate listing custody exactly once."""
     # This is only an identity hint. The authoritative row is refreshed after locks.
@@ -118,16 +123,35 @@ def transfer_listing(
         raise api_error(
             409, "MARKET_RETRY", "The listing changed; retry in a fresh transaction"
         )
+    if operation == "cancel" and seller_id != character.id:
+        raise api_error(404, "UNKNOWN_KEY_LISTING", "The listing does not exist")
+    key = session.get(ItemInstance, listing.instance_id)
+    assert key is not None
+    if (
+        operation == "cancel"
+        and listing.status == "cancelled"
+        and key.state == "invalid"
+        and key.holder_character_id == character.id
+    ):
+        # prepare_market completed the transition and returned this trophy.
+        # Report that successful return so the HTTP layer commits the completion.
+        return listing
     if listing.status != "open":
         raise api_error(409, "KEY_LISTING_CLOSED", "The listing is no longer open")
-    key = session.get(ItemInstance, listing.instance_id)
-    assert key is not None and key.holder_character_id is None
+    assert key.holder_character_id is None
     if operation == "cancel":
-        if seller_id != character.id:
-            raise api_error(404, "UNKNOWN_KEY_LISTING", "The listing does not exist")
         require_room(session, character, content)
         listing.status = "cancelled"
     else:
+        if (
+            expected_price_gold is not None
+            and expected_price_gold != listing.price_gold
+        ):
+            raise api_error(
+                409,
+                "KEY_PRICE_CHANGED",
+                "The listing price differs from the expected price",
+            )
         require_access(session, character, content)
         require_room(session, character, content)
         _settle_purchase(session, character, listing, now, content)
@@ -158,7 +182,7 @@ def _settle_purchase(
         listing.seller_character_id != character.id
         and seller.gold + listing.price_gold - tax > 2**63 - 1
     ):
-        raise api_error(409, "GOLD_CAP", "The seller wallet cannot hold the proceeds")
+        raise api_error(409, "MARKET_UNAVAILABLE", "The purchase cannot be completed")
     buyer.gold -= listing.price_gold
     seller.gold += listing.price_gold - tax
     realm.treasury += tax - burned

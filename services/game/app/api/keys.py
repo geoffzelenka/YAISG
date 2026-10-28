@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.api.actions import get_character
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
-from app.models import ActiveActionRecord, ItemInstance
+from app.models import ActiveActionRecord, ItemInstance, KeyListing
 from app.services.actions import as_utc, clear_active_action, resolve_character
 from app.services.keys import held_key
 
@@ -84,6 +84,12 @@ async def delete_key(
     active = session.get(ActiveActionRecord, character.id)
     if active is not None and active.key_instance_id == identifier:
         clear_active_action(session, character.id)
+    listing = session.scalar(
+        select(KeyListing).where(KeyListing.instance_id == identifier).with_for_update()
+    )
+    if listing is not None:
+        session.delete(listing)
+        session.flush()
     session.delete(key)
     session.commit()
     return Response(status_code=204)

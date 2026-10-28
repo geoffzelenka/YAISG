@@ -1,6 +1,7 @@
 ## Built
 
-- Added `key_listings` and migration `v08_0018_key_market`: unique instance
+- Added `key_listings` and migrations `v08_0018_key_market` and
+  `v08_0019_key_listing_indexes`: unique instance
   custody, seller, fixed whole-gold price, creation realm/time, status and sale
   recipient/time. Listed instances have a null inventory holder.
 - Added authenticated POST /keys/market, POST /keys/market/{id}/buy,
@@ -19,7 +20,11 @@
 - Browsing filters discovery realm, goods class, exact output item and resource
   kind (gather/combat). Combat filtering reads the combatant drop table; gathering
   filtering reads the stored inline outputs. Responses include rolled payload,
-  uses, provenance, lifecycle and an explicit deprecated flag.
+  uses, name provenance, lifecycle and an explicit deprecated flag. The discovery
+  realm filter executes in SQL; browse uses bounded SQL seek batches to fill
+  content-filtered cursor pages. Kind is restricted to gather/combat. Gathering
+  dict outputs are explicitly normalized to Drop records; listings referencing
+  removed goods or combatants are skipped rather than failing the page.
 - Both session and preloaded tick transition completion cancel listings and
   return invalid trophies. The existing realm-key SELECT eagerly joins its
   unique listing, preserving the no-query-per-tick contract. Realm work changes
@@ -39,9 +44,23 @@
   skips SQLite);
   test_key_market_api_browse_filters_deprecation_access_and_ownership;
   test_key_buy_access_funds_and_cancel_ownership;
-  test_new_listing_invalidation_in_same_transaction.
+  test_new_listing_invalidation_in_same_transaction;
+  test_stale_sale_id_cannot_buy_a_relisted_key;
+  test_self_purchase_costs_exactly_the_tax;
+  test_tick_listing_invalidation_issues_no_selects (one/four listings, cold ORM
+  relationships; removing the eager load fails both statement-count assertions);
+  test_postgres_buy_waits_for_seller_wallet_mutation (actual pg_blocking_pids wait,
+  realm NOWAIT probe and independent committed wallet mutation);
+  test_browse_cursor_filters_and_removed_content (equal timestamps, sparse
+  filters, SQL realm/limit assertions, removed item/combatant ids, invalid inputs);
+  test_due_transition_cancel_commits_return;
+  test_unavailable_settlement_has_neutral_error.
+- Added seller/status and status indexes for capacity and open-listing queries.
+  DELETE /keys/{id} explicitly removes the associated closed listing before the
+  instance, preserving cleanup on SQLite even without foreign-key enforcement.
+  The API regression asserts that no orphan listing remains.
 
-- Repository-virtualenv SQLite make ci passes: auth 15, game 797 with 25
+- Repository-virtualenv SQLite make ci passes: auth 15, game 804 with 26
   database-specific skips, client 100. Ruff lint/format, strict mypy, ESLint,
   Prettier, TypeScript, Vitest, production build, scripts and content lint pass.
   git diff --check is clean.
@@ -50,7 +69,9 @@
 
 ## Removed
 
-None. No existing tests removed or weakened.
+- Removed listing-identity reuse, public discoverer character UUIDs from listing
+  responses and the seller-wallet-specific GOLD_CAP response. No tests deleted;
+  the relisting test now requires stale-intent isolation instead of identity reuse.
 
 ## Design ambiguities resolved
 
@@ -58,15 +79,28 @@ None. No existing tests removed or weakened.
   The design mandates return but provides no overflow rule for it. Temporarily
   exceeding capacity preserves the instance; ordinary subsequent acquisitions
   remain capacity-gated. Explicit cancellation still requires a free slot.
-- §19.5: the unique instance listing row is reused on relisting, replacing its
-  prior sale/cancellation metadata. The specified UNIQUE instance_id permits
-  only one row, and keys remain transferable until binding. No durable key sale
-  history is specified.
+- §19.5: every listing has a fresh immutable identity. Relisting deletes the
+  previous closed row and inserts a new UUID, retaining UNIQUE(instance_id).
+  A stale buy URL therefore returns UNKNOWN_KEY_LISTING rather than purchasing
+  a later sale at a different price. No durable key-sale history is specified.
+  An optional buy body {price_gold} additionally pins the buyer's observed price;
+  a mismatch returns KEY_PRICE_CHANGED without transferring gold or custody.
 - §19.5: kind filters gather/combat resource templates; response key.kind remains
   the instance discriminator `key`. Deprecated open listings remain purchasable
   until completion, consistent with their continuing access and explicit flag.
 - §19.5: self-purchases use the same access, capacity and tax rules; one wallet
   loses only the tax. No exception or extra restriction is specified.
+- §19.5: realm_id filters the resource's discovery realm (ItemInstance.realm_id),
+  not the realm where the seller placed the listing. The former determines where
+  the key works and its transition risk; the latter remains the tax recipient.
+- §19.5 / §19.1: public listing responses retain discovered_by_name for permanent
+  provenance, but omit discovered_by_character_id. The holder's private key API
+  retains the id; market browsing does not expose a discoverer's character UUID.
+- §19.6: cancelling a listing whose due transition returns the invalid trophy
+  succeeds, including with a full inventory. Preparation finalizes the transition
+  before status validation; the successful response commits that return rather
+  than rolling it back with KEY_LISTING_CLOSED. Repeated cancellation of that
+  returned invalid trophy also succeeds while the seller still holds it.
 
 ## Deviations
 
@@ -84,7 +118,11 @@ unchanged; this prompt adds no combat or commodity-matching rules.
   removal of live custody. Delete or cancel associated listing rows explicitly.
 - 35-client-keys-tutorial: consume the key market endpoints and server-returned
   rolled values, uses and deprecated flag. Creation body is instance_id and
-  price_gold; browse envelope is listings, mutations return one listing.
+  price_gold; buy accepts an optional {price_gold} expectation. Browse returns
+  listings/next_cursor, with limit=1..200 (default 50) and opaque before cursors;
+  descending creation timestamp then UUID determines page order. Filters persist
+  on subsequent pages. Mutations return one listing. Public provenance includes
+  the discoverer's name, without their character UUID.
   Display INVENTORY_FULL for cancellation/purchase and MARKET_RETRY as retryable.
   Commodity pickers remain unchanged and continue excluding instanced items.
 - 36-hardening: retain sorted two-character locking, realm-before-listing
@@ -97,6 +135,8 @@ unchanged; this prompt adds no combat or commodity-matching rules.
 - NO_KEY_LISTING_SLOT (409): resolved open-listing cap is exhausted.
 - UNKNOWN_KEY_LISTING (404): listing is absent or cancellation is not owned.
 - KEY_LISTING_CLOSED (409): the listing is sold or cancelled.
-- GOLD_CAP (409): the seller wallet cannot hold the proceeds.
+- KEY_PRICE_CHANGED (409): the optional expected buy price differs from the listing.
+- MARKET_UNAVAILABLE (409): settlement cannot complete; the response deliberately
+  gives no information about the seller's wallet (replaces the new GOLD_CAP code).
 - Reused KEY_UNAVAILABLE, UNKNOWN_KEY, INVENTORY_FULL, NO_MARKET_ACCESS,
   INSUFFICIENT_GOLD and MARKET_RETRY. No new dependencies.

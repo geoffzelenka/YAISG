@@ -3,14 +3,22 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String, Uuid
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 
 
 class KeyListing(Base):
-    """One reusable listing record per physical instance."""
+    """One immutable sale identity per physical instance in market custody."""
 
     __tablename__ = "key_listings"
 
@@ -28,6 +36,8 @@ class KeyListing(Base):
         ForeignKey("characters.id")
     )
     __table_args__ = (
+        Index("ix_key_listings_seller_status", "seller_character_id", "status"),
+        Index("ix_key_listings_status", "status"),
         CheckConstraint("price_gold > 0", name="ck_key_listing_price"),
         CheckConstraint(
             "status IN ('open', 'sold', 'cancelled')", name="ck_key_listing_status"
