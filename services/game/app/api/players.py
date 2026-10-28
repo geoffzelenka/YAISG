@@ -21,6 +21,6 @@ class PlayerResponse(BaseModel):
 
 
 @router.get("/me", response_model=PlayerResponse)
-async def get_me(player: CurrentPlayer) -> PlayerResponse:
+def get_me(player: CurrentPlayer) -> PlayerResponse:
     """Return the caller's auto-provisioned player record."""
     return PlayerResponse.model_validate(player, from_attributes=True)

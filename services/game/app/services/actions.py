@@ -32,6 +32,7 @@ from app.models import (
     RealmState,
     RewardLog,
 )
+from app.services.metrics import record
 from app.services.realms import finalize_realms, prepare_sqlite_write, stack_tags
 from app.services.tutorial import seed_arrival
 
@@ -250,6 +251,7 @@ def _persist_state(
         if row is None:
             realm = session.get(RealmState, key.realm_id)
             lifecycle, invalidated_at = discovery_lifecycle(realm, key.created_at)
+            record(session, keys_discovered=1)
             session.add(
                 ItemInstance(
                     id=uuid.UUID(key.id),

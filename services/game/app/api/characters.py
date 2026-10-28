@@ -165,7 +165,7 @@ def _character_for_player(session: DatabaseSession, player_id: uuid.UUID) -> Cha
 
 
 @router.post("", response_model=ProfileResponse, status_code=201)
-async def create_character(
+def create_character(
     body: CreateCharacterRequest,
     request: Request,
     now: ServerNow,
@@ -382,7 +382,7 @@ def _profile(
 
 
 @router.get("/me", response_model=ProfileResponse)
-async def get_profile(
+def get_profile(
     request: Request,
     now: ServerNow,
     player: CurrentPlayer,
@@ -398,7 +398,7 @@ async def get_profile(
 
 
 @router.get("/me/inventory", response_model=InventoryResponse)
-async def get_inventory(
+def get_inventory(
     now: ServerNow, player: CurrentPlayer, session: DatabaseSession
 ) -> InventoryResponse:
     """Return all item stacks owned by the caller's character."""
@@ -431,7 +431,7 @@ class StanceResponse(BaseModel):
 
 
 @router.put("/me/stance", response_model=StanceResponse)
-async def change_stance(
+def change_stance(
     body: StanceRequest,
     request: Request,
     now: ServerNow,

@@ -11,6 +11,7 @@ from app.engine.caravans import Candidate, Route, candidate, survival
 from app.engine.stores import Line, membership
 from app.models import GoldLedger, RealmShipment, RealmState, RealmStore, WorldState
 from app.services.market import market_contexts
+from app.services.metrics import record
 from app.services.realms import as_utc, prepare_sqlite_write, resolve_realm
 from app.services.stores import realm_holders, recompute_lines
 
@@ -41,7 +42,11 @@ def run_caravan_pass(session: Session, content: ContentIndex, now: datetime) -> 
         session.scalars(
             select(RealmState)
             .where(or_(RealmState.isolated.is_(False), RealmState.id.in_(endpoints)))
-            .order_by(RealmState.id)
+            .order_by(
+                RealmState.id.collate(
+                    "C" if session.get_bind().dialect.name == "postgresql" else "BINARY"
+                )
+            )
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -212,6 +217,7 @@ def _dispatch(
             status="in_transit",
         )
     )
+    record(session, caravan_shipments=1, caravan_losses=choice.sent - choice.delivered)
     session.flush()
     recompute_lines(session, buyer, content)
     recompute_lines(session, seller, content)

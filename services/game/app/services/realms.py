@@ -3,6 +3,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import IntEnum
+from time import perf_counter_ns
 from typing import Literal
 
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from app.models import (
     RealmVote,
 )
 from app.services.keys import deprecate_keys, invalidate_keys, realm_keys
+from app.services.metrics import record
 
 
 def as_utc(value: datetime) -> datetime:
@@ -135,6 +137,10 @@ def start_transition(
     if keys is None:
         session = object_session(realm)
         keys = realm_keys(session, realm.id) if session is not None else []
+    if cause == "regression":
+        owner_session = object_session(realm)
+        if owner_session is not None:
+            record(owner_session, regressions=1)
     deprecate_keys(keys)
     realm.pending_transition = {
         "to_node": to_node,
@@ -311,6 +317,7 @@ def resolve_realm(
     )
     if ticks <= 0:
         return realm
+    started = perf_counter_ns()
     context = load_context(session, realm, run, content)
     for _ in range(max(0, ticks)):
         tick_at = as_utc(realm.last_tick_at) + interval
@@ -320,5 +327,11 @@ def resolve_realm(
         realm.last_tick_at = tick_at
     complete_tick_events(context, realm, now, content)
     persist_context(session, realm, context)
+    record(
+        session,
+        ticks_run=ticks,
+        tick_duration_ns=perf_counter_ns() - started,
+        tags_shed=context.tags_shed,
+    )
     session.flush()
     return realm

@@ -20,7 +20,7 @@ class DepartureRequest(BaseModel):
 
 
 @router.post("/depart")
-async def departure(
+def departure(
     body: DepartureRequest,
     request: Request,
     now: ServerNow,

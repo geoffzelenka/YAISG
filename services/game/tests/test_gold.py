@@ -194,7 +194,7 @@ async def test_admin_economy_operator_only(
     )
     with factory() as session:
         user_id = session.scalar(select(Player.auth_user_id))
-    monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({str(user_id)}))
+    monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({user_id}))
     result = await client.get("/admin/economy", headers=headers)
     assert result.status_code == 200
     assert result.json()["holders"] == {
@@ -324,7 +324,7 @@ async def test_random_gold_operations_match_ledger(
 
         with factory() as session:
             user_id = session.scalar(select(Player.auth_user_id))
-        monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({str(user_id)}))
+        monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({user_id}))
 
         async def net() -> int:
             report = await client.get("/admin/economy", headers=headers)
@@ -456,7 +456,10 @@ def test_mint_catchup_batches_ledger_and_is_idempotent(
     finally:
         event.remove(engine, "before_cursor_execute", record)
     assert len([s for s in statements if "INSERT INTO gold_ledger" in s]) == 1
-    assert len(statements) <= 17  # Includes open-ballot, shipment and key preloads.
+    metrics_writes = [s for s in statements if "INSERT INTO metric_deltas" in s]
+    assert len(metrics_writes) == 1  # One telemetry batch, regardless of tick count.
+    gameplay_statements = [s for s in statements if s not in metrics_writes]
+    assert len(gameplay_statements) <= 17  # Original gameplay query budget.
     assert realm.treasury == ticks * 6
     assert realm_session.scalar(select(func.sum(GoldLedger.amount))) == ticks * 6
     before = len(list(realm_session.scalars(select(GoldLedger))))

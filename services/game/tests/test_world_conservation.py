@@ -110,7 +110,7 @@ async def setup_scenario(
             .where(Character.id == characters[0])
         )
         session.commit()
-    monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({str(user_id)}))
+    monkeypatch.setattr(config, "OPERATOR_AUTH_USER_IDS", frozenset({user_id}))
     scenario = WorldScenario(
         client,
         factory,

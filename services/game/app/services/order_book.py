@@ -25,6 +25,7 @@ from app.services.actions import (
     lock_character_and_load_action,
     resolve_locked_character,
 )
+from app.services.metrics import record
 
 
 def prepare_market(
@@ -263,6 +264,7 @@ def _match(
         tax_realm_id=sell.realm_id,
         matched_at=now,
     )
+    record(session, matches=1, tax_gold=tax)
     session.add(match)
     return match
 

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import type { ProjectRun } from './development'
 import type { MapEdge, Modifier, Selector } from './content'
-import { gameRequest, readApiError } from './http'
+import { ApiError, gameRequest, readApiError } from './http'
 
 export type RealmDemandLine = {
   line_key: string
@@ -57,14 +57,7 @@ export type RealmMap = {
   edges: MapEdge[]
 }
 
-export class RealmApiError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message)
-  }
-}
+export class RealmApiError extends ApiError {}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await gameRequest(path, init)

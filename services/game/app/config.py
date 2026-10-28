@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from uuid import UUID
 
 DATABASE_URL = os.getenv("GAME_DATABASE_URL", "sqlite:///./data/game.db")
 VERSION = os.getenv("GIT_SHA", "dev")
@@ -23,7 +24,7 @@ CONTENT_DIR = (
 )
 
 OPERATOR_AUTH_USER_IDS = frozenset(
-    value.strip()
+    UUID(value.strip())
     for value in os.getenv("GAME_OPERATOR_AUTH_USER_IDS", "").split(",")
     if value.strip()
 )

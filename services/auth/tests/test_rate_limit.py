@@ -44,3 +44,42 @@ def test_tracked_ip_count_is_bounded() -> None:
     limiter.check(_request("192.0.2.3"))
 
     limiter.check(_request("192.0.2.1"))
+
+
+def test_forwarded_chain_uses_rightmost_untrusted_hop() -> None:
+    """An attacker cannot rotate a spoofed prefix behind a trusted proxy chain."""
+    limiter = IpRateLimiter(limit=1, trusted_proxy_ips={"10.0.0.1", "10.0.0.2"})
+    limiter.check(_request("10.0.0.1", "192.0.2.1, 198.51.100.8, 10.0.0.2"))
+    with pytest.raises(HTTPException) as error:
+        limiter.check(_request("10.0.0.1", "192.0.2.99, 198.51.100.8, 10.0.0.2"))
+    assert error.value.status_code == 429
+
+
+@pytest.mark.parametrize(
+    "trusted_peer",
+    ["2001:db8::1", "2001:0db8:0000:0000:0000:0000:0000:0001"],
+)
+def test_ipv6_proxy_and_client_spellings_share_allowance(trusted_peer: str) -> None:
+    """Equivalent peer, proxy and client literals cannot split limiter buckets."""
+    limiter = IpRateLimiter(
+        limit=1,
+        trusted_proxy_ips={trusted_peer, "2001:db8::2"},
+    )
+    limiter.check(
+        _request(
+            "2001:0db8::1",
+            "192.0.2.1, 2001:0db8:0000:0000:0000:0000:0000:0003, 2001:0db8::2",
+        )
+    )
+    with pytest.raises(HTTPException) as error:
+        limiter.check(_request("2001:db8::1", "192.0.2.99, 2001:db8::3, 2001:db8::2"))
+    assert error.value.status_code == 429
+
+
+def test_malformed_forwarded_hop_stops_trusted_proxy_traversal() -> None:
+    """Unparsable hops are untrusted, even when followed by trusted proxies."""
+    limiter = IpRateLimiter(limit=1, trusted_proxy_ips={"2001:db8::1", "2001:db8::2"})
+    limiter.check(_request("2001:db8::1", "192.0.2.1, not-an-ip, 2001:db8::2"))
+    with pytest.raises(HTTPException) as error:
+        limiter.check(_request("2001:db8::1", "192.0.2.99, not-an-ip, 2001:db8::2"))
+    assert error.value.status_code == 429

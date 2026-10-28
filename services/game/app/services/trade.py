@@ -12,6 +12,7 @@ from app.errors import api_error
 from app.models import Character, Currency, Inventory, RealmLine, RealmState, RealmStore
 from app.services.actions import load_character_state
 from app.services.market import market_contexts
+from app.services.metrics import record
 from app.services.stores import recompute_lines
 
 
@@ -116,4 +117,5 @@ def trade(
         row.budget_gold -= gold
     session.flush()
     recompute_lines(session, realm, content)
+    record(session, realm_trades=1)
     return gold

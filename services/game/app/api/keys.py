@@ -49,7 +49,7 @@ class KeysResponse(BaseModel):
 
 
 @router.get("/me")
-async def get_keys(
+def get_keys(
     request: Request, now: ServerNow, player: CurrentPlayer, session: DatabaseSession
 ) -> KeysResponse:
     """Resolve progress before returning the caller's private holdings."""
@@ -70,7 +70,7 @@ async def get_keys(
 
 
 @router.delete("/{identifier}", status_code=204)
-async def delete_key(
+def delete_key(
     identifier: uuid.UUID,
     request: Request,
     now: ServerNow,

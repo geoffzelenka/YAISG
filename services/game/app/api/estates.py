@@ -289,7 +289,7 @@ def _audit(change: str, character: Character, estate: Estate, **details: str) ->
 
 
 @router.get("/me", response_model=EstateResponse)
-async def get_estate(
+def get_estate(
     request: Request,
     now: ServerNow,
     player: CurrentPlayer,
@@ -306,7 +306,7 @@ async def get_estate(
 
 
 @router.post("/me/upgrades/{upgrade_id}", response_model=EstateResponse)
-async def purchase_upgrade(
+def purchase_upgrade(
     upgrade_id: str,
     request: Request,
     now: ServerNow,
@@ -358,7 +358,7 @@ async def purchase_upgrade(
 
 
 @router.post("/me/transform", response_model=EstateResponse)
-async def transform_estate(
+def transform_estate(
     body: TransformRequest,
     request: Request,
     now: ServerNow,
@@ -481,7 +481,7 @@ def _destroy_mobile(session: DatabaseSession, estate: Estate, now: datetime) -> 
 
 
 @router.post("/build", response_model=EstateResponse)
-async def build_estate(
+def build_estate(
     body: TransformRequest,
     request: Request,
     now: ServerNow,
@@ -536,7 +536,7 @@ def _require_idle_estate(resolution: Resolution, content: ContentIndex) -> None:
 
 
 @router.post("/{estate_id}/buy", response_model=EstateResponse)
-async def buy_estate(
+def buy_estate(
     estate_id: uuid.UUID,
     request: Request,
     now: ServerNow,
@@ -582,7 +582,7 @@ async def buy_estate(
 
 
 @router.post("/me/surrender", response_model=EstateResponse)
-async def surrender_estate(
+def surrender_estate(
     body: SurrenderRequest,
     request: Request,
     now: ServerNow,
@@ -628,7 +628,7 @@ async def surrender_estate(
 
 
 @router.post("/me/larder", response_model=EstateResponse)
-async def deposit_larder(
+def deposit_larder(
     body: LarderRequest,
     request: Request,
     now: ServerNow,

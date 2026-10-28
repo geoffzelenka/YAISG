@@ -36,7 +36,7 @@ def run_realm_ticks(
                 connection.scalars(
                     select(RealmState.id)
                     .where(RealmState.isolated.is_(False))
-                    .order_by(RealmState.id)
+                    .order_by(RealmState.id.collate("C" if postgres else "BINARY"))
                 )
             )
             for realm_id in realm_ids:
@@ -57,9 +57,16 @@ def run_realm_ticks(
                 logging.getLogger(__name__).exception("Caravan pass failed")
         finally:
             if postgres:
-                connection.execute(
-                    text("SELECT pg_advisory_unlock(:key)"), {"key": REALM_TICK_LOCK}
-                )
+                try:
+                    connection.execute(
+                        text("SELECT pg_advisory_unlock(:key)"),
+                        {"key": REALM_TICK_LOCK},
+                    )
+                except Exception:
+                    # Rollback cannot release a session advisory lock. Discard
+                    # this connection instead of returning a locked one to pool.
+                    connection.invalidate()
+                    logging.getLogger(__name__).exception("Advisory unlock failed")
         return True
 
 

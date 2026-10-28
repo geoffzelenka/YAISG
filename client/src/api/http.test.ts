@@ -100,3 +100,24 @@ test('retries game confirmation after credentials were saved without repeating u
     new Headers(fetchMock.mock.calls[2][1]?.headers).get('Authorization'),
   ).toBe('Bearer full-token')
 })
+
+test('refreshes an expired guest token once before upgrading and confirming game promotion', async () => {
+  const { guestSession } = await import('./http')
+  setAccessToken('expired-guest')
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockResolvedValueOnce(Response.json({ access_token: 'fresh-guest' }))
+    .mockResolvedValueOnce(Response.json({ access_token: 'full-token' }))
+    .mockResolvedValueOnce(Response.json({ kind: 'full' }))
+  await guestSession({ email: 'hero@example.com', password: 'longpassword' })
+  expect(
+    fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname),
+  ).toEqual(['/auth/upgrade', '/auth/refresh', '/auth/upgrade', '/players/me'])
+  expect(
+    new Headers(fetchMock.mock.calls[2][1]?.headers).get('Authorization'),
+  ).toBe('Bearer fresh-guest')
+  expect(
+    new Headers(fetchMock.mock.calls[3][1]?.headers).get('Authorization'),
+  ).toBe('Bearer full-token')
+})

@@ -265,7 +265,7 @@ export function KeysPanel() {
               })
             }
           >
-            Cancel my listing
+            Cancel listing (owner only)
           </button>
         </article>
       ))}

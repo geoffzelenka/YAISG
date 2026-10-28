@@ -191,11 +191,19 @@ export function StackForm({
       : 50,
   )
   const selected = items.find((i) => i.id === itemId)
+  const thresholdError =
+    belt &&
+    selected &&
+    !selected.consumable?.buff &&
+    (!Number.isFinite(threshold) || threshold <= 0 || threshold > 100)
+      ? 'HP threshold must be greater than 0 and at most 100.'
+      : null
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
         if (disabled || returnOnly || !selected) return
+        if (thresholdError) return
         onSave({
           item_id: itemId,
           quantity,
@@ -253,15 +261,17 @@ export function StackForm({
               <input
                 className="auth-input"
                 type="number"
-                min={0.01}
+                min={0}
                 max={100}
                 step="any"
                 required
+                aria-invalid={thresholdError !== null}
                 value={threshold}
                 onChange={(e) => setThreshold(Number(e.target.value))}
               />
             </label>
           ))}
+        {thresholdError && <p role="alert">{thresholdError}</p>}
         <button className="primary-button mt-3" disabled={!selected}>
           Assign stack
         </button>

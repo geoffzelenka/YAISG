@@ -52,7 +52,7 @@ def listing_response(listing: KeyListing, key: ItemInstance) -> dict[str, object
 
 
 @router.post("", status_code=201)
-async def create(
+def create(
     body: ListingRequest,
     request: Request,
     now: ServerNow,
@@ -77,7 +77,7 @@ async def create(
 
 
 @router.post("/{identifier}/{operation}")
-async def transfer(
+def transfer(
     identifier: uuid.UUID,
     operation: Literal["buy", "cancel"],
     request: Request,
@@ -137,7 +137,7 @@ def resource_goods(
 
 
 @router.get("")
-async def browse(
+def browse(
     request: Request,
     player: CurrentPlayer,
     session: DatabaseSession,

@@ -21,6 +21,7 @@ from app.models.gold import GoldLedger, GoodsLedger
 from app.models.instances import ItemInstance
 from app.models.key_market import KeyListing
 from app.models.market import MarketMatch, MarketOrder
+from app.models.operations import MetricDelta, MutationWindow
 from app.models.player import Player
 from app.models.shipments import RealmShipment
 from app.models.votes import RealmVote, RealmVoteEligibility
@@ -63,3 +64,6 @@ __all__ += ["CharacterEquipment", "CharacterBelt", "CharacterBuff"]
 __all__ += ["ItemInstance"]
 
 __all__ += ["KeyListing"]
+
+
+__all__ += ["MetricDelta", "MutationWindow"]
