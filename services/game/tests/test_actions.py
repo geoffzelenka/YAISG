@@ -74,6 +74,7 @@ def _token() -> str:
     return jwt.encode(
         {
             "sub": str(uuid.uuid4()),
+            "kind": "full",
             "iss": "yaisg-auth",
             "exp": datetime.now(UTC) + timedelta(minutes=5),
         },

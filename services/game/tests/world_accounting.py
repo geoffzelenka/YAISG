@@ -24,6 +24,7 @@ from app.models import (
     CharacterBelt,
     CharacterEquipment,
     EstateLarder,
+    GoodsLedger,
     Inventory,
     ItemInstance,
     KeyListing,
@@ -86,6 +87,14 @@ class GoodsAccounting:
     def add(self, cause: str, item: str, amount: int) -> None:
         """Record a signed milli-item source or sink."""
         self.changes.setdefault(cause, Counter())[item] += amount
+
+    def verify_purge_ledger(self, session: Session) -> None:
+        """Compare durable sinks with independent generated-operation amounts."""
+        recorded: Counter[str] = Counter()
+        for row in session.scalars(select(GoodsLedger)):
+            assert row.cause == "guest_purge" and row.amount_milli <= 0
+            recorded[row.item_id] += row.amount_milli
+        assert recorded == self.changes.get("guest_purge", Counter())
 
     def expected(self, baseline: Counter[str]) -> Counter[str]:
         """Preserve signed deltas; Counter addition would discard negatives."""

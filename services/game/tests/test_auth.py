@@ -59,6 +59,7 @@ def _token(
     return jwt.encode(
         {
             "sub": str(uuid.uuid4()),
+            "kind": "full",
             "iss": issuer,
             "exp": expires_at or datetime.now(UTC) + timedelta(minutes=5),
         },
@@ -245,3 +246,105 @@ async def test_jwks_cache_maps_malformed_and_http_errors(
         cache = JwksCache("https://auth.test/jwks", 60, client=client)
         with pytest.raises(jwt.InvalidTokenError):
             await cache.get_key(KEY_ID)
+
+
+async def test_guest_claim_upgrade_preserves_player_and_character(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """Verified refreshed claims promote the existing player without replacing it."""
+    from app.content.runtime import CONTENT
+    from app.models import Character, Estate
+
+    http, factory = client
+    identifier = uuid.uuid4()
+
+    def token(kind: str) -> str:
+        return jwt.encode(
+            {
+                "sub": str(identifier),
+                "kind": kind,
+                "iss": ISSUER,
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            PRIVATE_KEY,
+            algorithm="RS256",
+            headers={"kid": KEY_ID},
+        )
+
+    guest = await _get_me(http, token("guest"))
+    assert guest.status_code == 200
+    assert guest.json()["kind"] == "guest"
+    with factory() as session:
+        player = session.scalar(select(Player).where(Player.auth_user_id == identifier))
+        assert player is not None
+        estate = Estate(
+            realm_id=CONTENT.realms[0].id, form_id=CONTENT.estate_forms[0].id
+        )
+        session.add(estate)
+        session.flush()
+        character = Character(
+            player_id=player.id,
+            name="Guest",
+            name_normalized="guest",
+            stance=CONTENT.progression.default_stance,
+            current_realm_id=estate.realm_id,
+            home_estate_id=estate.id,
+            created_at=datetime.now(UTC),
+        )
+        session.add(character)
+        session.commit()
+        character_id = character.id
+    upgraded = await _get_me(http, token("full"))
+    assert upgraded.json()["id"] == guest.json()["id"]
+    assert upgraded.json()["kind"] == "full"
+    assert (await _get_me(http, token("guest"))).json()["kind"] == "full"
+    with factory() as session:
+        assert session.get(Character, character_id) is not None
+        player = session.scalar(select(Player).where(Player.auth_user_id == identifier))
+        assert player is not None and player.last_activity_at is not None
+
+
+async def test_untrusted_guest_kind_is_rejected(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """A forged token or an invalid signed kind cannot provision a guest."""
+    claims = {
+        "sub": str(uuid.uuid4()),
+        "kind": "administrator",
+        "iss": ISSUER,
+        "exp": datetime.now(UTC) + timedelta(minutes=5),
+    }
+    token = jwt.encode(claims, PRIVATE_KEY, algorithm="RS256", headers={"kid": KEY_ID})
+    assert (await _get_me(client[0], token)).status_code == 401
+    del claims["kind"]
+    token = jwt.encode(claims, PRIVATE_KEY, algorithm="RS256", headers={"kid": KEY_ID})
+    assert (await _get_me(client[0], token)).status_code == 401
+
+
+async def test_guest_activity_does_not_shorten_live_session(
+    client: tuple[AsyncClient, sessionmaker[Session]],
+) -> None:
+    """A request with an older token cannot remove a newer session's purge guard."""
+    identifier = uuid.uuid4()
+    now = datetime.now(UTC)
+    longest = int((now + timedelta(days=30)).timestamp())
+    for session_expiry in (longest, int((now + timedelta(days=1)).timestamp())):
+        token = jwt.encode(
+            {
+                "sub": str(identifier),
+                "kind": "guest",
+                "iss": ISSUER,
+                "exp": now + timedelta(minutes=5),
+                "session_exp": session_expiry,
+            },
+            PRIVATE_KEY,
+            algorithm="RS256",
+            headers={"kid": KEY_ID},
+        )
+        assert (await _get_me(client[0], token)).status_code == 200
+    with client[1]() as session:
+        player = session.scalar(select(Player).where(Player.auth_user_id == identifier))
+        assert player is not None and player.session_expires_at is not None
+        assert player.session_expires_at.replace(tzinfo=UTC) == datetime.fromtimestamp(
+            longest, UTC
+        )

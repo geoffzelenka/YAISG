@@ -15,10 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.clock import ServerNow
 from app.config import AUTH_JWKS_TTL_SECONDS, AUTH_JWKS_URL, JWT_ISSUER
 from app.db import get_db
 from app.errors import api_error
 from app.models import Player
+from app.services.realms import prepare_sqlite_write
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,8 @@ class VerifiedIdentity:
     """Trusted identity extracted from a verified access token."""
 
     auth_user_id: uuid.UUID
+    kind: str = "full"
+    expires_at: datetime | None = None
 
 
 class JwksCache:
@@ -141,38 +145,78 @@ async def verify_access_token(request: Request) -> VerifiedIdentity:
             options={"require": ["sub", "exp", "iss"]},
         )
         subject = uuid.UUID(claims["sub"])
+        kind = claims["kind"]
+        if kind not in {"guest", "full"}:
+            raise InvalidTokenError("Invalid account kind")
+        expires_at = datetime.fromtimestamp(
+            max(claims["exp"], claims.get("session_exp", claims["exp"])), UTC
+        )
     except (InvalidTokenError, KeyError, TypeError, ValueError):
         raise api_error(
             401, "UNAUTHORIZED", "A valid access token is required"
         ) from None
-    return VerifiedIdentity(auth_user_id=subject)
+    return VerifiedIdentity(auth_user_id=subject, kind=kind, expires_at=expires_at)
 
 
 Identity = Annotated[VerifiedIdentity, Depends(verify_access_token)]
 DatabaseSession = Annotated[Session, Depends(get_db)]
 
 
-async def get_current_player(identity: Identity, session: DatabaseSession) -> Player:
+async def get_current_player(
+    identity: Identity, session: DatabaseSession, now: ServerNow
+) -> Player:
     """Find or atomically create the player associated with the token subject."""
+    prepare_sqlite_write(session)
     player = session.scalar(
-        select(Player).where(Player.auth_user_id == identity.auth_user_id)
+        select(Player)
+        .where(Player.auth_user_id == identity.auth_user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if player is not None:
+        _record_activity(player, identity, now)
+        session.commit()
         return player
-    player = Player(auth_user_id=identity.auth_user_id, created_at=datetime.now(UTC))
+    player = Player(
+        auth_user_id=identity.auth_user_id,
+        created_at=now,
+        kind=identity.kind,
+        last_activity_at=now,
+        session_expires_at=identity.expires_at,
+    )
     session.add(player)
     try:
         session.commit()
     except IntegrityError:
         session.rollback()
         existing = session.scalar(
-            select(Player).where(Player.auth_user_id == identity.auth_user_id)
+            select(Player)
+            .where(Player.auth_user_id == identity.auth_user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if existing is None:
             raise
+        _record_activity(existing, identity, now)
+        session.commit()
         return existing
     session.refresh(player)
     return player
+
+
+def _record_activity(player: Player, identity: VerifiedIdentity, now: datetime) -> None:
+    """Promote identity monotonically and retain the longest verified session."""
+    # A full account cannot regress when an older guest token is in flight.
+    if identity.kind == "full":
+        player.kind = "full"
+    player.last_activity_at = now
+    if identity.expires_at is not None:
+        previous_expiry = player.session_expires_at
+        if (
+            previous_expiry is None
+            or previous_expiry.replace(tzinfo=UTC) < identity.expires_at
+        ):
+            player.session_expires_at = identity.expires_at
 
 
 CurrentPlayer = Annotated[Player, Depends(get_current_player)]

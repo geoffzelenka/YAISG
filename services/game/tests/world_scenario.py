@@ -11,6 +11,7 @@ from typing import Literal
 from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from test_estates import _token
 from test_gold import BULLION, REALM, mint_content
 from world_accounting import GoodsAccounting, goods
 
@@ -25,14 +26,18 @@ from app.content.schemas import (
 )
 from app.models import (
     Character,
+    Currency,
     Estate,
+    Inventory,
     ItemInstance,
     MarketOrder,
+    Player,
     RealmProjectRun,
     RealmShipment,
     RealmState,
 )
 from app.services.caravans import run_caravan_pass
+from app.services.guest_purge import purge_guests
 from app.services.market_lifecycle import run_market_lifecycle
 from app.services.realm_ticks import (
     complete_tick_transition,
@@ -55,6 +60,7 @@ PROJECT_IDS = (
     *(f"project.{name}" for name in EXTRA_PROJECT_NAMES),
 )
 OPERATIONS = (
+    "guest_purge",
     "exploration",
     "key_trade",
     "key_cancel",
@@ -289,6 +295,7 @@ class WorldScenario:
         actual_gold = await self.net()
         assert actual_gold == self.baseline_gold, (actual_gold, self.baseline_gold)
         with self.factory() as session:
+            self.audit.verify_purge_ledger(session)
             expected = self.audit.expected(self.baseline_goods)
             for shipment in session.scalars(select(RealmShipment)):
                 route = self.content.caravan_routes[
@@ -716,6 +723,49 @@ class WorldScenario:
 
     async def run(self, operation: str) -> None:
         """Execute one valid generated intent, checking all required preparation."""
+        if operation == "guest_purge":
+            headers = {"Authorization": f"Bearer {_token()}"}
+            response = await self.client.post(
+                "/characters",
+                headers=headers,
+                json={"name": f"Guest {uuid.uuid4().hex[:10]}", "realm_id": REALM},
+            )
+            assert response.status_code == 201, response.text
+            with self.factory() as session:
+                guest = session.scalar(
+                    select(Character).where(Character.id.not_in(self.characters))
+                )
+                assert guest is not None
+                player = session.get(Player, guest.player_id)
+                assert player is not None
+                player.kind = "guest"
+                player.last_activity_at = self.now - timedelta(
+                    days=self.content.auth.guest_ttl_days + 1
+                )
+                player.session_expires_at = self.now - timedelta(seconds=1)
+                donor = session.get(Inventory, (self.characters[0], SPRIG))
+                wallet = session.get(Currency, self.characters[0])
+                guest_wallet = session.get(Currency, guest.id)
+                assert (
+                    donor is not None
+                    and wallet is not None
+                    and guest_wallet is not None
+                )
+                donor.quantity -= 1
+                wallet.gold -= 1
+                guest_wallet.gold += 1
+                session.add(Inventory(character_id=guest.id, item_id=SPRIG, quantity=1))
+                session.commit()
+            await self.check()
+            with self.factory() as session:
+                assert (
+                    purge_guests(session, self.content, self.content.auth, self.now)
+                    == 1
+                )
+                session.commit()
+            self.audit.add("guest_purge", SPRIG, -1000)
+            await self.check()
+            return
         if operation in {"key_trade", "key_cancel"}:
             identifier = await self.discovery()
             response = await self.post(

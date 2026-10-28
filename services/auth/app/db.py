@@ -53,3 +53,9 @@ def enable_sqlite_wal(dbapi_connection: object, connection_record: object) -> No
             cursor.execute("PRAGMA journal_mode=WAL")
         finally:
             cursor.close()
+
+
+def prepare_sqlite_write(session: Session) -> None:
+    """Acquire writer intent before reading an auth mutation's state."""
+    if session.get_bind().dialect.name == "sqlite" and not session.in_transaction():
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")

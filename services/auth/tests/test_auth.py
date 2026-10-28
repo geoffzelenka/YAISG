@@ -2,6 +2,7 @@
 
 import asyncio
 import itertools
+import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
@@ -34,9 +35,16 @@ def session_factory(
 ) -> Iterator[sessionmaker[Session]]:
     """Create an isolated auth database and override request sessions."""
     database_path = tmp_path / "auth-test.db"
+    database_url = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{database_path}")
     engine = create_engine(
-        f"sqlite:///{database_path}", connect_args={"check_same_thread": False}
+        database_url,
+        **(
+            {"connect_args": {"check_same_thread": False}}
+            if database_url.startswith("sqlite:")
+            else {}
+        ),
     )
+    Base.metadata.drop_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
 
@@ -52,6 +60,7 @@ def session_factory(
     app.dependency_overrides[provide_signing_keys] = override_signing_keys
     yield factory
     app.dependency_overrides.clear()
+    Base.metadata.drop_all(engine)
     engine.dispose()
 
 
@@ -307,3 +316,278 @@ async def test_rate_limiter_returns_standard_error(client: AsyncClient) -> None:
             assert response.status_code == 401
     assert response.status_code == 429
     assert response.json()["error"]["code"] == "RATE_LIMITED"
+
+
+@pytest.mark.anyio
+async def test_guest_claims_upgrade_identity_and_refresh(
+    client: AsyncClient,
+    signing_keys: SigningKeys,
+) -> None:
+    """Upgrade and the following refresh retain the guest id with full claims."""
+    created = await client.post("/auth/guest")
+    assert created.status_code == 201
+    token = created.json()["access_token"]
+    guest_claims = jwt.decode(
+        token, signing_keys.public_key, algorithms=["RS256"], issuer=JWT_ISSUER
+    )
+    assert guest_claims["kind"] == "guest"
+    upgraded = await client.post(
+        "/auth/upgrade",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "Guest@example.com", "password": "long-enough-password"},
+    )
+    assert upgraded.status_code == 200
+    refreshed = await client.post("/auth/refresh")
+    claims = jwt.decode(
+        refreshed.json()["access_token"],
+        signing_keys.public_key,
+        algorithms=["RS256"],
+        issuer=JWT_ISSUER,
+    )
+    assert claims["kind"] == "full"
+    assert claims["sub"] == guest_claims["sub"]
+    logged_in = await client.post(
+        "/auth/login",
+        json={"email": "guest@example.com", "password": "long-enough-password"},
+    )
+    assert logged_in.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_guest_upgrade_duplicate_email_and_validation(
+    client: AsyncClient,
+) -> None:
+    """Existing credential rules apply and a conflict leaves the guest intact."""
+    await _register(client)
+    created = await client.post("/auth/guest")
+    headers = {"Authorization": f"Bearer {created.json()['access_token']}"}
+    for body, code in (
+        ({"email": "new@example.com", "password": "short"}, "WEAK_PASSWORD"),
+        ({"email": "bad", "password": "long-enough-password"}, "INVALID_EMAIL"),
+        (
+            {"email": "PLAYER@example.com", "password": "long-enough-password"},
+            "EMAIL_TAKEN",
+        ),
+    ):
+        response = await client.post("/auth/upgrade", headers=headers, json=body)
+        assert response.json()["error"]["code"] == code
+    refreshed = await client.post("/auth/refresh")
+    assert (
+        jwt.decode(
+            refreshed.json()["access_token"], options={"verify_signature": False}
+        )["kind"]
+        == "guest"
+    )
+
+
+@pytest.mark.anyio
+async def test_guest_creation_rate_limit(client: AsyncClient) -> None:
+    """Guest creation uses the shared per-IP credential limiter."""
+    for _ in range(5):
+        assert (await client.post("/auth/guest")).status_code == 201
+    response = await client.post("/auth/guest")
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "RATE_LIMITED"
+
+
+def test_auth_purge_only_inactive_guests(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Full users, recent guests and guests with active sessions survive cleanup."""
+    from app.guest_purge import purge_guests
+    from app.guest_settings import GuestSettings
+    from app.models import User
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    old = now - timedelta(days=15)
+    with session_factory() as session:
+        users = [
+            User(kind=kind, created_at=old, last_activity_at=activity, status="active")
+            for kind, activity in (
+                ("guest", old),
+                ("guest", now),
+                ("full", old),
+                ("guest", old),
+            )
+        ]
+        session.add_all(users)
+        session.flush()
+        session.add(
+            RefreshToken(
+                user_id=users[3].id,
+                token_hash="live",
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        session.commit()
+        assert purge_guests(session, GuestSettings(guest_ttl_days=14), now) == 1
+        session.commit()
+        assert session.get(User, users[0].id) is None
+        assert all(session.get(User, user.id) is not None for user in users[1:])
+        assert purge_guests(session, GuestSettings(guest_ttl_days=14), now) == 0
+
+
+def test_postgres_auth_purge_rechecks_concurrent_activity(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """A waiting purge cannot delete a guest whose activity just committed."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from sqlalchemy import text
+
+    from app.guest_purge import purge_guests
+    from app.guest_settings import GuestSettings
+    from app.models import User
+
+    factory = session_factory
+    with factory() as session:
+        if session.get_bind().dialect.name != "postgresql":
+            pytest.skip("Requires PostgreSQL row locks")
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        user = User(kind="guest", created_at=now - timedelta(days=15), status="active")
+        session.add(user)
+        session.commit()
+        identifier = user.id
+    started = Event()
+    worker_pids: list[int] = []
+
+    def purge() -> int:
+        with factory() as session:
+            session.execute(text("SET LOCAL statement_timeout = '10s'"))
+            worker_pids.append(
+                session.execute(text("SELECT pg_backend_pid()")).scalar_one()
+            )
+            started.set()
+            count = purge_guests(session, GuestSettings(guest_ttl_days=14), now)
+            session.commit()
+            return count
+
+    with ThreadPoolExecutor(max_workers=1) as pool, factory() as blocker:
+        blocker_pid = blocker.execute(text("SELECT pg_backend_pid()")).scalar_one()
+        active_user = blocker.scalar(
+            select(User).where(User.id == identifier).with_for_update()
+        )
+        assert active_user is not None
+        future = pool.submit(purge)
+        try:
+            assert started.wait(timeout=5)
+            deadline = time.monotonic() + 5
+            with factory() as observer:
+                while time.monotonic() < deadline:
+                    blockers = observer.execute(
+                        text("SELECT pg_blocking_pids(:pid)"), {"pid": worker_pids[0]}
+                    ).scalar_one()
+                    if blocker_pid in blockers:
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("Purge did not wait for the active user lock")
+            active_user.last_activity_at = now
+            blocker.commit()
+        finally:
+            blocker.rollback()
+        assert future.result(timeout=10) == 0
+    with factory() as session:
+        assert session.get(User, identifier) is not None
+
+
+def test_auth_purge_job_rolls_back_and_logs(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The daily auth job logs failures and rolls back its transaction."""
+    from app import guest_purge
+    from app.guest_settings import GuestSettings
+    from app.models import User
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    with session_factory() as session:
+        user = User(kind="guest", created_at=now - timedelta(days=15), status="active")
+        session.add(user)
+        session.commit()
+        identifier = user.id
+
+    def fail(session: Session, settings: GuestSettings, now: datetime) -> int:
+        del settings, now
+        user = session.get(User, identifier)
+        assert user is not None
+        session.delete(user)
+        session.flush()
+        raise RuntimeError("Injected auth purge failure")
+
+    monkeypatch.setattr(guest_purge, "purge_guests", fail)
+    guest_purge.run_guest_purge(session_factory, GuestSettings(guest_ttl_days=14), now)
+    assert "Auth guest purge failed" in caplog.text
+    with session_factory() as session:
+        assert session.get(User, identifier) is not None
+
+
+def test_auth_guest_migration_schema_and_downgrade(tmp_path: Path) -> None:
+    """The independent auth chain rebuilds and matches its mapped schema."""
+    import subprocess
+    import sys
+
+    directory = Path(__file__).resolve().parents[1]
+    environment = {
+        **os.environ,
+        "AUTH_DATABASE_URL": f"sqlite:///{tmp_path / 'migration.db'}",
+    }
+    for arguments in (
+        ("upgrade", "head"),
+        ("check",),
+        ("downgrade", "base"),
+        ("upgrade", "head"),
+    ):
+        subprocess.run(
+            [sys.executable, "-m", "alembic", *arguments],
+            cwd=directory,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+
+@pytest.mark.anyio
+async def test_auth_lifespan_purges_and_stops_worker(
+    client: AsyncClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Boot runs cleanup and shutdown joins the daily worker without leaking it."""
+    from threading import Event
+    from threading import enumerate as threads
+
+    from app import main
+    from app.guest_purge import run_guest_purge
+    from app.guest_settings import GuestSettings
+    from app.models import User
+
+    completed = Event()
+    with session_factory() as session:
+        user = User(
+            kind="guest",
+            created_at=datetime.now(UTC) - timedelta(days=15),
+            status="active",
+        )
+        session.add(user)
+        session.commit()
+        identifier = user.id
+
+    def observed(
+        factory: sessionmaker[Session], settings: GuestSettings, now: datetime
+    ) -> None:
+        run_guest_purge(factory, settings, now)
+        completed.set()
+
+    monkeypatch.setattr(main, "SessionLocal", session_factory)
+    monkeypatch.setattr(main, "run_guest_purge", observed)
+    async with main.app.router.lifespan_context(main.app):
+        assert completed.wait(timeout=5)
+        with session_factory() as session:
+            assert session.get(User, identifier) is None
+        assert (await client.post("/auth/guest")).status_code == 201
+    assert not any(thread.name == "auth_guest_purge" for thread in threads())

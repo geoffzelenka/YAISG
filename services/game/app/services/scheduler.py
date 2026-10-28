@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.content.loader import ContentIndex
 from app.models import RealmState
 from app.services.caravans import run_caravan_pass
+from app.services.guest_purge import run_guest_purge
 from app.services.market_lifecycle import run_market_lifecycle
 from app.services.realms import finalize_realm, prepare_sqlite_write
 
@@ -98,6 +99,19 @@ def start_scheduler(factory: sessionmaker[Session], content: ContentIndex) -> Sc
         "interval",
         seconds=content.economy.market.lifecycle_interval_seconds,
         id="market_lifecycle",
+        coalesce=True,
+        max_instances=1,
+    )
+    guest_settings = content.auth
+
+    def purge_inactive_guests() -> None:
+        run_guest_purge(factory, content, guest_settings, datetime.now(UTC))
+
+    scheduler.add_job(
+        purge_inactive_guests,
+        "interval",
+        days=1,
+        id="guest_purge",
         coalesce=True,
         max_instances=1,
     )

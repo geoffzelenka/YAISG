@@ -40,7 +40,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 30 | `30-client-equipment-combat` | Client: equipment and combat | done | v08/30-client-equipment-combat | d38887b | Equipment doll, belt/utility setup, combat panel, offline combat summary |
 | 31 | `31-keys` | Instanced items, exploration, key actions | done | v08/31-keys | 3b7fca5 | Item instances, exploration discovery, key actions, transition cutoffs |
 | 32 | `32-key-market` | The key market | done | v08/32-key-market | afac9ea | Key listings, taxed buyouts, cancel, paginated browse, invalidation returns |
-| 33 | `33-guest-auth` | Guest accounts | pending | — | — | — |
+| 33 | `33-guest-auth` | Guest accounts | ready for review | `v08/33-guest-auth` | — | Guest sessions, in-place upgrade, activity and audited daily purge in both services |
 | 34 | `34-tutorial` | Tutorial Island | pending | — | — | — |
 | 35 | `35-client-keys-tutorial` | Client: keys, tutorial, guest upgrade | pending | — | — | — |
 | 36 | `36-hardening` | Rate limits, counters, load, seed-check in CI | pending | — | — | — |
