@@ -233,3 +233,27 @@ it('locks equipment, belt and utility for a private combat key template', async 
   for (const fieldset of container.querySelectorAll('fieldset'))
     expect(fieldset).toBeDisabled()
 })
+
+it.each([0, -1, 100.01, NaN, Infinity, 0.001, 100])(
+  'validates healing trigger %s at submit even without native form validation',
+  (threshold) => {
+    const onSave = vi.fn()
+    const { container } = render(
+      <StackForm
+        items={[{ id: 'food', name: 'Food', consumable: { heal: 10 } } as Item]}
+        current={{
+          item_id: 'food',
+          quantity: 1,
+          trigger: { hp_below_pct: threshold },
+        }}
+        belt
+        disabled={false}
+        onSave={onSave}
+      />,
+    )
+    fireEvent.submit(container.querySelector('form')!)
+    expect(onSave).toHaveBeenCalledTimes(
+      Number(Number.isFinite(threshold) && threshold > 0 && threshold <= 100),
+    )
+  },
+)

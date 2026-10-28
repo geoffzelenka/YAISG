@@ -898,7 +898,10 @@ def _postgres_contenders(
 async def test_postgres_concurrent_arrival_resolves_grant_seed_once(
     estate_client: ApiFixture,
 ) -> None:
-    """Two requests arriving on the same paid journey create one seed grant."""
+    """Concurrent arrivals serialize on the character lock and observe one grant.
+
+    The island round-trip test separately pins the durable once-only guard.
+    """
     client, factory, _, clock = estate_client
     if factory.kw["bind"].dialect.name != "postgresql":
         pytest.skip("Concurrent arrival serialization requires PostgreSQL")

@@ -44,3 +44,12 @@ def test_tracked_ip_count_is_bounded() -> None:
     limiter.check(_request("192.0.2.3"))
 
     limiter.check(_request("192.0.2.1"))
+
+
+def test_forwarded_chain_uses_rightmost_untrusted_hop() -> None:
+    """An attacker cannot rotate a spoofed prefix behind a trusted proxy chain."""
+    limiter = IpRateLimiter(limit=1, trusted_proxy_ips={"10.0.0.1", "10.0.0.2"})
+    limiter.check(_request("10.0.0.1", "192.0.2.1, 198.51.100.8, 10.0.0.2"))
+    with pytest.raises(HTTPException) as error:
+        limiter.check(_request("10.0.0.1", "192.0.2.99, 198.51.100.8, 10.0.0.2"))
+    assert error.value.status_code == 429

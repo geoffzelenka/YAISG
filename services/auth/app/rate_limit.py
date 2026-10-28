@@ -41,7 +41,15 @@ class IpRateLimiter:
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for is None:
             return peer_ip
-        return forwarded_for.split(",", maxsplit=1)[0].strip() or peer_ip
+        # Walk toward the client only while the sender is trusted. A client can
+        # prepend arbitrary addresses; those must never choose its limiter key.
+        for hop in reversed(forwarded_for.split(",")):
+            candidate = hop.strip()
+            if not candidate:
+                return peer_ip
+            if candidate not in self.trusted_proxy_ips:
+                return candidate
+        return peer_ip
 
     def _sweep_expired(self, cutoff: float) -> None:
         for client_ip, timestamps in list(self._requests.items()):

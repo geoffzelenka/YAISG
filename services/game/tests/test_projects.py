@@ -510,9 +510,12 @@ def test_realm_catchup_statement_bound(
     # Ballot, shipment and key preload queries are independent of tick count.
     # A destroyed estate, batched upgrade losses and a lost larder add three
     # writes total, equally for two ticks and full catch-up.
-    assert len(statements) == (17 if paying else 15) + (3 if decaying else 0), (
-        statements
-    )
+    metric_writes = [s for s in statements if "INSERT INTO metric_deltas" in s]
+    assert len(metric_writes) == 1  # Telemetry stays batched across catch-up.
+    gameplay_statements = [s for s in statements if s not in metric_writes]
+    assert len(gameplay_statements) == (17 if paying else 15) + (
+        3 if decaying else 0
+    ), gameplay_statements
     if decaying:
         assert doomed.status == "destroyed" and doomed.owner_character_id is None
         assert realm_session.get(EstateLarder, (doomed.id, "item.fake_plank")) is None

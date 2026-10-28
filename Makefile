@@ -1,6 +1,6 @@
 .PHONY: ci auth-ci game-ci client-ci
 
-ci: auth-ci game-ci client-ci scripts-ci content-lint
+ci: auth-ci game-ci client-ci scripts-ci content-lint seed-check
 
 auth-ci:
 	cd services/auth && python -m ruff check .

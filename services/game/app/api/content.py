@@ -18,13 +18,13 @@ def _content(request: Request) -> ContentIndex:
 
 
 @router.get("/manifest")
-async def get_manifest(request: Request) -> dict[str, object]:
+def get_manifest(request: Request) -> dict[str, object]:
     """Return the overall content version and public pack hashes."""
     return _content(request).manifest.as_dict()
 
 
 @router.get("/{pack}")
-async def get_pack(pack: str, request: Request) -> Response:
+def get_pack(pack: str, request: Request) -> Response:
     """Return a canonical content pack with a strong hash-based ETag."""
     if pack not in PUBLIC_PACKS:
         raise HTTPException(

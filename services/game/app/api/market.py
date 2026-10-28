@@ -84,7 +84,7 @@ def match_response(match: MarketMatch, side: str) -> dict[str, object]:
 
 
 @router.post("/orders", status_code=201)
-async def place_order(
+def place_order(
     body: OrderRequest,
     request: Request,
     now: ServerNow,
@@ -115,9 +115,7 @@ async def place_order(
 
 
 @router.get("/orders/me")
-async def own_orders(
-    player: CurrentPlayer, session: DatabaseSession
-) -> dict[str, object]:
+def own_orders(player: CurrentPlayer, session: DatabaseSession) -> dict[str, object]:
     """Read all owned slots from any location, including retained closed rows."""
     character = get_character(session, player.id)
     orders = session.scalars(
@@ -152,7 +150,7 @@ def parse_history_cursor(value: str) -> tuple[datetime, uuid.UUID]:
 
 
 @router.get("/history/me")
-async def own_history(
+def own_history(
     player: CurrentPlayer,
     session: DatabaseSession,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -192,7 +190,7 @@ async def own_history(
 
 
 @router.get("/book/{item_id}")
-async def book(
+def book(
     item_id: str,
     request: Request,
     now: ServerNow,
@@ -224,7 +222,7 @@ async def book(
 
 
 @router.post("/orders/{order_id}/cancel")
-async def cancel(
+def cancel(
     order_id: uuid.UUID,
     request: Request,
     now: ServerNow,
@@ -242,7 +240,7 @@ async def cancel(
 
 
 @router.post("/orders/{order_id}/collect")
-async def collect(
+def collect(
     order_id: uuid.UUID,
     request: Request,
     now: ServerNow,

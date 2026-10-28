@@ -32,7 +32,8 @@
   and goods audits have no foreign keys to deleted holders. Already-consumed
   project contributions are historical totals, not physical goods destroyed twice.
 - Placeholder content teaches gathering, clothes/club crafting and equipping,
-  a winnable dummy fight, making food from its drop, travel, full project payment at kickoff, short construction, raft transformation and departure. The dummy's
+  a winnable dummy fight, making food from its drop, travel, full project payment
+  at kickoff, short construction, raft transformation and departure. The dummy's
   short fight does not depend on the unresolved zero-HP regeneration ruling.
 - Activated arrival-realm funded tier-one bids at every simulated seed-check tick.
   The synthetic arrival workshop balances production/upkeep and starts below

@@ -72,7 +72,7 @@ def _route(
 
 
 @router.get("/preview")
-async def preview(
+def preview(
     destination_realm_id: str,
     mode: Literal["visit", "relocate"],
     request: Request,
@@ -124,7 +124,7 @@ async def preview(
 
 
 @router.post("/start", response_model=ActionFeedResponse)
-async def start(
+def start(
     body: TravelRequest,
     request: Request,
     now: ServerNow,

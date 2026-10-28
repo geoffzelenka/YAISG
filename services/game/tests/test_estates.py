@@ -383,14 +383,12 @@ async def test_last_slot_concurrency_installs_exactly_once(
                 request = Request({"type": "http", "app": app})
                 barrier.wait()
                 try:
-                    asyncio.run(
-                        purchase_upgrade(
-                            "upgrade.painted_sign",
-                            request,
-                            clock["now"],
-                            player,
-                            session,
-                        )
+                    purchase_upgrade(
+                        "upgrade.painted_sign",
+                        request,
+                        clock["now"],
+                        player,
+                        session,
                     )
                 except HTTPException as error:
                     assert isinstance(error.detail, dict)
@@ -622,7 +620,7 @@ async def test_get_realms_locks_in_id_order(
                 )
                 started.set()
                 request = Request({"type": "http", "app": app})
-                response = asyncio.run(get_realms(request, clock["now"], session))
+                response = get_realms(request, clock["now"], session)
                 returned_ids.extend(realm.id for realm in response)
         except BaseException as error:
             thread_errors.append(error)
@@ -1059,14 +1057,12 @@ async def test_postgres_concurrent_transforms_pay_once(
             assert player is not None
             barrier.wait()
             try:
-                asyncio.run(
-                    transform_estate(
-                        TransformRequest(form_id=destination.id),
-                        Request({"type": "http", "app": app}),
-                        clock["now"],
-                        player,
-                        session,
-                    )
+                transform_estate(
+                    TransformRequest(form_id=destination.id),
+                    Request({"type": "http", "app": app}),
+                    clock["now"],
+                    player,
+                    session,
                 )
             except HTTPException as error:
                 assert isinstance(error.detail, dict)
@@ -1408,14 +1404,12 @@ async def test_postgres_two_buyers_one_estate(
             assert player is not None
             barrier.wait()
             try:
-                asyncio.run(
-                    buy_estate(
-                        estate_id,
-                        Request({"type": "http", "app": app}),
-                        clock["now"],
-                        player,
-                        session,
-                    )
+                buy_estate(
+                    estate_id,
+                    Request({"type": "http", "app": app}),
+                    clock["now"],
+                    player,
+                    session,
                 )
             except HTTPException as error:
                 assert isinstance(error.detail, dict)

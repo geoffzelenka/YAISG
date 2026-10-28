@@ -1,7 +1,7 @@
 """Database engine configuration for the game service."""
 
 import sqlite3
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
@@ -69,7 +69,7 @@ class Base(DeclarativeBase):
     """Base for game-owned SQLAlchemy models."""
 
 
-async def get_db() -> AsyncGenerator[Session, None]:
+def get_db() -> Generator[Session, None, None]:
     """Provide a transaction-scoped database session to a request."""
     with SessionLocal() as session:
         yield session

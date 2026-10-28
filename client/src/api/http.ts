@@ -142,17 +142,20 @@ export async function guestSession(credentials?: {
   email: string
   password: string
 }): Promise<void> {
-  const response = await fetch(
-    `${authUrl}/auth/${credentials ? 'upgrade' : 'guest'}`,
-    {
+  const send = () =>
+    fetch(`${authUrl}/auth/${credentials ? 'upgrade' : 'guest'}`, {
       method: 'POST',
       credentials: 'include',
       headers: authenticatedHeaders({
         headers: { 'Content-Type': 'application/json' },
       }),
       ...(credentials ? { body: JSON.stringify(credentials) } : {}),
-    },
-  )
+    })
+  let response = await send()
+  if (credentials && response.status === 401) {
+    await refreshAccessToken()
+    response = await send()
+  }
   if (!response.ok) {
     const error = await readApiError(response, 'Unable to save session')
     throw new ApiError(error.code ?? 'AUTH_FAILED', error.message)

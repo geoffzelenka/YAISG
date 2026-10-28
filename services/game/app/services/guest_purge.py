@@ -97,7 +97,15 @@ def dispose_character(
     Provenance on shared projects, votes and keys survives without the identity.
     """
     realms = list(
-        session.scalars(select(RealmState).order_by(RealmState.id).with_for_update())
+        session.scalars(
+            select(RealmState)
+            .order_by(
+                RealmState.id.collate(
+                    "C" if session.get_bind().dialect.name == "postgresql" else "BINARY"
+                )
+            )
+            .with_for_update()
+        )
     )
     isolated = {
         r.id for r in realms if r.isolated and r.owner_character_id == character.id

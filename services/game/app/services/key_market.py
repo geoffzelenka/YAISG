@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.services.actions import load_character_state, lock_character_and_load_action
 from app.services.keys import held_key
+from app.services.metrics import record
 from app.services.order_book import prepare_market, require_access
 
 
@@ -184,6 +185,7 @@ def _settle_purchase(
     ):
         raise api_error(409, "MARKET_UNAVAILABLE", "The purchase cannot be completed")
     buyer.gold -= listing.price_gold
+    record(session, matches=1, tax_gold=tax)
     seller.gold += listing.price_gold - tax
     realm.treasury += tax - burned
     if burned:

@@ -132,7 +132,7 @@ def _change(
 
 
 @router.post("/equip")
-async def equip(
+def equip(
     body: EquipRequest,
     request: Request,
     now: ServerNow,
@@ -144,7 +144,7 @@ async def equip(
 
 
 @router.post("/unequip")
-async def unequip(
+def unequip(
     body: UnequipRequest,
     request: Request,
     now: ServerNow,
@@ -270,7 +270,7 @@ def _setup_stack(
 
 
 @router.put("/utility")
-async def setup_utility(
+def setup_utility(
     body: StackRequest,
     request: Request,
     now: ServerNow,
@@ -282,7 +282,7 @@ async def setup_utility(
 
 
 @router.put("/belt/{slot}")
-async def setup_belt(
+def setup_belt(
     slot: int,
     body: BeltRequest,
     request: Request,

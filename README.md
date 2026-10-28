@@ -154,7 +154,9 @@ Docker Compose applies both migration chains automatically before starting the A
 | Variable | Used by | Default |
 | --- | --- | --- |
 | `GAME_DATABASE_URL` | Game API | `sqlite:///./data/game.db` |
-| `GAME_OPERATOR_AUTH_USER_IDS` | Game API | Empty (comma-separated auth user UUIDs allowed to call `GET /admin/economy`) |
+| `GAME_OPERATOR_AUTH_USER_IDS` | Game API | Empty (comma-separated auth user UUIDs allowed to call `GET /admin/economy` and `GET /admin/metrics`) |
+| `GAME_MUTATION_LIMIT` | Game API | `120` mutation attempts per character/account per window |
+| `GAME_MUTATION_WINDOW_SECONDS` | Game API | `60` (fixed UTC windows; positive integer) |
 | `AUTH_DATABASE_URL` | Auth API | `sqlite:///./data/auth.db` |
 | `CORS_ORIGINS` | Both APIs | `http://localhost:5173` |
 | `GIT_SHA` | Both APIs | `dev` |
@@ -164,6 +166,7 @@ Docker Compose applies both migration chains automatically before starting the A
 | `JWT_ISSUER` | Game API | `yaisg-auth` |
 | `AUTH_KEYS_DIR` | Auth API | `./data/keys` |
 | `AUTH_COOKIE_SECURE` | Auth API | `false` |
+| `AUTH_TRUSTED_PROXY_IPS` | Auth API | Empty (comma-separated proxy IPs; forwarded chains use the rightmost untrusted hop) |
 | `VITE_GAME_URL` | Client | `http://localhost:8000` |
 | `VITE_AUTH_URL` | Client | `http://localhost:8001` |
 
@@ -180,7 +183,7 @@ make ci
 
 This runs Ruff formatting and linting, strict mypy, and pytest for both Python
 services, followed by ESLint, Prettier, TypeScript checking, Vitest, and the client
-production build.
+production build, script checks, content lint and the fatal thirty-day seed check.
 
 Individual targets are also available:
 
@@ -203,3 +206,37 @@ docs/            Phase notes and project documentation
 
 See [the technical design](design/design.md), [Phase 3.1 notes](docs/phase-notes/3.1.md),
 and [Phase 3.2 notes](docs/phase-notes/3.2.md) for scope and implementation decisions.
+
+
+## Operational hardening
+
+Game mutations share a database-backed allowance across routes and workers.
+The key is the verified account UUID: each account owns at most one character,
+so creation and later mutations share the same allowance. Failed intents count;
+GET polling and lazy reads do not. A refusal returns 429, `RATE_LIMITED`, and
+`Retry-After`. Fixed windows permit a burst on either side of a boundary.
+
+Operators can read `/admin/metrics` for durable event counters and gold by holder
+(wallets, treasuries, order escrow and slots). `tick_duration_ns` is cumulative
+wall time for completed realm tick batches, including loading/persistence;
+`caravan_losses` counts whole goods lost on dispatch, and `keys_discovered`
+counts persisted keys. Mint totals come from the signed gold ledger. Counter
+deltas commit with game changes and survive history/holder deletion. Keep SQL
+statement/parameter logging disabled in production to preserve secret ballots;
+request logs contain neither bodies nor vote choices.
+
+Run a mixed HTTP load against a **disposable** deployment with stock, market
+access and free order slots. Set `YAISG_LOAD_TOKENS` to a JSON array of valid
+bearer tokens, then run:
+
+```bash
+PATH=$PWD/.venv/bin:$PATH python scripts/load_pipeline.py \
+  --base-url http://localhost:8000 --realm REALM_ID --item ITEM_ID \
+  --workers 4 --rounds 10
+```
+
+Each worker polls, reads a realm, inserts a sell order, cancels and collects it.
+Use an empty book to avoid unintended fills; errors (including rate limits)
+count as failures and cause a nonzero exit. Tokens are never printed. The
+reproducible local ASGI baseline and its limits are recorded in
+`docs/phase-notes/v08-36-hardening.md`.

@@ -213,7 +213,7 @@ def _world_ids(session: DatabaseSession, content: ContentIndex) -> set[str]:
 
 
 @router.get("/realms", response_model=list[RealmResponse])
-async def get_realms(
+def get_realms(
     request: Request, now: ServerNow, session: DatabaseSession
 ) -> list[RealmResponse]:
     """Return world realms after finalizing transitions in sorted lock order."""
@@ -252,7 +252,7 @@ def _private_realm_access(
 
 
 @router.get("/realms/{realm_id}", response_model=RealmResponse)
-async def get_realm(
+def get_realm(
     realm_id: str,
     request: Request,
     now: ServerNow,
@@ -273,7 +273,7 @@ async def get_realm(
 
 
 @router.get("/map")
-async def get_map(
+def get_map(
     request: Request, now: ServerNow, session: DatabaseSession
 ) -> dict[str, object]:
     """Return only world realms and edges joining visible realms."""
@@ -334,7 +334,7 @@ def _check_realm_id(
 
 
 @router.get("/realms/{realm_id}/projects/availability")
-async def project_availability(
+def project_availability(
     realm_id: str,
     request: Request,
     now: ServerNow,
@@ -360,7 +360,7 @@ async def project_availability(
 
 
 @router.post("/realms/{realm_id}/projects/{project_id}/kickoff")
-async def kickoff_project(
+def kickoff_project(
     realm_id: str,
     project_id: str,
     request: Request,
@@ -381,7 +381,7 @@ async def kickoff_project(
 
 
 @router.post("/realms/{realm_id}/project/contribute")
-async def contribute_project(
+def contribute_project(
     realm_id: str,
     body: ContributionRequest,
     request: Request,
@@ -420,7 +420,7 @@ class TagCreditsResponse(BaseModel):
 
 
 @router.get("/realms/{realm_id}/tags/{tag_id}", response_model=TagCreditsResponse)
-async def tag_credits(
+def tag_credits(
     realm_id: str,
     tag_id: str,
     request: Request,
@@ -474,7 +474,7 @@ class RealmEstateResponse(BaseModel):
 
 
 @router.get("/realms/{realm_id}/estates", response_model=list[RealmEstateResponse])
-async def get_realm_estates(
+def get_realm_estates(
     realm_id: str,
     request: Request,
     now: ServerNow,
@@ -572,7 +572,7 @@ class MarketQuoteResponse(BaseModel):
 
 
 @router.get("/realms/{realm_id}/market", response_model=MarketResponse)
-async def get_market(
+def get_market(
     realm_id: str,
     request: Request,
     now: ServerNow,
@@ -595,7 +595,7 @@ async def get_market(
 
 
 @router.get("/realms/{realm_id}/market/quote", response_model=MarketQuoteResponse)
-async def get_market_quote(
+def get_market_quote(
     realm_id: str,
     item_id: str,
     side: Literal["buy", "sell"],
@@ -644,7 +644,7 @@ class GiftRequest(BaseModel):
 
 
 @router.post("/realms/{realm_id}/market/trade", response_model=MarketQuoteResponse)
-async def trade_market(
+def trade_market(
     realm_id: str,
     body: TradeRequest,
     request: Request,
@@ -672,7 +672,7 @@ async def trade_market(
 
 
 @router.post("/realms/{realm_id}/treasury/gift", status_code=204)
-async def gift_treasury(
+def gift_treasury(
     realm_id: str,
     body: GiftRequest,
     request: Request,
@@ -746,7 +746,7 @@ def _vote_response(session: DatabaseSession, vote: RealmVote) -> VoteResponse:
 
 
 @router.post("/realms/{realm_id}/upgrades/{upgrade_id}/call")
-async def call_upgrade_vote(
+def call_upgrade_vote(
     realm_id: str,
     upgrade_id: str,
     request: Request,
@@ -768,7 +768,7 @@ async def call_upgrade_vote(
 
 
 @router.post("/realms/{realm_id}/vote")
-async def submit_vote(
+def submit_vote(
     realm_id: str,
     body: VoteRequest,
     request: Request,
@@ -790,7 +790,7 @@ async def submit_vote(
 
 
 @router.get("/realms/{realm_id}/vote")
-async def get_vote(
+def get_vote(
     realm_id: str,
     request: Request,
     now: ServerNow,

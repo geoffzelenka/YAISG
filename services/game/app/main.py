@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,6 +30,7 @@ from app.auth import verify_access_token
 from app.config import CORS_ORIGINS, VERSION
 from app.content.runtime import CONTENT
 from app.logging import log_request
+from app.rate_limit import limit_mutation
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -65,18 +66,18 @@ app = FastAPI(title="YAISG Game", lifespan=lifespan)
 app.state.content = CONTENT
 app.middleware("http")(log_request)
 app.include_router(admin_router)
-app.include_router(market_router)
-app.include_router(key_market_router)
-app.include_router(keys_router)
+app.include_router(market_router, dependencies=[Depends(limit_mutation)])
+app.include_router(key_market_router, dependencies=[Depends(limit_mutation)])
+app.include_router(keys_router, dependencies=[Depends(limit_mutation)])
 app.include_router(content_router)
 app.include_router(players_router)
-app.include_router(characters_router)
-app.include_router(estates_router)
-app.include_router(actions_router)
-app.include_router(equipment_router)
-app.include_router(realms_router)
-app.include_router(travel_router)
-app.include_router(tutorial_router)
+app.include_router(characters_router, dependencies=[Depends(limit_mutation)])
+app.include_router(estates_router, dependencies=[Depends(limit_mutation)])
+app.include_router(actions_router, dependencies=[Depends(limit_mutation)])
+app.include_router(equipment_router, dependencies=[Depends(limit_mutation)])
+app.include_router(realms_router, dependencies=[Depends(limit_mutation)])
+app.include_router(travel_router, dependencies=[Depends(limit_mutation)])
+app.include_router(tutorial_router, dependencies=[Depends(limit_mutation)])
 
 
 @app.middleware("http")

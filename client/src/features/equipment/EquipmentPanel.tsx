@@ -196,6 +196,12 @@ export function StackForm({
       onSubmit={(event) => {
         event.preventDefault()
         if (disabled || returnOnly || !selected) return
+        if (
+          belt &&
+          !selected.consumable?.buff &&
+          (!Number.isFinite(threshold) || threshold <= 0 || threshold > 100)
+        )
+          return
         onSave({
           item_id: itemId,
           quantity,
@@ -253,7 +259,7 @@ export function StackForm({
               <input
                 className="auth-input"
                 type="number"
-                min={0.01}
+                min={0}
                 max={100}
                 step="any"
                 required

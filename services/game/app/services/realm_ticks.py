@@ -67,6 +67,7 @@ class RealmTickContext:
     shipments: list[RealmShipment] = field(default_factory=list)
     ledger: list[GoldLedger] = field(default_factory=list)
     estates: list[Estate] = field(default_factory=list)
+    tags_shed: int = field(default=0, init=False)
     stores: dict[str, int] = field(default_factory=dict)
     store_rows: dict[str, RealmStore] = field(default_factory=dict)
     larder_rows: list[EstateLarder] = field(default_factory=list)
@@ -496,6 +497,7 @@ def decay_realm(
                 break
             tag = max(candidates, key=lambda t: t.seq)
             context.stack.remove(tag)
+            context.tags_shed += 1
             if tag in context.acquired_tags:
                 context.acquired_tags.remove(tag)
             else:

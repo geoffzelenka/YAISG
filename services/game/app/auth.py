@@ -159,7 +159,7 @@ Identity = Annotated[VerifiedIdentity, Depends(verify_access_token)]
 DatabaseSession = Annotated[Session, Depends(get_db)]
 
 
-async def get_current_player(
+def get_current_player(
     identity: Identity, session: DatabaseSession, now: ServerNow, request: Request
 ) -> Player:
     """Read identity first; write only for new, promoted or stale players."""
