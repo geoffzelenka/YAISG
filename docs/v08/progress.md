@@ -39,7 +39,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 29 | `29-combat-resolver` | The combat resolver | done | v08/29-combat-resolver | 7e11960 | §10.5 combat resolver, pools, offline sim; zero-HP regen pending ratification |
 | 30 | `30-client-equipment-combat` | Client: equipment and combat | done | v08/30-client-equipment-combat | d38887b | Equipment doll, belt/utility setup, combat panel, offline combat summary |
 | 31 | `31-keys` | Instanced items, exploration, key actions | done | v08/31-keys | 3b7fca5 | Item instances, exploration discovery, key actions, transition cutoffs |
-| 32 | `32-key-market` | The key market | ready for review | `v08/32-key-market` | — | Fixed-price key custody, taxed buyouts, transition returns and conservation. |
+| 32 | `32-key-market` | The key market | done | v08/32-key-market | afac9ea | Key listings, taxed buyouts, cancel, paginated browse, invalidation returns |
 | 33 | `33-guest-auth` | Guest accounts | pending | — | — | — |
 | 34 | `34-tutorial` | Tutorial Island | pending | — | — | — |
 | 35 | `35-client-keys-tutorial` | Client: keys, tutorial, guest upgrade | pending | — | — | — |
