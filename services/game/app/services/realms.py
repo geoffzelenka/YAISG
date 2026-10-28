@@ -6,11 +6,18 @@ from enum import IntEnum
 from typing import Literal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
-from app.models import RealmProjectRun, RealmState, RealmTag, RealmVote
+from app.models import (
+    ItemInstance,
+    RealmProjectRun,
+    RealmState,
+    RealmTag,
+    RealmVote,
+)
+from app.services.keys import deprecate_keys, invalidate_keys, realm_keys
 
 
 def as_utc(value: datetime) -> datetime:
@@ -19,7 +26,11 @@ def as_utc(value: datetime) -> datetime:
 
 
 def prepare_sqlite_write(session: Session) -> None:
-    """Acquire SQLite's database writer lock before realm state is loaded."""
+    """Acquire SQLite writer intent before authoritative game state is loaded.
+
+    This commits an existing read transaction. Call only at the outer boundary,
+    before gameplay writes; nested operations must retain the caller's lock.
+    """
     if session.get_bind().dialect.name != "sqlite":
         return
     if session.in_transaction():
@@ -113,6 +124,7 @@ def start_transition(
     cause: Literal["upgrade", "regression"],
     now: datetime,
     content: ContentIndex = CONTENT,
+    keys: list[ItemInstance] | None = None,
 ) -> None:
     """Start one transition under the caller's realm lock."""
     if realm.pending_transition is not None:
@@ -120,6 +132,10 @@ def start_transition(
     if cause not in ("upgrade", "regression"):
         raise ValueError(f"unknown transition cause {cause!r}")
     content.development_node(to_node)
+    if keys is None:
+        session = object_session(realm)
+        keys = realm_keys(session, realm.id) if session is not None else []
+    deprecate_keys(keys)
     realm.pending_transition = {
         "to_node": to_node,
         "cause": cause,
@@ -151,6 +167,9 @@ def _finalize_locked_realm(
             session.delete(tag)
         elif pending["cause"] == "regression":
             tag.node_id = node.id
+    keys = realm_keys(session, state.id)
+    invalidate_keys(keys, as_utc(datetime.fromisoformat(pending["completes_at"])))
+    state.transition_history = [*(state.transition_history or ()), dict(pending)]
     state.current_node_id = node.id
     if pending["cause"] == "regression":
         state.gauge = 0

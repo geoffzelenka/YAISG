@@ -35,6 +35,7 @@ from app.models import (
     EstateOwnershipHistory,
     EstateUpgrade,
     GoldLedger,
+    ItemInstance,
     RealmContribution,
     RealmProjectRun,
     RealmShipment,
@@ -42,6 +43,7 @@ from app.models import (
     RealmStore,
     RealmTag,
 )
+from app.services.keys import invalidate_keys, realm_keys
 from app.services.projects import apply_project_payment, begin_build
 from app.services.realms import (
     TimedEventKind,
@@ -61,6 +63,7 @@ class RealmTickContext:
     """
 
     active_run: RealmProjectRun | None
+    keys: list[ItemInstance] = field(default_factory=list)
     shipments: list[RealmShipment] = field(default_factory=list)
     ledger: list[GoldLedger] = field(default_factory=list)
     estates: list[Estate] = field(default_factory=list)
@@ -108,6 +111,7 @@ def load_context(
         or content.estate_form(estate.form_id).production
     ]
     context = RealmTickContext(active_run=run, estates=estates)
+    context.keys = realm_keys(session, realm.id)
     context.shipments = list(
         session.scalars(
             select(RealmShipment)
@@ -503,7 +507,14 @@ def decay_realm(
             realm.shed_progress = min(1.0, realm.shed_progress)
             regression = content.development_node(realm.current_node_id).regression
             if regression is not None:
-                start_transition(realm, regression.to_node, "regression", now, content)
+                start_transition(
+                    realm,
+                    regression.to_node,
+                    "regression",
+                    now,
+                    content,
+                    keys=context.keys,
+                )
                 realm.decay_stage = DecayStage.REGRESSED.value
 
 
@@ -613,6 +624,10 @@ def complete_tick_transition(
                 context.removed_tags.append(tag)
         elif pending["cause"] == "regression":
             tag.node_id = node.id
+    invalidate_keys(
+        context.keys, as_utc(datetime.fromisoformat(pending["completes_at"]))
+    )
+    realm.transition_history = [*(realm.transition_history or ()), dict(pending)]
     realm.current_node_id = node.id
     if pending["cause"] == "regression":
         realm.gauge = realm.shed_progress = 0

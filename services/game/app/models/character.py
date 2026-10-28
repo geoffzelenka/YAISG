@@ -138,6 +138,9 @@ class RealmState(Base):
     current_node_id: Mapped[str] = mapped_column(String(128), nullable=False)
     treasury: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     pending_transition: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    transition_history: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list, server_default="[]"
+    )
     last_tick_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -215,6 +218,9 @@ class ActiveActionRecord(Base):
         ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True
     )
     action_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_instance_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("item_instances.id")
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

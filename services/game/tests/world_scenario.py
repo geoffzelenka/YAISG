@@ -18,6 +18,7 @@ from app.content.loader import ContentIndex
 from app.content.schemas import (
     ActionInput,
     BuildCost,
+    IntegerRange,
     ProductionItem,
     Selector,
     TagUpkeep,
@@ -25,6 +26,7 @@ from app.content.schemas import (
 from app.models import (
     Character,
     Estate,
+    ItemInstance,
     MarketOrder,
     RealmProjectRun,
     RealmShipment,
@@ -32,7 +34,16 @@ from app.models import (
 )
 from app.services.caravans import run_caravan_pass
 from app.services.market_lifecycle import run_market_lifecycle
-from app.services.realms import as_utc, resolve_realm
+from app.services.realm_ticks import (
+    complete_tick_transition,
+    load_context,
+    persist_context,
+)
+from app.services.realms import (
+    as_utc,
+    resolve_realm,
+    start_transition,
+)
 
 SPRIG = "item.fake_sprig"
 PLANK = "item.fake_plank"
@@ -44,6 +55,10 @@ PROJECT_IDS = (
     *(f"project.{name}" for name in EXTRA_PROJECT_NAMES),
 )
 OPERATIONS = (
+    "exploration",
+    "key_use",
+    "key_delete",
+    "key_invalidate",
     "utility",
     "belt",
     "equip",
@@ -75,6 +90,32 @@ OPERATIONS = (
 def world_content() -> ContentIndex:
     """Exercise authored sources, sinks and access with synthetic test content."""
     content = mint_content()
+    expedition = content.exploration.actions[0].model_copy(
+        update={"discovery_chance": 1.0, "base_cycle_ms": 1000}
+    )
+    template = content.exploration.templates[0]
+    assert template.gather is not None
+    template = template.model_copy(
+        update={
+            "keys": IntegerRange(min=1, max=1),
+            "uses": IntegerRange(min=1, max=1),
+            "gather": template.gather.model_copy(
+                update={
+                    "outputs": tuple(
+                        output.model_copy(update={"quantity_min": 1, "quantity_max": 1})
+                        for output in template.gather.outputs
+                    )
+                }
+            ),
+        }
+    )
+    content = content.with_overrides(actions=(expedition,))
+    content = replace(
+        content,
+        exploration=content.exploration.model_copy(
+            update={"actions": (expedition,), "templates": (template,)}
+        ),
+    )
     node = content.development_node("node.verdant_t1")
     content = replace(
         content,
@@ -83,6 +124,7 @@ def world_content() -> ContentIndex:
                 **content._nodes_by_id,
                 node.id: node.model_copy(
                     update={
+                        "actions": (*node.actions, expedition.id),
                         "inherent_tags": (*node.inherent_tags, "access.fake"),
                         "upkeep": (
                             TagUpkeep(
@@ -587,8 +629,85 @@ class WorldScenario:
         self.audit.add("actions", PLANK, 1000)
         await self.check()
 
+    async def discovery(self) -> str:
+        """Create exactly one resource instance through exploration, then account it."""
+        action = self.content.exploration.actions[0]
+        response = await self.post("/actions/start", {"action_id": action.id})
+        self.clock["now"] += timedelta(milliseconds=response.json()["cycle_ms"])
+        response = await self.post("/actions/stop")
+        assert response.json()["since_last"]["cycles_completed"] == 1
+        self.audit.add(
+            "discovery", f"instance:{self.content.exploration.templates[0].id}", 1000
+        )
+        await self.check()
+        with self.factory() as session:
+            key = session.scalar(
+                select(ItemInstance)
+                .where(
+                    ItemInstance.holder_character_id == self.characters[0],
+                    ItemInstance.state == "active",
+                )
+                .order_by(ItemInstance.created_at.desc())
+            )
+            assert key is not None
+            return str(key.id)
+
+    async def key_operation(self, operation: str) -> None:
+        """Exercise creation, finite use, disposal and invalidation without stacking."""
+        identifier = await self.discovery()
+        if operation == "exploration":
+            return
+        response = await self.post("/actions/start", {"key_id": identifier})
+        await self.check()
+        if operation == "key_use":
+            self.clock["now"] += timedelta(milliseconds=response.json()["cycle_ms"])
+            response = await self.post("/actions/stop")
+            assert response.json()["stop_reason"] == "KEY_DEPLETED"
+            self.audit.add("key_outputs", SPRIG, 1000)
+        elif operation == "key_delete":
+            response = await self.client.delete(
+                f"/keys/{identifier}", headers=self.headers[0]
+            )
+            assert response.status_code == 204, response.text
+            self.audit.add(
+                "instance_delete",
+                f"instance:{self.content.exploration.templates[0].id}",
+                -1000,
+            )
+        else:
+            # Keep the world fixture's other systems at the same simulation time.
+            # The separate transition tests exercise the authored duration.
+            instant = replace(
+                self.content,
+                economy=self.content.economy.model_copy(
+                    update={
+                        "transition": self.content.economy.transition.model_copy(
+                            update={"duration_days": 0}
+                        )
+                    }
+                ),
+            )
+            with self.factory() as session:
+                realm = session.get(RealmState, REALM)
+                assert realm is not None
+                start_transition(
+                    realm, realm.current_node_id, "upgrade", self.now, instant
+                )
+                context = load_context(session, realm, None, instant)
+                complete_tick_transition(context, realm, self.now, instant)
+                persist_context(session, realm, context)
+                session.commit()
+                key = session.get(ItemInstance, uuid.UUID(identifier))
+                assert key is not None and key.state == "invalid"
+            response = await self.post("/actions/stop")
+            assert response.json()["stop_reason"] == "KEY_INVALIDATED"
+        await self.check()
+
     async def run(self, operation: str) -> None:
         """Execute one valid generated intent, checking all required preparation."""
+        if operation in {"exploration", "key_use", "key_delete", "key_invalidate"}:
+            await self.key_operation(operation)
+            return
         if operation in {"utility", "belt"}:
             path = (
                 "/equipment/utility" if operation == "utility" else "/equipment/belt/0"

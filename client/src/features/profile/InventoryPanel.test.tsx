@@ -32,6 +32,7 @@ it('displays the effective profile inventory cap instead of the content base', a
           belt_slots: 2,
         },
         map: { edges: [], positions: {} },
+        exploration: { templates: [], actions: [] },
         combatants: { combatants: [] },
         estate_forms: { forms: [] },
         development: { nodes: [] },

@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from app.content import ContentIndex
 from app.content.runtime import CONTENT
 from app.content.schemas import CapType, DecayStage
-from app.engine import ActiveAction, CharacterState, ResolveResult, StopReason, resolve
-from app.engine.core import BeltStack
+from app.engine import ActiveAction, CharacterState, ResolveResult, resolve
+from app.engine.core import BeltStack, InstanceState, action_definition
 from app.engine.health import maximum_hp, regenerate_hp
 from app.models import (
     ActiveActionRecord,
@@ -27,10 +27,11 @@ from app.models import (
     Estate,
     EstateUpgrade,
     Inventory,
+    ItemInstance,
     RealmState,
     RewardLog,
 )
-from app.services.realms import finalize_realms, stack_tags
+from app.services.realms import finalize_realms, prepare_sqlite_write, stack_tags
 
 
 @dataclass(frozen=True)
@@ -57,13 +58,7 @@ def lock_character_and_load_action(
     session: Session, character_id: uuid.UUID
 ) -> ActiveActionRecord | None:
     """Acquire the per-character serialization lock before loading state."""
-    dialect = session.get_bind().dialect.name
-    if dialect == "sqlite":
-        # Authentication performs a read first. End that harmless transaction so
-        # BEGIN IMMEDIATE can acquire SQLite's writer lock before state is loaded.
-        if session.in_transaction():
-            session.commit()
-        session.connection(execution_options={"sqlite_write_intent": True})
+    prepare_sqlite_write(session)
     # The parent exists even before the first action. Always lock it first so
     # starts, polls, stops and realm/estate operations serialize consistently.
     session.scalar(
@@ -132,6 +127,27 @@ def _load_state(
             for cap, amount in equip.cap_bonuses.items():
                 caps[cap] += amount
     return CharacterState(
+        instances=tuple(
+            InstanceState(
+                id=str(row.id),
+                template_id=row.template_id,
+                realm_id=row.realm_id,
+                payload=dict(row.payload),
+                uses_total=row.uses_total,
+                uses_remaining=row.uses_remaining,
+                state=row.state,
+                created_at=as_utc(row.created_at),
+                bound_at=as_utc(row.bound_at) if row.bound_at else None,
+                invalidated_at=as_utc(row.invalidated_at)
+                if row.invalidated_at
+                else None,
+            )
+            for row in session.scalars(
+                select(ItemInstance).where(
+                    ItemInstance.holder_character_id == character_id
+                )
+            )
+        ),
         hp=character.hp,
         stance=character.stance,
         equipment={row.slot: row.item_id for row in equipment},
@@ -195,6 +211,27 @@ def load_character_state(
     return _load_state(session, character_id, content, now)
 
 
+def discovery_lifecycle(
+    realm: RealmState | None, created_at: datetime
+) -> tuple[str, datetime | None]:
+    """Classify historical discoveries against completed and pending windows."""
+    if realm is None:
+        return "active", None
+    completions = sorted(
+        as_utc(datetime.fromisoformat(event["completes_at"]))
+        for event in (realm.transition_history or ())
+    )
+    cutoff = next((at for at in completions if created_at < at), None)
+    if cutoff is not None:
+        return "invalid", cutoff
+    pending = realm.pending_transition
+    if pending is not None:
+        end = as_utc(datetime.fromisoformat(pending["completes_at"]))
+        if created_at < end:
+            return "deprecated", None
+    return "active", None
+
+
 def _persist_state(
     session: Session, character_id: uuid.UUID, state: CharacterState
 ) -> None:
@@ -206,6 +243,34 @@ def _persist_state(
         raise RuntimeError(f"character {character_id} has no estate")
     character.current_realm_id = state.current_realm_id
     estate.realm_id = state.estate_realm_id
+    for key in state.instances:
+        row = session.get(ItemInstance, uuid.UUID(key.id))
+        if row is None:
+            realm = session.get(RealmState, key.realm_id)
+            lifecycle, invalidated_at = discovery_lifecycle(realm, key.created_at)
+            session.add(
+                ItemInstance(
+                    id=uuid.UUID(key.id),
+                    kind="key",
+                    template_id=key.template_id,
+                    holder_character_id=character_id,
+                    discovered_by_character_id=character_id,
+                    discovered_by_name=character.name,
+                    realm_id=key.realm_id,
+                    payload=dict(key.payload),
+                    uses_total=key.uses_total,
+                    uses_remaining=key.uses_remaining,
+                    state=lifecycle,
+                    invalidated_at=invalidated_at,
+                    bound_at=key.bound_at,
+                    created_at=key.created_at,
+                )
+            )
+        else:
+            row.uses_remaining = key.uses_remaining
+            row.state = key.state
+            row.invalidated_at = key.invalidated_at
+            row.bound_at = key.bound_at
     for skill_id, xp in state.skills_xp.items():
         skill = session.get(CharacterSkill, (character_id, skill_id))
         if skill is None:
@@ -232,7 +297,7 @@ def _persist_state(
             )
 
 
-def _persist_combat_holders(
+def _persist_consumable_holders(
     session: Session, character_id: uuid.UUID, state: CharacterState
 ) -> None:
     """Persist consumed holders and activated buffs under the character lock."""
@@ -296,6 +361,13 @@ def resolve_locked_character(
         raise RuntimeError(f"character {character_id} does not exist")
     resolved_content = content or CONTENT
     realm_ids = set(additional_realm_ids or ())
+    realm_ids.update(
+        session.scalars(
+            select(ItemInstance.realm_id).where(
+                ItemInstance.holder_character_id == character_id
+            )
+        )
+    )
     realm_ids.add(character.current_realm_id)
     # Estate availability follows its own realm even while the owner is visiting.
     estate_realm_id = session.scalar(
@@ -317,7 +389,8 @@ def resolve_locked_character(
     )
     is_combat = (
         record is not None
-        and resolved_content.action(record.action_id).resolver == "combat"
+        and action_definition(record.action_id, record.meta, resolved_content).resolver
+        == "combat"
     )
     if not is_combat:
         regenerate_character_hp(session, character, now, resolved_content)
@@ -351,13 +424,21 @@ def resolve_locked_character(
     )
     _persist_state(session, character_id, new_state)
     session.flush()
+    if (
+        not is_combat
+        and resolved_content.skill(
+            action_definition(record.action_id, record.meta, resolved_content).skill_id
+        ).category
+        == "exploration"
+    ):
+        _persist_consumable_holders(session, character_id, new_state)
     if is_combat:
         assert new_state.hp is not None
         character.hp = new_state.hp
         character.hp_updated_at = action.last_resolved_at + timedelta(
             milliseconds=result.elapsed_ms
         )
-        _persist_combat_holders(session, character_id, new_state)
+        _persist_consumable_holders(session, character_id, new_state)
         if new_active is None:
             session.flush()
             regenerate_character_hp(session, character, now, resolved_content)
@@ -374,7 +455,7 @@ def resolve_locked_character(
         remaining = record
     if (
         result.cycles_completed > 0
-        or result.stop_reason == StopReason.REQUIREMENT_LOST
+        or result.stop_reason is not None
         or result.elapsed_ms > 0
         or bool(result.details.keys() - {"level_ups", "stop_reason"})
     ):

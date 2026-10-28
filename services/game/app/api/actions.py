@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ from app.engine import (
     effective_cycle_time,
 )
 from app.engine.combat import player_stats
-from app.engine.core import ACTION_RESOLVERS, unmet_requirements
+from app.engine.core import ACTION_RESOLVERS, action_definition, unmet_requirements
 from app.errors import api_error
 from app.models import ActiveActionRecord, Character
 from app.services.actions import (
@@ -36,7 +36,9 @@ from app.services.actions import (
     clear_active_action,
     load_character_state,
     resolve_character,
+    resolve_locked_character,
 )
+from app.services.keys import held_key, key_action
 
 router = APIRouter(tags=["actions"])
 
@@ -44,7 +46,16 @@ router = APIRouter(tags=["actions"])
 class StartActionRequest(BaseModel):
     """Client intent to begin a content-defined action."""
 
-    action_id: str
+    model_config = ConfigDict(extra="forbid")
+    action_id: str | None = None
+    key_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def one_source(self) -> "StartActionRequest":
+        """Require exactly one public action or held key."""
+        if (self.action_id is None) == (self.key_id is None):
+            raise ValueError("provide exactly one of action_id or key_id")
+        return self
 
 
 class StartedActionResponse(BaseModel):
@@ -212,11 +223,26 @@ async def start_action(
     # Combat→combat starts seed HP from the resolved character row. The new
     # action's empty meta must not inherit the previous encounter's hp_exact.
     state = load_character_state(session, character.id, content, now)
+    key = (
+        held_key(session, body.key_id, character.id)
+        if body.key_id is not None
+        else None
+    )
     try:
-        action = content.action(body.action_id)
+        action = (
+            key_action(key, state.current_realm_id)
+            if key is not None
+            else content.action(body.action_id or "")
+        )
     except KeyError:
         raise api_error(404, "UNKNOWN_ACTION", "The action does not exist") from None
     blocked = _start_blockers(action, state, content)
+    if body.key_id is not None:
+        blocked = [
+            code
+            for code in blocked
+            if code not in {"NOT_OFFERED_HERE", "MISSING_FACILITY"}
+        ]
     if blocked:
         message = (
             "Start a journey through /travel/start"
@@ -225,15 +251,24 @@ async def start_action(
         )
         raise api_error(409, blocked[0], message)
     clear_active_action(session, character.id)
+    meta: dict[str, Any] = {}
+    if key is not None:
+        key.bound_at = key.bound_at or now
+        meta = {"key_id": str(key.id), "key_action": action.model_dump(mode="json")}
     session.add(
         ActiveActionRecord(
             character_id=character.id,
+            key_instance_id=key.id if key is not None else None,
             action_id=action.id,
             started_at=now,
             last_resolved_at=now,
-            meta={},
+            meta=meta,
         )
     )
+    session.flush()
+    if key is not None and action.resolver == "combat":
+        # The initial encounter begins at start, even before an attack fits.
+        resolve_locked_character(session, character.id, now, content)
     try:
         session.commit()
     except IntegrityError:
@@ -270,18 +305,26 @@ async def get_action(
     cycle_ms = None
     if resolution.active is not None:
         cycle_ms = effective_cycle_time(
-            content.action(resolution.active.action_id),
+            action_definition(
+                resolution.active.action_id, resolution.active.meta, content
+            ),
             state,
             content,
         )
     if (
         resolution.active is not None
-        and content.action(resolution.active.action_id).resolver == "travel"
+        and action_definition(
+            resolution.active.action_id, resolution.active.meta, content
+        ).resolver
+        == "travel"
     ):
         cycle_ms = int(resolution.active.meta["duration_ms"])
     if (
         resolution.active is not None
-        and content.action(resolution.active.action_id).resolver == "combat"
+        and action_definition(
+            resolution.active.action_id, resolution.active.meta, content
+        ).resolver
+        == "combat"
     ):
         cycle_ms = int(resolution.active.meta.get("cycle_ms", cycle_ms or 0))
     feed = claim_rewards(session, character.id, now)

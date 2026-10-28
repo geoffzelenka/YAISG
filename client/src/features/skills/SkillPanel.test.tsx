@@ -37,6 +37,7 @@ describe('skill panel', () => {
             ],
           },
           '/content/manifest': { version: 'test', packs: {} },
+          '/content/exploration': { templates: [], actions: [] },
           '/content/combatants': { combatants: [] },
           '/content/skills': {
             skills: [

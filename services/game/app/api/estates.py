@@ -23,7 +23,7 @@ from app.content.schemas import (
     TravelProfile,
 )
 from app.engine import Shortfall, pay_selector, resolve_caps
-from app.engine.core import realm_active_tags
+from app.engine.core import action_definition, realm_active_tags
 from app.engine.estates import sale_price
 from app.engine.tags import tags_present
 from app.errors import api_error
@@ -374,7 +374,10 @@ async def transform_estate(
     estate = _home_estate(session, character, lock=True)
     if (
         resolution.active is not None
-        and content.action(resolution.active.action_id).resolver == "travel"
+        and action_definition(
+            resolution.active.action_id, resolution.active.meta, content
+        ).resolver
+        == "travel"
         and resolution.active.meta.get("mode") == "relocate"
     ):
         raise api_error(409, "ESTATE_BUSY", "The estate is on a journey")
@@ -523,7 +526,10 @@ async def build_estate(
 def _require_idle_estate(resolution: Resolution, content: ContentIndex) -> None:
     if (
         resolution.active is not None
-        and content.action(resolution.active.action_id).resolver == "travel"
+        and action_definition(
+            resolution.active.action_id, resolution.active.meta, content
+        ).resolver
+        == "travel"
         and resolution.active.meta.get("mode") == "relocate"
     ):
         raise api_error(409, "ESTATE_BUSY", "The estate is on a journey")

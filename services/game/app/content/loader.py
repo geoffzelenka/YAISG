@@ -22,6 +22,7 @@ from app.content.schemas import (
     EstateForm,
     EstateFormsPack,
     EstateUpgrade,
+    ExplorationPack,
     Item,
     ItemsPack,
     MapPack,
@@ -30,6 +31,7 @@ from app.content.schemas import (
     ProjectsPack,
     Realm,
     RealmsPack,
+    Requirements,
     Skill,
     SkillsPack,
     Tag,
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
     from app.engine.caravans import Route
 
 PUBLIC_PACKS = (
+    "exploration",
     "combatants",
     "skills",
     "items",
@@ -80,6 +83,7 @@ class ContentManifest:
 class ContentIndex:
     """Immutable, typed lookup index for validated content."""
 
+    exploration: ExplorationPack
     combatants: tuple[Combatant, ...]
     world_seed: WorldSeedPack
     world_seed_version: str
@@ -444,6 +448,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     unknown = {path.stem for path in content_dir.rglob("*.json")} - _KNOWN_PACKS
     if unknown:
         raise ContentError(f"unrecognized content packs: {sorted(unknown)}")
+    exploration = _load_model(content_dir, "exploration", ExplorationPack)
     combatants_pack = _load_model(content_dir, "combatants", CombatantsPack)
     skills_pack = _load_model(content_dir, "skills", SkillsPack)
     items_pack = _load_model(content_dir, "items", ItemsPack)
@@ -462,6 +467,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     progression = _load_model(content_dir, "progression", ProgressionPack)
     world_seed = _load_model(content_dir, "world_seed", WorldSeedPack)
     packs: dict[str, BaseModel] = {
+        "exploration": exploration,
         "combatants": combatants_pack,
         "world_seed": world_seed,
         "tags": tags_pack,
@@ -479,6 +485,13 @@ def load_content(content_dir: Path) -> ContentIndex:
         "progression": progression,
     }
     skills = _unique(skills_pack.skills, "skill")
+    if "exploration" not in skills:
+        raise ContentError("exploration skill is required")
+    skills["exploration"] = skills["exploration"].model_copy(
+        update={
+            "actions": skills["exploration"].actions + exploration.actions,
+        }
+    )
     actions = _unique((a for s in skills.values() for a in s.actions), "action")
     items = _unique(items_pack.items, "item")
     realms = _unique(realms_pack.realms, "realm")
@@ -536,6 +549,55 @@ def load_content(content_dir: Path) -> ContentIndex:
         progression,
         tags_pack.tags,
     )
+    templates = _unique(exploration.templates, "discovery template")
+    for template in templates.values():
+        if set(template.requires_realm_tags) - {tag.id for tag in tags_pack.tags}:
+            raise ContentError(f"unknown discovery tag in {template.id}")
+        if template.gather is not None:
+            gather = template.gather
+            if (
+                gather.skill_id not in skills
+                or skills[gather.skill_id].category != "gathering"
+            ):
+                raise ContentError(f"unknown gathering skill in {template.id}")
+            # Reuse ordinary action validation for inline level/tool/output rules.
+            inline = Action(
+                id=template.id,
+                name=template.name,
+                **gather.model_dump(exclude={"tool_class"}),
+                requires=Requirements(tool_class=gather.tool_class),
+                resolver="uniform",
+            )
+            _validate(
+                skills,
+                {inline.id: inline},
+                items,
+                realms,
+                upgrades,
+                map_pack,
+                forms_pack,
+                nodes,
+                projects,
+                xp_curve,
+                progression,
+                tags_pack.tags,
+            )
+        if (
+            template.combat is not None
+            and template.combat.combatant_id not in combatants
+        ):
+            raise ContentError(f"unknown discovery combatant in {template.id}")
+    for expedition in exploration.actions:
+        if expedition.skill_id != "exploration":
+            raise ContentError(f"exploration action has wrong skill in {expedition.id}")
+        if {row.template_id for row in expedition.table} - set(templates):
+            raise ContentError(f"unknown discovery template in {expedition.id}")
+        for effect in expedition.consumable_effects:
+            item = items.get(effect.item_id)
+            if item is None or item.consumable is None or item.consumable.buff is None:
+                raise ContentError(
+                    f"discovery effect requires a buff item in {expedition.id}"
+                )
     upkeep_holders: tuple[DevelopmentNode | EstateForm | Tag, ...] = (
         *nodes.values(),
         *forms_pack.forms,
@@ -604,6 +666,7 @@ def load_content(content_dir: Path) -> ContentIndex:
     }
     forms = _unique(forms_pack.forms, "estate form")
     return ContentIndex(
+        exploration,
         tuple(combatants.values()),
         world_seed,
         seed_version,

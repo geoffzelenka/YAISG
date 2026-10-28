@@ -1,0 +1,65 @@
+{
+  "templates": [
+    {
+      "id": "placeholder.resource",
+      "name": "Placeholder resource",
+      "flavour": "Synthetic discovery",
+      "rarity": 1,
+      "kind": "gather",
+      "gather": {
+        "skill_id": "gathering",
+        "tier": 1,
+        "unlock_level": 1,
+        "base_cycle_ms": 3000,
+        "outputs": [
+          {
+            "item_id": "item.fake_sprig",
+            "quantity_min": 1,
+            "quantity_max": 3,
+            "chance": 1
+          }
+        ],
+        "xp": 10,
+        "tool_class": null
+      },
+      "uses": {
+        "min": 2,
+        "max": 5
+      },
+      "keys": {
+        "min": 1,
+        "max": 2
+      },
+      "requires_realm_tags": []
+    }
+  ],
+  "actions": [
+    {
+      "id": "placeholder.expedition",
+      "name": "Placeholder expedition",
+      "skill_id": "exploration",
+      "tier": 1,
+      "unlock_level": 1,
+      "base_cycle_ms": 60000,
+      "xp": 10,
+      "requires": {
+        "skill_levels": {
+          "gathering": 1
+        }
+      },
+      "discovery_chance": 0.01,
+      "table": [
+        {
+          "template_id": "placeholder.resource",
+          "weight": 1
+        }
+      ],
+      "consumable_effects": [
+        {
+          "item_id": "item.fake_buff",
+          "chance_pct": 50
+        }
+      ]
+    }
+  ]
+}

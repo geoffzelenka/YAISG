@@ -303,7 +303,8 @@ def collect_order(
     )
     if (
         stack is None
-        and len(state.inventory) >= resolve_caps(state, content).inventory_slots
+        and (len(state.inventory) + len(state.instances))
+        >= resolve_caps(state, content).inventory_slots
     ):
         room = 0
     items = min(room, order.fill_items)

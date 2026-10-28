@@ -9,7 +9,8 @@
       "actions": [
         "gathering.fake_sprigs",
         "gathering.mock_ore",
-        "gathering.test_crystal"
+        "gathering.test_crystal",
+        "placeholder.expedition"
       ],
       "inherent_tags": [
         "access.fake",

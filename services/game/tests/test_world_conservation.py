@@ -184,6 +184,10 @@ async def test_random_world_operations_conserve_goods_and_gold(
         # Keep the specification independent of the generator: deleting an
         # operation from OPERATIONS must not silently delete its coverage check.
         required = {
+            "exploration",
+            "key_use",
+            "key_delete",
+            "key_invalidate",
             "utility",
             "belt",
             "equip",
@@ -213,6 +217,9 @@ async def test_random_world_operations_conserve_goods_and_gold(
         missing = required - {op for op, count in success_tally.items() if count > 0}
         assert not missing, (missing, success_tally)
         for cause in (
+            "discovery",
+            "instance_delete",
+            "key_outputs",
             "production",
             "step_2_larder_upkeep",
             "step_3_estate_upkeep",

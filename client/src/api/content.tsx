@@ -351,6 +351,11 @@ type ContentPacks = {
     visit_profile: TravelProfile
     travel_xp_per_second: number
     tier_benefits: {
+      exploration?: {
+        cycle_speed_pct: number
+        keys_per_discovery_bonus: number
+        rarity_weight_shift: number
+      }[]
       travel: { journey_speed_pct: number; supply_reduction_pct: number }[]
     }
     lint: { g: number; tolerance_pct: number }
@@ -361,6 +366,39 @@ type ContentPacks = {
     xp_bonus_cap_pct: number
     proficiency: Record<Skill['category'], number[]>
     taper: Record<Skill['category'], number[]>
+  }
+  exploration: {
+    templates: {
+      id: string
+      name: string
+      flavour: string
+      rarity: number
+      kind: 'gather' | 'combat'
+      gather:
+        | (Pick<
+            Action,
+            | 'skill_id'
+            | 'tier'
+            | 'unlock_level'
+            | 'base_cycle_ms'
+            | 'outputs'
+            | 'xp'
+          > & { tool_class: string | null })
+        | null
+      combat: { combatant_id: string } | null
+      uses: { min: number; max: number }
+      keys: { min: number; max: number }
+      requires_realm_tags: string[]
+    }[]
+    actions: (Action & {
+      discovery_chance: number
+      table: { template_id: string; weight: number }[]
+      consumable_effects: {
+        item_id: string
+        chance_pct: number | null
+        weight_shift: number | null
+      }[]
+    })[]
   }
   combatants: { combatants: Combatant[] }
   projects: { projects: Project[] }
@@ -374,6 +412,7 @@ type ContentState =
   | { status: 'error'; content: null; error: Error }
 
 const PACKS: PackName[] = [
+  'exploration',
   'combatants',
   'skills',
   'items',
