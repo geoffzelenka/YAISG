@@ -26,15 +26,25 @@
   until deletion. Equipment, consumable and estate action consumers understand
   private action definitions.
 - Both session-backed transition finalization and preloaded tick catch-up
-  deprecate/invalidate keys and end private actions with claim-once
-  KEY_INVALIDATED feed entries. Discovery during a pending transition produces
-  deprecated keys. Tick context preloads keys and actions once, performs no
-  per-tick queries, and batches stop logs/deletions at persistence. Fixed query
-  budgets increase by two preload SELECTs equally for short and full catch-up.
-- Character mutations use prepare_sqlite_write, character serialization,
-  sorted realm locks (including held-key realms), then estate locks. Realm
-  invalidation never locks or changes character rows after realm locks. The
-  character adapter reloads its active action after realm completion.
+  deprecate keys and record their first invalidated_at cutoff. Realm work never
+  reads, modifies or deletes character action rows. The holder's own locked
+  resolve credits work through the cutoff and then stops with KEY_INVALIDATED,
+  retaining KEY_DEPLETED or another earlier resolver stop when it happened first.
+  Depleted trophies remain invalid after a completed transition even when their
+  credited action ended before it. Stop/reward feed entries remain claim-once.
+- Added migration v08_0017_key_cutoffs with instance invalidated_at and durable
+  RealmState.transition_history windows. Historical discovery created_at values
+  determine lifecycle state even after pending_transition is cleared: creation
+  before a completed transition is invalid at the first following completion;
+  creation before/during an ongoing transition is deprecated. Creation exactly
+  at completion belongs to the new realm state. Multiple completed windows are
+  retained so a long absence cannot substitute a later cutoff for an earlier one.
+  Key response timestamps consistently include UTC on both dialects.
+- Tick context preloads keys once and performs no per-tick queries; its query
+  budget increases by one SELECT equally for short and full catch-up. Character
+  mutations use prepare_sqlite_write, character serialization, sorted realm
+  locks (including held-key realms), then estate locks. Realm invalidation never
+  takes a reverse character/action lock.
 - Extracted the shared §7.5 inventory fit helper for equipment and consumables.
   Uniform drops, combat loot, realm purchases and order collection count held
   instances too. Extended the deadline-free world conservation property with
@@ -63,6 +73,11 @@
   - test_market_collection_and_realm_purchase_count_instance_slots
   - test_partial_exploration_does_not_activate_belt_or_create_reward_details
   - test_combat_loot_counts_instance_slots
+  - test_exploration_tier_bonus_adds_to_rolled_key_count
+  - test_running_key_loses_requirement_when_holder_leaves_realm
+  - test_key_invalidation_offline_matches_polling_across_completion (gather/combat)
+  - test_historical_discoveries_classified_across_transition_windows (pending/completed)
+  - test_combat_key_depletes_before_invalidation_cutoff
 - Updated the content-provider fetch fixtures for the added exploration pack,
   preserving all estate, inventory, skill and realm UI assertions.
 - Disposable SQLite make db-reset rebuilt both services. Subsequent game head
@@ -73,13 +88,19 @@
   pg_blocking_pids observations; SQLite skips them. Existing migration tests
   cover fresh upgrade, schema parity, downgrade/rebuild and disposable reset.
 
-- Final repository-virtualenv SQLite `make ci` passes: auth 15; game 777 with
+- Review round 1 final repository-virtualenv SQLite `make ci` passes: auth 15; game 784 with
   24 dialect-specific skips; client 100. Ruff lint/format, strict mypy,
   TypeScript, ESLint, Prettier, Vitest, production build, script checks and
   warning-only content lint pass. `git diff --check` is clean.
 
 ## Removed
 
+- Review round 1 removes realm-side action queries/deletions and the discarded
+  progress behavior. Transition regression tests now require credited work,
+  including the four-use gathering case and a PostgreSQL waiter earning its
+  pre-completion cycle. Combat tests check the exact final-kill elapsed time and
+  preceding last_resolved_at boundary. The generated world invalidation runs
+  through complete_tick_transition; its conservation oracle is unchanged.
 - Removed duplicate equipment/consumable fit arithmetic in favor of the shared
   helper. No gameplay features, tests or public routes removed.
 - Updated the former empty-Exploration availability expectation to assert its
@@ -106,16 +127,24 @@
 - §19.3: each key rolls each output's inclusive quantity range once and stores
   that fixed quantity in its inline action; ordinary per-cycle output chance
   still applies. Uses and quantities are rolled separately for every key.
-  Identity randomness comes exclusively from the injected RNG.
+  Identity randomness comes exclusively from the injected RNG, with UUID version
+  and variant bits explicitly set to v4 (review N7). Tier shifts use the authored
+  decimal 0.3 rather than a binary-float serialization artifact (review N6).
 - §19.4: a successful action start binds the key, including stopping before the
   first gathering cycle completes. A combat key becomes a depleted trophy when
   its last spawn is paid, but its running encounter remains legal until kill
   or another normal combat stop; no additional spawn is permitted.
-- §19.6 / §12.6: completion invalidates all realm keys, including depleted
-  trophies. Stop-only logs record the exact completion timestamp without
-  resolving character work from a realm tick. Unresolved private progress is
-  discarded at invalidation; no character simulation or reverse character lock
-  is introduced into realm work. Invalid keys remain physical holders.
+- §19.6 / §12.6 / §6.2: completion invalidates access at its exact timestamp,
+  including for depleted trophies, while preserving unpolled earned work.
+  Holder resolution clips both uniform and combat budgets to invalidated_at.
+  Earlier depletion keeps KEY_DEPLETED; a fight still in progress at completion
+  ends with KEY_INVALIDATED after its earned attacks. Realm work never simulates
+  characters or changes their action rows. Invalid keys remain physical holders.
+- §19.2 / §10.5 (review N4): combat key projections use skill_id=melee solely
+  for the shared combat category and a universal level-one generic gate. Their
+  unlock_level=1 cannot exclude any character; xp=1 is an unused Action schema
+  placeholder. Combat XP comes only from opponent pools and equipment/stance
+  selects the actual receiving skills. These values add no balance mechanic.
 - §19.1 / §22: GET /keys/me returns `{keys: [...]}` with rolled payload,
   provenance and lifecycle fields; holder identity is implied by authentication.
   Bound/private action metadata is visible only through the holder's endpoints.
@@ -149,6 +178,8 @@ questions remain unchanged. Keys use the existing combat resolver as required.
   into skill presentation. Discovery summaries expose keys_created/keys_lost.
 - 36-hardening: preserve instance holders in the conservation oracle, both
   transition paths, PostgreSQL lock regressions and fixed catch-up SQL budgets.
+  Retain transition history while historical character action/discovery windows
+  can still reference it; pruning requires a safe timestamp watermark.
 
 ## New error codes
 

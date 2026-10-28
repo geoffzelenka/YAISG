@@ -38,6 +38,7 @@ class ItemInstance(Base):
     uses_total: Mapped[int] = mapped_column(Integer, nullable=False)
     uses_remaining: Mapped[int] = mapped_column(Integer, nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     bound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

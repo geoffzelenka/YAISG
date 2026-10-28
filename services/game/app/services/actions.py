@@ -138,6 +138,9 @@ def _load_state(
                 state=row.state,
                 created_at=as_utc(row.created_at),
                 bound_at=as_utc(row.bound_at) if row.bound_at else None,
+                invalidated_at=as_utc(row.invalidated_at)
+                if row.invalidated_at
+                else None,
             )
             for row in session.scalars(
                 select(ItemInstance).where(
@@ -208,6 +211,27 @@ def load_character_state(
     return _load_state(session, character_id, content, now)
 
 
+def discovery_lifecycle(
+    realm: RealmState | None, created_at: datetime
+) -> tuple[str, datetime | None]:
+    """Classify historical discoveries against completed and pending windows."""
+    if realm is None:
+        return "active", None
+    completions = sorted(
+        as_utc(datetime.fromisoformat(event["completes_at"]))
+        for event in (realm.transition_history or ())
+    )
+    cutoff = next((at for at in completions if created_at < at), None)
+    if cutoff is not None:
+        return "invalid", cutoff
+    pending = realm.pending_transition
+    if pending is not None:
+        end = as_utc(datetime.fromisoformat(pending["completes_at"]))
+        if created_at < end:
+            return "deprecated", None
+    return "active", None
+
+
 def _persist_state(
     session: Session, character_id: uuid.UUID, state: CharacterState
 ) -> None:
@@ -223,6 +247,7 @@ def _persist_state(
         row = session.get(ItemInstance, uuid.UUID(key.id))
         if row is None:
             realm = session.get(RealmState, key.realm_id)
+            lifecycle, invalidated_at = discovery_lifecycle(realm, key.created_at)
             session.add(
                 ItemInstance(
                     id=uuid.UUID(key.id),
@@ -235,9 +260,8 @@ def _persist_state(
                     payload=dict(key.payload),
                     uses_total=key.uses_total,
                     uses_remaining=key.uses_remaining,
-                    state="deprecated"
-                    if realm is not None and realm.pending_transition
-                    else key.state,
+                    state=lifecycle,
+                    invalidated_at=invalidated_at,
                     bound_at=key.bound_at,
                     created_at=key.created_at,
                 )
@@ -245,6 +269,7 @@ def _persist_state(
         else:
             row.uses_remaining = key.uses_remaining
             row.state = key.state
+            row.invalidated_at = key.invalidated_at
             row.bound_at = key.bound_at
     for skill_id, xp in state.skills_xp.items():
         skill = session.get(CharacterSkill, (character_id, skill_id))
@@ -355,12 +380,6 @@ def resolve_locked_character(
             step["destination_realm_id"] for step in record.meta.get("route", [])
         )
     realms = finalize_realms(session, realm_ids, now, resolved_content)
-    # Realm completion may have invalidated and removed this key action.
-    record = session.scalar(
-        select(ActiveActionRecord).where(
-            ActiveActionRecord.character_id == character_id
-        )
-    )
     home = session.get(Estate, character.home_estate_id)
     while home is not None and home.status == "destroyed":
         character.home_estate_id = uuid.UUID(home.data["replacement_id"])

@@ -64,6 +64,7 @@ class InstanceState:
     state: str
     created_at: datetime
     bound_at: datetime | None = None
+    invalidated_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -704,7 +705,9 @@ def _resolve_uniform(
                 or active.last_resolved_at + timedelta(milliseconds=resolved_ms),
             )
             if not updated.uses_remaining:
-                updated = replace(updated, state="depleted")
+                updated = replace(
+                    updated, state="invalid" if updated.invalidated_at else "depleted"
+                )
             instances[instances.index(key)] = updated
             key = updated
         cycles += 1
@@ -825,12 +828,13 @@ def resolve(
 ) -> tuple[CharacterState, ActiveAction | None, ResolveResult]:
     """Clip elapsed time, dispatch by content resolver, and apply shared stops."""
     action = action_definition(active.action_id, active.meta, content)
+    invalidation_due = False
     if "key_id" in active.meta:
         key = next(
             (key for key in state.instances if key.id == active.meta["key_id"]), None
         )
         reason = None
-        if key is None or key.state == "invalid":
+        if key is None or (key.state == "invalid" and key.invalidated_at is None):
             reason = StopReason.KEY_INVALIDATED
         elif key.state == "depleted" and action.resolver != "combat":
             reason = StopReason.KEY_DEPLETED
@@ -855,9 +859,24 @@ def resolve(
                 state,
                 None,
                 ResolveResult(
-                    0, {}, {}, {}, {}, {}, StopReason.REQUIREMENT_LOST, state=state
+                    0,
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    StopReason.REQUIREMENT_LOST,
+                    state=state,
+                    details={"stop_reason": StopReason.REQUIREMENT_LOST},
                 ),
             )
+        if (
+            key is not None
+            and key.invalidated_at is not None
+            and now >= key.invalidated_at
+        ):
+            invalidation_due = True
+            now = max(active.last_resolved_at, key.invalidated_at)
     requirement_lost = any(
         code != ErrorCode.MISSING_INPUTS
         for code in (
@@ -914,6 +933,8 @@ def resolve(
         )
     if requirement_lost:
         reason = StopReason.REQUIREMENT_LOST
+    if invalidation_due and reason is None:
+        reason = StopReason.KEY_INVALIDATED
     result = replace(
         result,
         stop_reason=reason,

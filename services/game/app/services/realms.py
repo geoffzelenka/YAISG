@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, object_session
 from app.content.loader import ContentIndex
 from app.content.runtime import CONTENT
 from app.models import (
-    ActiveActionRecord,
     ItemInstance,
     RealmProjectRun,
     RealmState,
@@ -169,19 +168,8 @@ def _finalize_locked_realm(
         elif pending["cause"] == "regression":
             tag.node_id = node.id
     keys = realm_keys(session, state.id)
-    actions = list(
-        session.scalars(
-            select(ActiveActionRecord)
-            .join(ItemInstance, ActiveActionRecord.key_instance_id == ItemInstance.id)
-            .where(ItemInstance.realm_id == state.id)
-        )
-    )
-    stopped, logs = invalidate_keys(
-        keys, actions, as_utc(datetime.fromisoformat(pending["completes_at"]))
-    )
-    for action in stopped:
-        session.delete(action)
-    session.add_all(logs)
+    invalidate_keys(keys, as_utc(datetime.fromisoformat(pending["completes_at"])))
+    state.transition_history = [*(state.transition_history or ()), dict(pending)]
     state.current_node_id = node.id
     if pending["cause"] == "regression":
         state.gauge = 0

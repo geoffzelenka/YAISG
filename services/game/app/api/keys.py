@@ -5,14 +5,14 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
 from app.api.actions import get_character
 from app.auth import CurrentPlayer, DatabaseSession
 from app.clock import ServerNow
 from app.models import ActiveActionRecord, ItemInstance
-from app.services.actions import clear_active_action, resolve_character
+from app.services.actions import as_utc, clear_active_action, resolve_character
 from app.services.keys import held_key
 
 router = APIRouter(prefix="/keys", tags=["keys"])
@@ -31,8 +31,15 @@ class KeyResponse(BaseModel):
     uses_total: int
     uses_remaining: int
     state: str
+    invalidated_at: datetime | None
     bound_at: datetime | None
     created_at: datetime
+
+    @field_validator("created_at", "bound_at", "invalidated_at")
+    @classmethod
+    def timestamps_are_utc(cls, value: datetime | None) -> datetime | None:
+        """Restore the timezone omitted by SQLite's datetime adapter."""
+        return as_utc(value) if value is not None else None
 
 
 class KeysResponse(BaseModel):

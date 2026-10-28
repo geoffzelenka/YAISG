@@ -174,7 +174,7 @@ def discover(
             continue
         found.append(
             InstanceState(
-                id=str(uuid.UUID(int=rng.randint(0, 2**128 - 1))),
+                id=str(uuid.UUID(int=rng.randint(0, 2**128 - 1), version=4)),
                 template_id=template.id,
                 realm_id=state.current_realm_id,
                 payload={

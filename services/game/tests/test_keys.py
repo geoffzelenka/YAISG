@@ -35,7 +35,7 @@ from app.engine.core import (
     resolve_caps,
 )
 from app.engine.equipment import EquipmentError, change_equipment
-from app.engine.exploration import discover, template_action
+from app.engine.exploration import discover, template_action, tier_benefit
 from app.main import app
 from app.models import ActiveActionRecord, Character, ItemInstance, RealmState
 from app.services.realms import finalize_realm, start_transition
@@ -281,6 +281,28 @@ def test_combat_keys_charge_initial_and_each_spawn_and_finish_last_encounter() -
     )
     assert remaining is None and summary.stop_reason == StopReason.KEY_DEPLETED
     assert summary.details["kills"] == 2 and result.instances[0].uses_remaining == 0
+    assert 0 < summary.elapsed_ms < 3600000
+    _, _, at_kill = resolve(
+        initial,
+        pending,
+        content,
+        NOW + timedelta(milliseconds=summary.elapsed_ms),
+        random.Random(5),
+    )
+    assert at_kill.stop_reason == StopReason.KEY_DEPLETED
+    assert at_kill.details["kills"] == 2
+    assert at_kill.elapsed_ms == summary.elapsed_ms
+    _, before, before_kill = resolve(
+        initial,
+        pending,
+        content,
+        NOW + timedelta(milliseconds=summary.elapsed_ms - 1),
+        random.Random(5),
+    )
+    assert before is not None and before_kill.details["kills"] == 1
+    assert before.last_resolved_at == NOW + timedelta(
+        milliseconds=before_kill.elapsed_ms
+    )
 
 
 async def discover_api(fixture: ApiFixture, monkeypatch: pytest.MonkeyPatch) -> str:
@@ -351,6 +373,11 @@ async def test_transition_deprecation_and_invalidation_stops_running_key(
 ) -> None:
     client, factory, clock, headers = action_client
     identifier = await discover_api(action_client, monkeypatch)
+    with factory() as session:
+        discovered = session.get(ItemInstance, uuid.UUID(identifier))
+        assert discovered is not None
+        discovered.uses_total = discovered.uses_remaining = 4
+        session.commit()
     content = app.state.content
     response = await client.post(
         "/actions/start", headers=headers, json={"key_id": identifier}
@@ -392,12 +419,13 @@ async def test_transition_deprecation_and_invalidation_stops_running_key(
         character = session.scalar(select(Character))
         assert (
             character is not None
-            and session.get(ActiveActionRecord, character.id) is None
+            and session.get(ActiveActionRecord, character.id) is not None
         )
+    clock.advance(due - clock.now)
     response = await client.get("/actions/poll", headers=headers)
     assert response.status_code == 200, response.text
-    assert response.json()["stop_reason"] == "KEY_INVALIDATED"
-    assert response.json()["since_last"]["cycles_completed"] == 0
+    assert response.json()["stop_reason"] == "KEY_DEPLETED"
+    assert response.json()["since_last"]["cycles_completed"] == key.uses_total
     assert (await client.get("/actions/poll", headers=headers)).json()[
         "stop_reason"
     ] is None
@@ -811,13 +839,13 @@ async def test_postgres_transition_completes_while_key_owner_waits_for_realm(
         response = future.result(timeout=10)
     assert response.status_code == 200, response.text
     assert response.json()["stop_reason"] == "KEY_INVALIDATED"
-    assert response.json()["since_last"]["cycles_completed"] == 0
+    assert response.json()["since_last"]["cycles_completed"] == 1
     with factory() as session:
         key = session.get(ItemInstance, uuid.UUID(identifier))
         assert (
             key is not None
             and key.state == "invalid"
-            and key.uses_remaining == key.uses_total
+            and key.uses_remaining == key.uses_total - 1
         )
 
 
@@ -979,3 +1007,161 @@ def test_combat_loot_counts_instance_slots() -> None:
     assert remaining is None and summary.stop_reason == StopReason.INVENTORY_FULL
     assert not result.inventory and summary.overflowed_items == {"item.fake_sprig": 1}
     assert result.instances[0].uses_remaining == 0
+
+
+def test_exploration_tier_bonus_adds_to_rolled_key_count() -> None:
+    """Tier two grants the authored bonus in addition to the template count."""
+    content = exploration_content(count=3)
+    initial = replace(state(), current_realm_id=REALM, skill_levels={"exploration": 50})
+    found, lost, discoveries = discover(
+        initial, content.action(EXPEDITION), content, NOW, random.Random(2), 100
+    )
+    assert discoveries == 1 and lost == 0
+    assert len(found) == 3 + tier_benefit(initial, content).keys_per_discovery_bonus
+    assert all(uuid.UUID(key.id).version == 4 for key in found)
+
+
+def test_running_key_loses_requirement_when_holder_leaves_realm() -> None:
+    """Resolve-time presence checks stop a previously started private action."""
+    content = exploration_content()
+    key = key_state(content)
+    initial = replace(state(), current_realm_id="realm.ashen_reach", instances=(key,))
+    active = ActiveAction(
+        key.template_id,
+        NOW,
+        NOW,
+        {"key_id": key.id, "key_action": key.payload["action"]},
+    )
+    result, remaining, summary = resolve(
+        initial, active, content, NOW + timedelta(hours=1), random.Random(1)
+    )
+    assert remaining is None and summary.stop_reason == StopReason.REQUIREMENT_LOST
+    assert summary.cycles_completed == 0 and result.instances == initial.instances
+
+
+@pytest.mark.parametrize("combat", [False, True])
+def test_key_invalidation_offline_matches_polling_across_completion(
+    combat: bool,
+) -> None:
+    """Both resolvers credit exactly the same work before a transition cutoff."""
+    content = exploration_content()
+    key = key_state(content, combat=combat, uses=100)
+    cutoff = NOW + timedelta(seconds=11)
+    initial = replace(state(), current_realm_id=REALM, instances=(key,))
+    active = ActiveAction(
+        key.template_id,
+        NOW,
+        NOW,
+        {"key_id": key.id, "key_action": key.payload["action"]},
+    )
+    invalid = replace(
+        initial, instances=(replace(key, state="invalid", invalidated_at=cutoff),)
+    )
+    offline, _, summary = resolve(
+        invalid, active, content, NOW + timedelta(seconds=30), random.Random(1)
+    )
+    current, running = initial, active
+    cycles = 0
+    for seconds in (3, 6, 9, 30):
+        if seconds == 30:
+            current = replace(
+                current,
+                instances=tuple(
+                    replace(key, state="invalid", invalidated_at=cutoff)
+                    for key in current.instances
+                ),
+            )
+        current, following, part = resolve(
+            current,
+            running,
+            content,
+            NOW + timedelta(seconds=seconds),
+            random.Random(1),
+        )
+        cycles += part.cycles_completed
+        if following is not None:
+            running = following
+    assert following is None
+    assert summary.stop_reason == part.stop_reason == StopReason.KEY_INVALIDATED
+    assert cycles == summary.cycles_completed
+    assert current == offline
+    assert summary.elapsed_ms <= 11000
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("complete", [False, True])
+async def test_historical_discoveries_classified_across_transition_windows(
+    action_client: ApiFixture, monkeypatch: pytest.MonkeyPatch, complete: bool
+) -> None:
+    """Unpolled discoveries retain lifecycle state after pending data is cleared."""
+    client, factory, clock, headers = action_client
+    content = exploration_content()
+    # Start before the transition and let one long batch straddle both boundaries.
+    content = replace(
+        content,
+        economy=content.economy.model_copy(
+            update={
+                "transition": content.economy.transition.model_copy(
+                    update={"duration_days": (2 if complete else 10) / 86400}
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(app.state, "content", content)
+    response = await client.post(
+        "/actions/start", headers=headers, json={"action_id": EXPEDITION}
+    )
+    assert response.status_code == 200
+    began = clock.now
+    with factory() as session:
+        realm = session.get(RealmState, REALM)
+        assert realm is not None
+        start_transition(
+            realm,
+            realm.current_node_id,
+            "upgrade",
+            began + timedelta(seconds=2 if complete else -1),
+            content,
+        )
+        session.commit()
+    clock.advance(timedelta(seconds=5 if complete else 3))
+    response = await client.post("/actions/stop", headers=headers)
+    assert response.status_code == 200, response.text
+    keys = (await client.get("/keys/me", headers=headers)).json()["keys"]
+    assert len(keys) == (5 if complete else 3)
+    for key in keys:
+        from datetime import datetime
+
+        created = datetime.fromisoformat(key["created_at"])
+        if complete and created < began + timedelta(seconds=4):
+            assert key["state"] == "invalid"
+            assert datetime.fromisoformat(key["invalidated_at"]) == began + timedelta(
+                seconds=4
+            )
+        else:
+            assert key["state"] == ("active" if complete else "deprecated")
+
+
+def test_combat_key_depletes_before_invalidation_cutoff() -> None:
+    """The last paid encounter finishing first keeps its original stop and timing."""
+    content = exploration_content()
+    key = key_state(content, combat=True, uses=1)
+    cutoff = NOW + timedelta(hours=1)
+    initial = replace(
+        state(),
+        current_realm_id=REALM,
+        instances=(replace(key, state="invalid", invalidated_at=cutoff),),
+    )
+    active = ActiveAction(
+        key.template_id,
+        NOW,
+        NOW,
+        {"key_id": key.id, "key_action": key.payload["action"]},
+    )
+    result, remaining, summary = resolve(
+        initial, active, content, NOW + timedelta(hours=2), random.Random(5)
+    )
+    assert remaining is None and summary.stop_reason == StopReason.KEY_DEPLETED
+    assert summary.details["kills"] == 1 and summary.elapsed_ms < 3600000
+    assert result.instances[0].uses_remaining == 0
+    assert result.instances[0].invalidated_at == cutoff

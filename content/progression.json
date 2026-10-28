@@ -159,7 +159,7 @@
       {
         "cycle_speed_pct": 15,
         "keys_per_discovery_bonus": 3,
-        "rarity_weight_shift": 0.30000000000000004
+        "rarity_weight_shift": 0.3
       },
       {
         "cycle_speed_pct": 20,

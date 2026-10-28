@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.content.schemas import Action
 from app.errors import api_error
-from app.models import ActiveActionRecord, ItemInstance, RewardLog
+from app.models import ItemInstance
 
 
 def held_key(
@@ -49,28 +49,13 @@ def deprecate_keys(keys: list[ItemInstance]) -> None:
             key.state = "deprecated"
 
 
-def invalidate_keys(
-    keys: list[ItemInstance], actions: list[ActiveActionRecord], at: datetime
-) -> tuple[list[ActiveActionRecord], list[RewardLog]]:
-    """Invalidate access and build stop-only feed entries without character locks.
+def invalidate_keys(keys: list[ItemInstance], at: datetime) -> None:
+    """Record the first access cutoff without touching any character action.
 
-    Callers hold the realm lock, which every key mutation takes after its
-    character lock. No character row is changed by a realm transition.
+    Holders resolve earned work lazily under their own character lock. Repeated
+    transitions must never extend a key's original access window.
     """
-    identifiers = {key.id for key in keys}
     for key in keys:
         key.state = "invalid"
-    stopped = [action for action in actions if action.key_instance_id in identifiers]
-    logs = [
-        RewardLog(
-            character_id=action.character_id,
-            action_id=action.action_id,
-            cycles=0,
-            xp={},
-            items={},
-            details={"stop_reason": "KEY_INVALIDATED"},
-            resolved_at=at,
-        )
-        for action in stopped
-    ]
-    return stopped, logs
+        if key.invalidated_at is None:
+            key.invalidated_at = at

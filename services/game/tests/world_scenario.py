@@ -34,8 +34,12 @@ from app.models import (
 )
 from app.services.caravans import run_caravan_pass
 from app.services.market_lifecycle import run_market_lifecycle
+from app.services.realm_ticks import (
+    complete_tick_transition,
+    load_context,
+    persist_context,
+)
 from app.services.realms import (
-    _finalize_locked_realm,
     as_utc,
     resolve_realm,
     start_transition,
@@ -689,7 +693,9 @@ class WorldScenario:
                 start_transition(
                     realm, realm.current_node_id, "upgrade", self.now, instant
                 )
-                _finalize_locked_realm(session, realm, self.now, instant)
+                context = load_context(session, realm, None, instant)
+                complete_tick_transition(context, realm, self.now, instant)
+                persist_context(session, realm, context)
                 session.commit()
                 key = session.get(ItemInstance, uuid.UUID(identifier))
                 assert key is not None and key.state == "invalid"

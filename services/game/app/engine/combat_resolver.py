@@ -136,7 +136,9 @@ class CombatSimulation:
                 bound_at=self.key.bound_at or self.at,
             )
             if not updated.uses_remaining:
-                updated = replace(updated, state="depleted")
+                updated = replace(
+                    updated, state="invalid" if updated.invalidated_at else "depleted"
+                )
             self.instances[self.instances.index(self.key)] = updated
             self.key = updated
         self.meta.update(
