@@ -1,3 +1,6 @@
+> Historical snapshot from prompt 00; this may be stale. See
+> [the current conformance report](conformance.md) for the v0.8 reference.
+
 # v0.8 baseline alignment audit
 
 Audited 2026-10-26 on `v08/00-preflight`, baseline commit

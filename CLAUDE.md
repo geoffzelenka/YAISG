@@ -49,19 +49,19 @@ Three deployable pieces, coordinated by `docker-compose.yml`:
 
 | Piece | Path | Stack | Local URL |
 | --- | --- | --- | --- |
-| Auth API | `services/auth/` | FastAPI, SQLite, Alembic | `http://localhost:8001` |
-| Game API | `services/game/` | FastAPI, SQLite, Alembic | `http://localhost:8000` |
+| Auth API | `services/auth/` | FastAPI, SQLite or PostgreSQL 16, Alembic | `http://localhost:8001` |
+| Game API | `services/game/` | FastAPI, SQLite or PostgreSQL 16, Alembic | `http://localhost:8000` |
 | Client | `client/` | React, Vite, TypeScript, Tailwind | `http://localhost:5173` |
 
 - The **auth service** issues RS256 JWTs and serves a JWKS endpoint. The game
   service verifies tokens against that JWKS. Each service owns its own database
   and Alembic migration chain — they never share tables.
 - The **game service** is layered: `app/api/` (routers) → `app/services/`
-  (orchestration) → `app/engine/` (pure, side-effect-free skilling/XP math) and
+  (orchestration) → `app/engine/` (pure action resolvers and game math) and
   `app/models/` (SQLAlchemy). Keep `app/engine/` pure and deterministic — it is
   the most heavily tested part and must stay easy to reason about.
-- Game content (skills, items, realms, upgrades, caps, XP curve) lives as
-  validated, versioned JSON in `content/`, loaded via `app/content/loader.py`.
+- Game content (including skills, realms, economy, combat, and tutorial) lives
+  as validated, versioned JSON in `content/`, loaded via `app/content/loader.py`.
   It is deliberately synthetic placeholder scaffolding — not final game data.
 
 Design and phase context: `design/design.md`, `docs/`.
@@ -69,19 +69,21 @@ Design and phase context: `design/design.md`, `docs/`.
 ## Commands
 
 Run all CI checks (Ruff format + lint, strict mypy, pytest, then client
-lint/format/typecheck/test/build) from the repo root:
+lint/format/typecheck/test/build, script checks, content lint, and seed-check)
+from the repo root:
 
 ```bash
 make ci
 ```
 
-Per-piece targets: `make auth-ci`, `make game-ci`, `make client-ci`.
+Per-piece targets: `make auth-ci`, `make game-ci`, `make client-ci`, `make scripts-ci`.
 
 Run a single Python service's tests directly (venv activated):
 
 ```bash
-cd services/game && python -m pytest            # or services/auth
-cd services/game && python -m pytest tests/test_engine.py -k some_case
+cd services/game                              # or services/auth
+python -m pytest
+python -m pytest tests/test_engine.py           # game service only
 ```
 
 Client tests: `cd client && npm test`.
@@ -106,7 +108,8 @@ running without Docker, and the env vars in the README's Configuration table).
 services/auth/   Auth service (users, refresh tokens, JWKS) + its database
 services/game/   Game API: routers, services, pure engine, models, content loader
 content/         Validated placeholder content packs + generated XP curve
-client/          React auth, character creation, skilling, and profile UI
+client/          React auth/tutorial, skills/travel, realm/estate/markets, equipment/combat, keys UI
 design/          Technical design document
-docs/            Phase notes and project documentation
+scripts/         Database reset, XP-curve generation, and load tooling
+docs/            Phase notes, auth operations, tech debt, and v0.8 conformance
 ```
