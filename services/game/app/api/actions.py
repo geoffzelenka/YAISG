@@ -26,6 +26,7 @@ from app.engine import (
     ResolveResult,
     effective_cycle_time,
 )
+from app.engine.combat import player_stats
 from app.engine.core import ACTION_RESOLVERS, unmet_requirements
 from app.errors import api_error
 from app.models import ActiveActionRecord, Character
@@ -134,7 +135,7 @@ def _active_summary(
         cycle_ms=state_cycle_ms,
         started_at=as_utc(record.started_at),
         last_resolved_at=as_utc(record.last_resolved_at),
-        meta=dict(record.meta),
+        meta={key: value for key, value in record.meta.items() if key != "rng_state"},
     )
 
 
@@ -147,6 +148,16 @@ def _start_blockers(
         blocked.insert(0, "RESOLVER_UNAVAILABLE")
     if action.resolver == "travel":
         blocked.insert(0, "TRAVEL_DESTINATION_REQUIRED")
+    if action.resolver == "combat" and action.combatant_id is not None:
+        stats = player_stats(
+            state, state.equipment, content.combatant(action.combatant_id), content
+        )
+        if (
+            state.hp is not None
+            and state.hp * 100
+            < stats.max_hp * content.progression.combat.min_engage_hp_pct
+        ):
+            blocked.append("INSUFFICIENT_HP")
     return blocked
 
 
@@ -162,7 +173,7 @@ async def available_actions(
     character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
-    state = load_character_state(session, character.id, content)
+    state = load_character_state(session, character.id, content, now)
     groups: list[AvailableSkillGroup] = []
     for skill in content.skills:
         actions: list[AvailableAction] = []
@@ -198,7 +209,9 @@ async def start_action(
     character = get_character(session, player.id)
     content = _content(request)
     resolve_character(session, character.id, now, content)
-    state = load_character_state(session, character.id, content)
+    # Combat→combat starts seed HP from the resolved character row. The new
+    # action's empty meta must not inherit the previous encounter's hp_exact.
+    state = load_character_state(session, character.id, content, now)
     try:
         action = content.action(body.action_id)
     except KeyError:
@@ -230,7 +243,13 @@ async def start_action(
         ) from None
     return StartedActionResponse(
         action_id=action.id,
-        cycle_ms=effective_cycle_time(action, state, content),
+        cycle_ms=(
+            player_stats(
+                state, state.equipment, content.combatant(action.combatant_id), content
+            ).cycle_ms
+            if action.resolver == "combat" and action.combatant_id
+            else effective_cycle_time(action, state, content)
+        ),
         started_at=now,
     )
 
@@ -247,7 +266,7 @@ async def get_action(
     character = get_character(session, player.id)
     content = _content(request)
     resolution = resolve_character(session, character.id, now, content)
-    state = load_character_state(session, character.id, content)
+    state = load_character_state(session, character.id, content, now)
     cycle_ms = None
     if resolution.active is not None:
         cycle_ms = effective_cycle_time(
@@ -260,6 +279,11 @@ async def get_action(
         and content.action(resolution.active.action_id).resolver == "travel"
     ):
         cycle_ms = int(resolution.active.meta["duration_ms"])
+    if (
+        resolution.active is not None
+        and content.action(resolution.active.action_id).resolver == "combat"
+    ):
+        cycle_ms = int(resolution.active.meta.get("cycle_ms", cycle_ms or 0))
     feed = claim_rewards(session, character.id, now)
     feed = _prefer_current_stop_reason(feed, resolution.result)
     session.commit()

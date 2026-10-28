@@ -36,7 +36,7 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 26 | `26-equipment` | Equipment slots and gear bonuses | done | v08/26-equipment | fce64c4 | Equipment slots, equip/unequip, group G gear, tool_class, §7.5 caps |
 | 27 | `27-consumables-hp` | Belt, utility, buffs, hit points | done | v08/27-consumables-hp | 8f9b123 | Utility/belt holders, timed group C buffs, lazy HP |
 | 28 | `28-combat-model` | Combatants, stats, the hit, stance, combat lint | done | v08/28-combat-model | 075dd5b | Combatants pack, §10.3 stats/attack, stance endpoint, combat lint |
-| 29 | `29-combat-resolver` | The combat resolver | pending | — | — | — |
+| 29 | `29-combat-resolver` | The combat resolver | ready for review | `v08/29-combat-resolver` | — | Exact combat cycles, encounter pools, consumables, offline summaries and bounded simulation. |
 | 30 | `30-client-equipment-combat` | Client: equipment and combat | pending | — | — | — |
 | 31 | `31-keys` | Instanced items, exploration, key actions | pending | — | — | — |
 | 32 | `32-key-market` | The key market | pending | — | — | — |

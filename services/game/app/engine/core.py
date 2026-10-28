@@ -42,6 +42,15 @@ class Caps:
 
 
 @dataclass(frozen=True)
+class BeltStack:
+    """One reactive consumable holder."""
+
+    item_id: str
+    quantity: int
+    trigger: Mapping[str, float | bool]
+
+
+@dataclass(frozen=True)
 class CharacterState:
     """All character data needed by the pure action engine."""
 
@@ -64,6 +73,12 @@ class CharacterState:
     realm_states: Mapping[str, tuple[str, DecayStage, tuple[str, ...]]] = field(
         default_factory=dict
     )
+    hp: float | None = None
+    equipment: Mapping[str, str] = field(default_factory=dict)
+    utility_quantity: int = 0
+    belt: Mapping[int, BeltStack] = field(default_factory=dict)
+    buff_expiries: Mapping[str, datetime] = field(default_factory=dict)
+    stance: str | None = None
     cap_bonuses: Mapping[CapType, float] = field(default_factory=dict)
 
 
@@ -80,6 +95,9 @@ class ActiveAction:
 class StopReason(StrEnum):
     """Reasons resolution automatically ends an action."""
 
+    OUT_OF_AMMO = "OUT_OF_AMMO"
+    DEFEATED = "DEFEATED"
+    COMBAT_OFFLINE_CAP = "OFFLINE_CAP"
     OUT_OF_SUPPLIES = "OUT_OF_SUPPLIES"
     REQUIREMENT_LOST = "REQUIREMENT_LOST"
     INPUTS_EXHAUSTED = "inputs_exhausted"
@@ -676,10 +694,15 @@ class UniformResolver:
         return _resolve_uniform(state, action, ctx, budget_ms, rng)
 
 
+from app.engine.combat_resolver import CombatResolver  # noqa: E402
 from app.engine.travel import TravelResolver  # noqa: E402
 
 ACTION_RESOLVERS: Mapping[str, ActionResolver] = MappingProxyType(
-    {"uniform": UniformResolver(), "travel": TravelResolver()}
+    {
+        "uniform": UniformResolver(),
+        "travel": TravelResolver(),
+        "combat": CombatResolver(),
+    }
 )
 
 
@@ -734,12 +757,16 @@ def resolve(
         reason is None
         and (
             result.cycles_completed > 0
-            or (action.resolver == "travel" and result.elapsed_ms == cap_ms)
+            or (action.resolver in {"travel", "combat"} and result.elapsed_ms == cap_ms)
         )
         and elapsed_ms > cap_ms
         and result.active is not None
     ):
-        reason = StopReason.OFFLINE_CAP
+        reason = (
+            StopReason.COMBAT_OFFLINE_CAP
+            if action.resolver == "combat"
+            else StopReason.OFFLINE_CAP
+        )
     if requirement_lost:
         reason = StopReason.REQUIREMENT_LOST
     result = replace(

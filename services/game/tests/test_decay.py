@@ -66,7 +66,6 @@ def test_strained_has_no_engine_effect() -> None:
             assert player_stats(fed, {}, opponent, CONTENT) == player_stats(
                 strained, {}, opponent, CONTENT
             )
-            continue
         active = make_active(action.id)
         if action.resolver == "travel":
             from test_travel import journey

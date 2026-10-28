@@ -63,7 +63,7 @@ def _change(
         raise api_error(
             409, "EQUIPMENT_IN_COMBAT", "Equipment cannot change during combat"
         )
-    state = load_character_state(session, character.id, content)
+    state = load_character_state(session, character.id, content, now)
     equipped = {
         row.slot: row.item_id
         for row in session.scalars(
@@ -87,7 +87,7 @@ def _change(
     persist_equipment(session, character.id, inventory, equipment)
     session.flush()
     regenerate_character_hp(session, character, now, content)
-    changed_state = load_character_state(session, character.id, content)
+    changed_state = load_character_state(session, character.id, content, now)
     if (
         active is not None
         and content.action(active.action_id).resolver == "uniform"
@@ -195,7 +195,7 @@ def _setup_stack(
         raise api_error(
             409, "EQUIPMENT_IN_COMBAT", "Consumable setup cannot change during combat"
         )
-    state = load_character_state(session, character.id, content)
+    state = load_character_state(session, character.id, content, now)
     equipment = {
         row.slot: row
         for row in session.scalars(

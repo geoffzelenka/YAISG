@@ -5,7 +5,7 @@ import secrets
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -14,10 +14,12 @@ from app.content import ContentIndex
 from app.content.runtime import CONTENT
 from app.content.schemas import CapType, DecayStage
 from app.engine import ActiveAction, CharacterState, ResolveResult, StopReason, resolve
+from app.engine.core import BeltStack
 from app.engine.health import maximum_hp, regenerate_hp
 from app.models import (
     ActiveActionRecord,
     Character,
+    CharacterBelt,
     CharacterBuff,
     CharacterEquipment,
     CharacterSkill,
@@ -80,7 +82,10 @@ def lock_character_and_load_action(
 
 
 def _load_state(
-    session: Session, character_id: uuid.UUID, content: ContentIndex = CONTENT
+    session: Session,
+    character_id: uuid.UUID,
+    content: ContentIndex = CONTENT,
+    now: datetime | None = None,
 ) -> CharacterState:
     character = session.get(Character, character_id)
     currency = session.get(Currency, character_id)
@@ -112,6 +117,7 @@ def _load_state(
         if row.slot != "utility"
     ]
     buffs = []
+    buff_expiries = {}
     for row in session.scalars(
         select(CharacterBuff).where(CharacterBuff.character_id == character_id)
     ):
@@ -119,12 +125,26 @@ def _load_state(
         if consumable is None or consumable.buff is None:
             raise RuntimeError(f"buff {row.item_id} has no buff content")
         buffs.append((as_utc(row.expires_at), consumable.buff.modifiers))
+        buff_expiries[row.item_id] = as_utc(row.expires_at)
     caps: defaultdict[CapType, float] = defaultdict(float)
     for _, equip in gear:
         if equip is not None:
             for cap, amount in equip.cap_bonuses.items():
                 caps[cap] += amount
     return CharacterState(
+        hp=character.hp,
+        stance=character.stance,
+        equipment={row.slot: row.item_id for row in equipment},
+        utility_quantity=next(
+            (row.quantity for row in equipment if row.slot == "utility"), 0
+        ),
+        belt={
+            row.slot: BeltStack(row.item_id, row.quantity, row.trigger)
+            for row in session.scalars(
+                select(CharacterBelt).where(CharacterBelt.character_id == character_id)
+            )
+        },
+        buff_expiries=buff_expiries,
         skills_xp={skill.skill_id: skill.xp for skill in skills},
         skill_levels={skill.skill_id: skill.level for skill in skills},
         inventory={stack.item_id: stack.quantity for stack in inventory},
@@ -147,8 +167,7 @@ def _load_state(
         consumable_modifiers=tuple(
             modifier
             for end, values in buffs
-            if character.hp_updated_at is not None
-            and end > as_utc(character.hp_updated_at)
+            if now is not None and end > now
             for modifier in values
         ),
         gear_modifiers=tuple(
@@ -167,10 +186,13 @@ def _load_state(
 
 
 def load_character_state(
-    session: Session, character_id: uuid.UUID, content: ContentIndex = CONTENT
+    session: Session,
+    character_id: uuid.UUID,
+    content: ContentIndex = CONTENT,
+    now: datetime | None = None,
 ) -> CharacterState:
     """Load engine state without acquiring a write lock or mutating it."""
-    return _load_state(session, character_id, content)
+    return _load_state(session, character_id, content, now)
 
 
 def _persist_state(
@@ -208,6 +230,36 @@ def _persist_state(
             session.add(
                 Inventory(character_id=character_id, item_id=item_id, quantity=quantity)
             )
+
+
+def _persist_combat_holders(
+    session: Session, character_id: uuid.UUID, state: CharacterState
+) -> None:
+    """Persist consumed holders and activated buffs under the character lock."""
+    utility = session.get(CharacterEquipment, (character_id, "utility"))
+    if utility is not None:
+        if state.utility_quantity:
+            utility.quantity = state.utility_quantity
+        else:
+            session.delete(utility)
+    for row in session.scalars(
+        select(CharacterBelt).where(CharacterBelt.character_id == character_id)
+    ):
+        stack = state.belt.get(row.slot)
+        if stack is None:
+            session.delete(row)
+        else:
+            row.quantity = stack.quantity
+    for item_id, expiry in state.buff_expiries.items():
+        buff = session.get(CharacterBuff, (character_id, item_id))
+        if buff is None:
+            session.add(
+                CharacterBuff(
+                    character_id=character_id, item_id=item_id, expires_at=expiry
+                )
+            )
+        else:
+            buff.expires_at = expiry
 
 
 def resolve_character(
@@ -263,11 +315,16 @@ def resolve_locked_character(
     session.scalar(
         select(Estate).where(Estate.id == character.home_estate_id).with_for_update()
     )
-    regenerate_character_hp(session, character, now, resolved_content)
+    is_combat = (
+        record is not None
+        and resolved_content.action(record.action_id).resolver == "combat"
+    )
+    if not is_combat:
+        regenerate_character_hp(session, character, now, resolved_content)
     if record is None:
         return Resolution(None, empty_result())
     state = replace(
-        _load_state(session, character_id, resolved_content),
+        _load_state(session, character_id, resolved_content, now),
         realm_states={
             realm_id: (
                 realm.current_node_id,
@@ -294,7 +351,18 @@ def resolve_locked_character(
     )
     _persist_state(session, character_id, new_state)
     session.flush()
-    regenerate_character_hp(session, character, now, resolved_content)
+    if is_combat:
+        assert new_state.hp is not None
+        character.hp = new_state.hp
+        character.hp_updated_at = action.last_resolved_at + timedelta(
+            milliseconds=result.elapsed_ms
+        )
+        _persist_combat_holders(session, character_id, new_state)
+        if new_active is None:
+            session.flush()
+            regenerate_character_hp(session, character, now, resolved_content)
+    else:
+        regenerate_character_hp(session, character, now, resolved_content)
     if new_active is None:
         session.delete(record)
         remaining = None
@@ -389,7 +457,10 @@ def clear_active_action(session: Session, character_id: uuid.UUID) -> None:
 
 
 def character_max_hp(
-    session: Session, character_id: uuid.UUID, content: ContentIndex
+    session: Session,
+    character_id: uuid.UUID,
+    content: ContentIndex,
+    now: datetime | None = None,
 ) -> float:
     """Load armour contributions and evaluate the pure maximum-health formula."""
     armour_hp = 0.0
@@ -402,14 +473,16 @@ def character_max_hp(
         equip = content.item(row.item_id).equip
         if equip is not None and equip.armour is not None:
             armour_hp += equip.armour.max_hp
-    return maximum_hp(_load_state(session, character_id, content), armour_hp, content)
+    return maximum_hp(
+        _load_state(session, character_id, content, now), armour_hp, content
+    )
 
 
 def regenerate_character_hp(
     session: Session, character: Character, now: datetime, content: ContentIndex
 ) -> None:
     """Materialize lazy HP under the existing character serialization lock."""
-    maximum = character_max_hp(session, character.id, content)
+    maximum = character_max_hp(session, character.id, content, now)
     character.hp = min(maximum, max(0.0, character.hp))
     if character.hp_updated_at is None:
         character.hp = maximum
