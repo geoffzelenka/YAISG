@@ -20,6 +20,7 @@ from app.config import (
 )
 from app.db import get_db, prepare_sqlite_write
 from app.errors import api_error
+from app.guest_settings import load_guest_settings
 from app.models import RefreshToken, User
 from app.rate_limit import IpRateLimiter
 from app.schemas import AccessTokenResponse, Credentials
@@ -51,11 +52,11 @@ def _normalized_email(email: str) -> str:
     return normalized
 
 
-def _set_refresh_cookie(response: Response, token: str) -> None:
+def _set_refresh_cookie(response: Response, token: str, lifetime_seconds: int) -> None:
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=token,
-        max_age=REFRESH_TOKEN_SECONDS,
+        max_age=lifetime_seconds,
         httponly=True,
         secure=REFRESH_COOKIE_SECURE,
         samesite="lax",
@@ -76,6 +77,11 @@ def _clear_refresh_cookie(response: Response) -> None:
 def _issue_session(
     session: Session, response: Response, user: User, keys: SigningKeys
 ) -> AccessTokenResponse:
+    lifetime_seconds = REFRESH_TOKEN_SECONDS
+    if user.kind == "guest":
+        lifetime_seconds = min(
+            lifetime_seconds, load_guest_settings().guest_ttl_days * 86400
+        )
     token_id = uuid.uuid4()
     raw_token = new_refresh_token(token_id)
     session.add(
@@ -83,13 +89,13 @@ def _issue_session(
             id=token_id,
             user_id=user.id,
             token_hash=hash_refresh_token(raw_token),
-            expires_at=utc_now() + timedelta(seconds=REFRESH_TOKEN_SECONDS),
+            expires_at=utc_now() + timedelta(seconds=lifetime_seconds),
             revoked_at=None,
         )
     )
     user.last_activity_at = utc_now()
     session.commit()
-    _set_refresh_cookie(response, raw_token)
+    _set_refresh_cookie(response, raw_token, lifetime_seconds)
     return AccessTokenResponse(
         access_token=keys.issue_access_token(user.id, user.kind),
         expires_in=ACCESS_TOKEN_SECONDS,

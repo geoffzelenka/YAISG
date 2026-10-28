@@ -350,7 +350,7 @@ def _dispose_realms(session: Session, isolated: set[str], audit: PurgeAudit) -> 
 def purge_guests(
     session: Session, content: ContentIndex, settings: GuestSettings, now: datetime
 ) -> int:
-    """Recheck activity and active access sessions under locks before deletion."""
+    """Recheck inactivity under locks and isolate each guest deletion in a savepoint."""
     prepare_sqlite_write(session)
     cutoff = now - timedelta(days=settings.guest_ttl_days)
     identifiers = list(
@@ -392,16 +392,17 @@ def purge_guests(
             or as_utc(player.last_activity_at or player.created_at) >= cutoff
         ):
             continue
-        if (
-            player.session_expires_at is not None
-            and as_utc(player.session_expires_at) > now
-        ):
-            continue
-        if character is not None:
-            dispose_character(session, character, content, now)
-        session.delete(player)
-        session.flush()
-        count += 1
+        try:
+            with session.begin_nested():
+                if character is not None:
+                    dispose_character(session, character, content, now)
+                session.delete(player)
+                session.flush()
+            count += 1
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Game guest purge failed: player_id=%s", player.id
+            )
     return count
 
 

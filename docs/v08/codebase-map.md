@@ -162,11 +162,13 @@ baseline audit remain records of v0.5, rather than current implementation advice
 ## Guest authentication update (33)
 
 - Auth routes now include POST /auth/guest and bearer-authenticated
-  POST /auth/upgrade. Access tokens carry verified kind and session_exp claims;
-  refresh issues the current database kind. Game records kind, last activity and
-  the longest observed signed session expiry in players.
+  POST /auth/upgrade. Access tokens carry verified kind; refresh issues the current database kind.
+  Guest refresh lifetimes are capped at guest_ttl_days. Game records kind and
+  coarse last activity, writing only for new players, promotion or stale activity.
 - content/auth.json is a strict private pack shared by both services, owning
-  guest_ttl_days. Compose mounts it read-only for auth as well as game.
+  guest_ttl_days and activity_write_interval_minutes. Compose mounts it read-only
+  for auth as well as game. Purge eligibility depends on inactivity alone, with
+  per-guest savepoints isolating failures.
 - services/auth/app/guest_purge.py and game services/guest_purge.py own atomic
   cleanup, with daily lifecycle drivers and PostgreSQL advisory locks. The game
   job locks candidate characters before sorted realms, estates and market rows.

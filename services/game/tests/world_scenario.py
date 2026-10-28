@@ -742,7 +742,6 @@ class WorldScenario:
                 player.last_activity_at = self.now - timedelta(
                     days=self.content.auth.guest_ttl_days + 1
                 )
-                player.session_expires_at = self.now - timedelta(seconds=1)
                 donor = session.get(Inventory, (self.characters[0], SPRIG))
                 wallet = session.get(Currency, self.characters[0])
                 guest_wallet = session.get(Currency, guest.id)

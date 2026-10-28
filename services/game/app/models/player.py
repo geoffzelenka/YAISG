@@ -22,7 +22,6 @@ class Player(Base):
 
     kind: Mapped[str] = mapped_column(String(16), default="full", server_default="full")
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    session_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint("kind IN ('guest', 'full')", name="ck_players_kind"),
     )

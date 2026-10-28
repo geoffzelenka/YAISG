@@ -4,7 +4,7 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 import httpx
@@ -19,8 +19,9 @@ from app.clock import ServerNow
 from app.config import AUTH_JWKS_TTL_SECONDS, AUTH_JWKS_URL, JWT_ISSUER
 from app.db import get_db
 from app.errors import api_error
+from app.guest_settings import GuestSettings
 from app.models import Player
-from app.services.realms import prepare_sqlite_write
+from app.services.realms import as_utc, prepare_sqlite_write
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,6 @@ class VerifiedIdentity:
 
     auth_user_id: uuid.UUID
     kind: str = "full"
-    expires_at: datetime | None = None
 
 
 class JwksCache:
@@ -148,14 +148,11 @@ async def verify_access_token(request: Request) -> VerifiedIdentity:
         kind = claims["kind"]
         if kind not in {"guest", "full"}:
             raise InvalidTokenError("Invalid account kind")
-        expires_at = datetime.fromtimestamp(
-            max(claims["exp"], claims.get("session_exp", claims["exp"])), UTC
-        )
     except (InvalidTokenError, KeyError, TypeError, ValueError):
         raise api_error(
             401, "UNAUTHORIZED", "A valid access token is required"
         ) from None
-    return VerifiedIdentity(auth_user_id=subject, kind=kind, expires_at=expires_at)
+    return VerifiedIdentity(auth_user_id=subject, kind=kind)
 
 
 Identity = Annotated[VerifiedIdentity, Depends(verify_access_token)]
@@ -163,18 +160,26 @@ DatabaseSession = Annotated[Session, Depends(get_db)]
 
 
 async def get_current_player(
-    identity: Identity, session: DatabaseSession, now: ServerNow
+    identity: Identity, session: DatabaseSession, now: ServerNow, request: Request
 ) -> Player:
-    """Find or atomically create the player associated with the token subject."""
+    """Read identity first; write only for new, promoted or stale players."""
+    statement = select(Player).where(Player.auth_user_id == identity.auth_user_id)
+    player = session.scalar(statement)
+    settings = request.app.state.content.auth
+    if player is not None and not _needs_activity_write(
+        player, identity, now, settings
+    ):
+        return player
+
+    # End the read snapshot before acquiring SQLite writer intent, then reload
+    # under the writer/row lock so concurrent provisioning and promotion are safe.
     prepare_sqlite_write(session)
     player = session.scalar(
-        select(Player)
-        .where(Player.auth_user_id == identity.auth_user_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
+        statement.with_for_update().execution_options(populate_existing=True)
     )
     if player is not None:
-        _record_activity(player, identity, now)
+        if _needs_activity_write(player, identity, now, settings):
+            _record_activity(player, identity, now)
         session.commit()
         return player
     player = Player(
@@ -182,7 +187,6 @@ async def get_current_player(
         created_at=now,
         kind=identity.kind,
         last_activity_at=now,
-        session_expires_at=identity.expires_at,
     )
     session.add(player)
     try:
@@ -190,33 +194,33 @@ async def get_current_player(
     except IntegrityError:
         session.rollback()
         existing = session.scalar(
-            select(Player)
-            .where(Player.auth_user_id == identity.auth_user_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
+            statement.with_for_update().execution_options(populate_existing=True)
         )
         if existing is None:
             raise
-        _record_activity(existing, identity, now)
+        if _needs_activity_write(existing, identity, now, settings):
+            _record_activity(existing, identity, now)
         session.commit()
         return existing
     session.refresh(player)
     return player
 
 
+def _needs_activity_write(
+    player: Player, identity: VerifiedIdentity, now: datetime, settings: GuestSettings
+) -> bool:
+    return (player.kind == "guest" and identity.kind == "full") or (
+        player.last_activity_at is None
+        or now - as_utc(player.last_activity_at)
+        >= timedelta(minutes=settings.activity_write_interval_minutes)
+    )
+
+
 def _record_activity(player: Player, identity: VerifiedIdentity, now: datetime) -> None:
-    """Promote identity monotonically and retain the longest verified session."""
-    # A full account cannot regress when an older guest token is in flight.
+    """Promote identity monotonically and stamp coarse activity."""
     if identity.kind == "full":
         player.kind = "full"
     player.last_activity_at = now
-    if identity.expires_at is not None:
-        previous_expiry = player.session_expires_at
-        if (
-            previous_expiry is None
-            or previous_expiry.replace(tzinfo=UTC) < identity.expires_at
-        ):
-            player.session_expires_at = identity.expires_at
 
 
 CurrentPlayer = Annotated[Player, Depends(get_current_player)]

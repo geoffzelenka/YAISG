@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, exists, func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import prepare_sqlite_write
@@ -12,7 +12,7 @@ from app.models import RefreshToken, User
 
 
 def purge_guests(session: Session, settings: GuestSettings, now: datetime) -> int:
-    """Delete inactive guests only when no unrevoked refresh session is live."""
+    """Delete guests whose last activity is older than the authored TTL."""
     prepare_sqlite_write(session)
     cutoff = now - timedelta(days=settings.guest_ttl_days)
     users = session.scalars(
@@ -26,20 +26,18 @@ def purge_guests(session: Session, settings: GuestSettings, now: datetime) -> in
     )
     count = 0
     for user in users:
-        if session.scalar(
-            select(
-                exists().where(
-                    RefreshToken.user_id == user.id,
-                    RefreshToken.revoked_at.is_(None),
-                    RefreshToken.expires_at > now,
+        try:
+            with session.begin_nested():
+                session.execute(
+                    delete(RefreshToken).where(RefreshToken.user_id == user.id)
                 )
+                session.delete(user)
+                session.flush()
+            count += 1
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Auth guest purge failed: user_id=%s", user.id
             )
-        ):
-            continue
-        session.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
-        session.delete(user)
-        count += 1
-    session.flush()
     return count
 
 

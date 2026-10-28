@@ -158,7 +158,7 @@ Docker Compose applies both migration chains automatically before starting the A
 | `AUTH_DATABASE_URL` | Auth API | `sqlite:///./data/auth.db` |
 | `CORS_ORIGINS` | Both APIs | `http://localhost:5173` |
 | `GIT_SHA` | Both APIs | `dev` |
-| `CONTENT_DIR` | Game API | Repository `content/` directory |
+| `CONTENT_DIR` | Auth and Game APIs | Repository `content/` directory locally; set to the mounted shared content directory in API images |
 | `AUTH_JWKS_URL` | Game API | `http://localhost:8001/.well-known/jwks.json` |
 | `AUTH_JWKS_TTL_SECONDS` | Game API | `300` |
 | `JWT_ISSUER` | Game API | `yaisg-auth` |

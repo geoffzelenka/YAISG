@@ -18,7 +18,6 @@ from app.config import (
     ACCESS_TOKEN_SECONDS,
     AUTH_KEYS_DIR,
     JWT_ISSUER,
-    REFRESH_TOKEN_SECONDS,
 )
 
 _password_hasher = PasswordHasher()
@@ -125,9 +124,6 @@ class SigningKeys:
         claims = {
             "sub": str(user_id),
             "kind": kind,
-            "session_exp": int(
-                (now + timedelta(seconds=REFRESH_TOKEN_SECONDS)).timestamp()
-            ),
             "iat": now,
             "exp": now + timedelta(seconds=ACCESS_TOKEN_SECONDS),
             "iss": JWT_ISSUER,

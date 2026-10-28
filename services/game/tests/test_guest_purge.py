@@ -38,12 +38,15 @@ from app.models import (
 )
 from app.services.guest_purge import purge_guests
 
-SETTINGS = GuestSettings(guest_ttl_days=14)
+SETTINGS = GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=60)
 
 
-def make_guest(session: Session, name: str = "Guest") -> tuple[Player, Character]:
+def make_guest(
+    session: Session, name: str = "Guest", player_id: uuid.UUID | None = None
+) -> tuple[Player, Character]:
     """Create an expired identity and its mobile home with explicit ownership."""
     player = Player(
+        id=player_id or uuid.uuid4(),
         auth_user_id=uuid.uuid4(),
         kind="guest",
         created_at=NOW - timedelta(days=15),
@@ -71,19 +74,17 @@ def make_guest(session: Session, name: str = "Guest") -> tuple[Player, Character
 
 
 def test_game_purge_only_inactive_guests(realm_session: Session) -> None:
-    """Full accounts, TTL-boundary activity and active sessions survive."""
+    """Full accounts and activity within the TTL survive."""
     session = realm_session
     expired, character = make_guest(session)
     survivors = []
-    for name in ("Full", "Recent", "Active"):
+    for name in ("Full", "Recent"):
         player, _ = make_guest(session, name)
         survivors.append(player.id)
         if name == "Full":
             player.kind = "full"
         elif name == "Recent":
             player.last_activity_at = NOW - timedelta(days=14)
-        else:
-            player.session_expires_at = NOW + timedelta(minutes=1)
     session.commit()
     assert purge_guests(session, CONTENT, SETTINGS, NOW) == 1
     session.commit()
@@ -300,9 +301,26 @@ def test_guest_purge_audits_every_holder_and_isolated_realms(
     )
     session.commit()
     before = goods(session)
+    # This malformed key has physical existence but no valid custodian. Its realm
+    # FK must still be cleared by purge, even though the custody oracle rejects it.
+    orphan = ItemInstance(
+        template_id="orphan",
+        realm_id=isolated.id,
+        holder_character_id=None,
+        discovered_by_character_id=None,
+        discovered_by_name="Orphan",
+        payload={},
+        uses_total=1,
+        uses_remaining=1,
+        created_at=NOW,
+    )
+    session.add(orphan)
+    before["instance:orphan"] += 1000
+    session.commit()
     session.rollback()
     assert purge_guests(session, CONTENT, SETTINGS, NOW) == 1
     session.commit()
+    assert session.get(ItemInstance, orphan.id) is None
     after = goods(session)
     sinks: dict[str, int] = {}
     for row in session.scalars(select(GoodsLedger)):
@@ -311,7 +329,7 @@ def test_guest_purge_audits_every_holder_and_isolated_realms(
     expected = before.copy()
     expected.update(sinks)
     assert after == expected
-    assert sum(sinks.values()) == -19000
+    assert sum(sinks.values()) == -20000
     assert session.scalar(select(func.sum(GoldLedger.amount))) == -28
     assert session.get(RealmState, isolated.id) is None
     assert session.get(Player, player.id) is None
@@ -469,3 +487,54 @@ def test_guest_purge_preserves_foreign_isolated_references(
     assert realm_session.get(Character, identifiers[1]) is not None
     assert realm_session.get(Character, identifiers[2]) is not None
     assert realm_session.get(RealmState, "private-island") is not None
+
+
+def test_bad_guest_does_not_block_another_purge(
+    realm_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A bad guest rolls back its holders and audits while a later guest is removed."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import guest_purge
+
+    session = realm_session
+    bad, bad_character = make_guest(session, "Bad", uuid.UUID(int=1))
+    good, good_character = make_guest(session, "Good", uuid.UUID(int=2))
+    # Process the bad guest first so continuing after its savepoint is exercised.
+    session.add_all(
+        [
+            Currency(character_id=bad_character.id, gold=9),
+            Currency(character_id=good_character.id, gold=7),
+        ]
+    )
+    session.commit()
+    bad_id, good_id = bad.id, good.id
+    bad_character_id, good_character_id = bad_character.id, good_character.id
+    original = guest_purge._dispose_realms
+
+    def fail_bad(
+        session: Session, isolated: set[str], audit: guest_purge.PurgeAudit
+    ) -> None:
+        if audit.character_id == bad_character_id:
+            raise ValueError("Malformed guest")
+        original(session, isolated, audit)
+
+    monkeypatch.setattr(guest_purge, "_dispose_realms", fail_bad)
+    guest_purge.run_guest_purge(
+        sessionmaker(bind=session.get_bind()), CONTENT, SETTINGS, NOW
+    )
+    assert "Game guest purge failed" in caplog.text
+    session.expire_all()
+    assert session.get(Player, bad_id) is not None
+    assert session.get(Player, good_id) is None
+    assert session.get(Currency, bad_character_id) is not None
+    assert session.get(Currency, good_character_id) is None
+    assert session.scalar(select(func.sum(GoldLedger.amount))) == -7
+    assert (
+        session.scalar(
+            select(GoldLedger.id).where(GoldLedger.character_id == bad_character_id)
+        )
+        is None
+    )

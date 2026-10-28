@@ -16,7 +16,6 @@ def upgrade() -> None:
             sa.Column("kind", sa.String(16), nullable=False, server_default="full")
         )
         batch.add_column(sa.Column("last_activity_at", sa.DateTime(timezone=True)))
-        batch.add_column(sa.Column("session_expires_at", sa.DateTime(timezone=True)))
         batch.create_check_constraint("ck_players_kind", "kind IN ('guest', 'full')")
     for table, column in (
         ("realm_project_runs", "kicked_off_by"),
@@ -94,6 +93,5 @@ def downgrade() -> None:
             batch.alter_column(column, existing_type=sa.Uuid(), nullable=False)
     with op.batch_alter_table("players") as batch:
         batch.drop_constraint("ck_players_kind", type_="check")
-        batch.drop_column("session_expires_at")
         batch.drop_column("last_activity_at")
         batch.drop_column("kind")

@@ -393,7 +393,7 @@ async def test_guest_creation_rate_limit(client: AsyncClient) -> None:
 def test_auth_purge_only_inactive_guests(
     session_factory: sessionmaker[Session],
 ) -> None:
-    """Full users, recent guests and guests with active sessions survive cleanup."""
+    """Full users and recent guests survive; sessions do not extend inactivity TTL."""
     from app.guest_purge import purge_guests
     from app.guest_settings import GuestSettings
     from app.models import User
@@ -420,11 +420,26 @@ def test_auth_purge_only_inactive_guests(
             )
         )
         session.commit()
-        assert purge_guests(session, GuestSettings(guest_ttl_days=14), now) == 1
+        assert (
+            purge_guests(
+                session,
+                GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=60),
+                now,
+            )
+            == 2
+        )
         session.commit()
         assert session.get(User, users[0].id) is None
-        assert all(session.get(User, user.id) is not None for user in users[1:])
-        assert purge_guests(session, GuestSettings(guest_ttl_days=14), now) == 0
+        assert session.get(User, users[3].id) is None
+        assert all(session.get(User, user.id) is not None for user in users[1:3])
+        assert (
+            purge_guests(
+                session,
+                GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=60),
+                now,
+            )
+            == 0
+        )
 
 
 def test_postgres_auth_purge_rechecks_concurrent_activity(
@@ -460,7 +475,11 @@ def test_postgres_auth_purge_rechecks_concurrent_activity(
                 session.execute(text("SELECT pg_backend_pid()")).scalar_one()
             )
             started.set()
-            count = purge_guests(session, GuestSettings(guest_ttl_days=14), now)
+            count = purge_guests(
+                session,
+                GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=60),
+                now,
+            )
             session.commit()
             return count
 
@@ -519,7 +538,11 @@ def test_auth_purge_job_rolls_back_and_logs(
         raise RuntimeError("Injected auth purge failure")
 
     monkeypatch.setattr(guest_purge, "purge_guests", fail)
-    guest_purge.run_guest_purge(session_factory, GuestSettings(guest_ttl_days=14), now)
+    guest_purge.run_guest_purge(
+        session_factory,
+        GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=60),
+        now,
+    )
     assert "Auth guest purge failed" in caplog.text
     with session_factory() as session:
         assert session.get(User, identifier) is not None
@@ -591,3 +614,282 @@ async def test_auth_lifespan_purges_and_stops_worker(
             assert session.get(User, identifier) is None
         assert (await client.post("/auth/guest")).status_code == 201
     assert not any(thread.name == "auth_guest_purge" for thread in threads())
+
+
+@pytest.mark.anyio
+async def test_real_guest_purge_uses_inactivity_ttl(
+    client: AsyncClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A newly issued guest survives TTL-1 and is removed at TTL+1."""
+    from app import api
+    from app.guest_purge import purge_guests
+    from app.guest_settings import load_guest_settings
+    from app.models import User
+    from app.security import ensure_utc
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    monkeypatch.setattr(api, "utc_now", lambda: now)
+    settings = load_guest_settings()
+    response = await client.post("/auth/guest")
+    assert response.status_code == 201
+    claims = jwt.decode(
+        response.json()["access_token"], options={"verify_signature": False}
+    )
+    identifier = uuid.UUID(claims["sub"])
+    with session_factory() as session:
+        token = session.scalar(
+            select(RefreshToken).where(RefreshToken.user_id == identifier)
+        )
+        assert token is not None
+        assert ensure_utc(token.expires_at) == now + timedelta(
+            days=settings.guest_ttl_days
+        )
+        assert (
+            f"Max-Age={settings.guest_ttl_days * 86400}"
+            in response.headers["set-cookie"]
+        )
+        assert (
+            purge_guests(
+                session, settings, now + timedelta(days=settings.guest_ttl_days - 1)
+            )
+            == 0
+        )
+        session.commit()
+        assert session.get(User, identifier) is not None
+        assert (
+            purge_guests(
+                session, settings, now + timedelta(days=settings.guest_ttl_days + 1)
+            )
+            == 1
+        )
+        session.commit()
+        assert session.get(User, identifier) is None
+        assert (
+            session.scalar(
+                select(RefreshToken).where(RefreshToken.user_id == identifier)
+            )
+            is None
+        )
+
+
+@pytest.mark.anyio
+async def test_guest_refresh_rotation_counts_as_activity_and_caps_expiry(
+    client: AsyncClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rotation restarts the inactivity window and never grants a longer credential."""
+    from app import api
+    from app.guest_purge import purge_guests
+    from app.guest_settings import load_guest_settings
+    from app.models import User
+    from app.security import ensure_utc
+
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+    monkeypatch.setattr(api, "utc_now", lambda: clock[0])
+    settings = load_guest_settings()
+    response = await client.post("/auth/guest")
+    identifier = uuid.UUID(
+        jwt.decode(
+            response.json()["access_token"], options={"verify_signature": False}
+        )["sub"]
+    )
+    clock[0] += timedelta(days=settings.guest_ttl_days - 1)
+    assert (await client.post("/auth/refresh")).status_code == 200
+    with session_factory() as session:
+        user = session.get(User, identifier)
+        assert user is not None and user.last_activity_at is not None
+        assert ensure_utc(user.last_activity_at) == clock[0]
+        live = session.scalar(
+            select(RefreshToken).where(
+                RefreshToken.user_id == identifier, RefreshToken.revoked_at.is_(None)
+            )
+        )
+        assert live is not None
+        assert ensure_utc(live.expires_at) == clock[0] + timedelta(
+            days=settings.guest_ttl_days
+        )
+        session.rollback()
+        assert purge_guests(session, settings, clock[0] + timedelta(days=2)) == 0
+
+
+@pytest.mark.anyio
+async def test_full_account_upgrade_cannot_replace_credentials(
+    client: AsyncClient,
+) -> None:
+    """Even the owner's valid bearer cannot replace full-account credentials."""
+    token = await _register(client)
+    response = await client.post(
+        "/auth/upgrade",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "replacement@example.com", "password": "replacement-password"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ACCOUNT_ALREADY_FULL"
+    assert (
+        await client.post(
+            "/auth/login",
+            json={"email": "player@example.com", "password": "long-enough-password"},
+        )
+    ).status_code == 200
+    assert (
+        await client.post(
+            "/auth/login",
+            json={
+                "email": "replacement@example.com",
+                "password": "replacement-password",
+            },
+        )
+    ).status_code == 401
+    assert (
+        await client.post(
+            "/auth/login",
+            json={"email": "player@example.com", "password": "replacement-password"},
+        )
+    ).status_code == 401
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("invalid", ["missing", "non_bearer", "expired", "tampered"])
+async def test_upgrade_rejects_invalid_bearer(
+    client: AsyncClient,
+    signing_keys: SigningKeys,
+    invalid: str,
+) -> None:
+    """Upgrade requires a current, correctly signed bearer identity."""
+    created = await client.post("/auth/guest")
+    token = created.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    if invalid == "missing":
+        headers = {}
+    elif invalid == "non_bearer":
+        headers = {"Authorization": f"Basic {token}"}
+    elif invalid == "expired":
+        claims = jwt.decode(token, options={"verify_signature": False})
+        claims["exp"] = datetime.now(UTC) - timedelta(seconds=1)
+        token = jwt.encode(claims, signing_keys.private_key, algorithm="RS256")
+        headers = {"Authorization": f"Bearer {token}"}
+    else:
+        parts = token.split(".")
+        parts[2] = ("A" if parts[2][0] != "A" else "B") + parts[2][1:]
+        headers = {"Authorization": f"Bearer {'.'.join(parts)}"}
+    response = await client.post(
+        "/auth/upgrade",
+        headers=headers,
+        json={"email": "upgrade@example.com", "password": "long-enough-password"},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+@pytest.mark.anyio
+async def test_upgrade_rate_limit(client: AsyncClient) -> None:
+    """Upgrade attempts share the existing credential IP allowance."""
+    for _ in range(5):
+        response = await client.post(
+            "/auth/upgrade",
+            json={"email": "upgrade@example.com", "password": "long-enough-password"},
+        )
+        assert response.status_code == 401
+    response = await client.post(
+        "/auth/upgrade",
+        json={"email": "upgrade@example.com", "password": "long-enough-password"},
+    )
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "RATE_LIMITED"
+
+
+def test_auth_content_directory_error_is_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An image without the shared content mount fails clearly, without IndexError."""
+    from app import guest_settings
+
+    monkeypatch.delenv("CONTENT_DIR", raising=False)
+    monkeypatch.setattr(guest_settings, "__file__", "/app/app/guest_settings.py")
+    with pytest.raises(RuntimeError, match="Set CONTENT_DIR"):
+        guest_settings.load_guest_settings()
+
+
+def test_bad_auth_guest_does_not_block_another_purge(
+    session_factory: sessionmaker[Session],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An individual deletion failure rolls back and leaves later guests eligible."""
+    from sqlalchemy import event
+
+    from app.guest_purge import purge_guests
+    from app.guest_settings import load_guest_settings
+    from app.models import User
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    with session_factory() as session:
+        bad = User(
+            id=uuid.UUID(int=1),
+            kind="guest",
+            created_at=now - timedelta(days=15),
+            status="active",
+        )
+        good = User(
+            id=uuid.UUID(int=2),
+            kind="guest",
+            created_at=now - timedelta(days=15),
+            status="active",
+        )
+        session.add_all([bad, good])
+        session.flush()
+        session.add_all(
+            [
+                RefreshToken(
+                    user_id=bad.id, token_hash="bad", expires_at=now + timedelta(days=1)
+                ),
+                RefreshToken(
+                    user_id=good.id,
+                    token_hash="good",
+                    expires_at=now + timedelta(days=1),
+                ),
+            ]
+        )
+        session.commit()
+
+        def reject_bad(
+            session: Session, flush_context: object, instances: object
+        ) -> None:
+            if any(
+                isinstance(row, User) and row.id == uuid.UUID(int=1)
+                for row in session.deleted
+            ):
+                raise ValueError("Malformed auth guest")
+
+        event.listen(session, "before_flush", reject_bad)
+        try:
+            assert purge_guests(session, load_guest_settings(), now) == 1
+            session.commit()
+        finally:
+            event.remove(session, "before_flush", reject_bad)
+        assert "Auth guest purge failed" in caplog.text
+        assert session.get(User, uuid.UUID(int=1)) is not None
+        assert session.get(User, uuid.UUID(int=2)) is None
+        assert (
+            session.scalar(
+                select(RefreshToken).where(RefreshToken.user_id == uuid.UUID(int=1))
+            )
+            is not None
+        )
+        assert (
+            session.scalar(
+                select(RefreshToken).where(RefreshToken.user_id == uuid.UUID(int=2))
+            )
+            is None
+        )
+
+
+@pytest.mark.parametrize("interval", [0, -1, 841])
+def test_auth_activity_interval_must_be_well_under_ttl(interval: int) -> None:
+    """Both zero writes and an interval near retention are rejected by content."""
+    from pydantic import ValidationError
+
+    from app.guest_settings import GuestSettings
+
+    with pytest.raises(ValidationError):
+        GuestSettings(guest_ttl_days=14, activity_write_interval_minutes=interval)
