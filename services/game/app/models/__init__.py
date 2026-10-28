@@ -16,6 +16,7 @@ from app.models.character import (
     RealmTag,
     RewardLog,
 )
+from app.models.equipment import CharacterEquipment
 from app.models.gold import GoldLedger
 from app.models.market import MarketMatch, MarketOrder
 from app.models.player import Player
@@ -53,3 +54,6 @@ __all__ += ["RealmShipment"]
 
 
 __all__ += ["MarketMatch", "MarketOrder"]
+
+
+__all__ += ["CharacterEquipment"]

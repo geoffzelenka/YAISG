@@ -12,11 +12,12 @@ from sqlalchemy.orm import Session
 
 from app.content import ContentIndex
 from app.content.runtime import CONTENT
-from app.content.schemas import DecayStage
+from app.content.schemas import CapType, DecayStage
 from app.engine import ActiveAction, CharacterState, ResolveResult, StopReason, resolve
 from app.models import (
     ActiveActionRecord,
     Character,
+    CharacterEquipment,
     CharacterSkill,
     Currency,
     Estate,
@@ -96,6 +97,19 @@ def _load_state(
         select(EstateUpgrade.upgrade_id).where(EstateUpgrade.estate_id == estate.id)
     )
     realm_state = session.get(RealmState, character.current_realm_id)
+    equipment = list(
+        session.scalars(
+            select(CharacterEquipment).where(
+                CharacterEquipment.character_id == character_id
+            )
+        )
+    )
+    gear = [(row.slot, content.item(row.item_id).equip) for row in equipment]
+    caps: defaultdict[CapType, float] = defaultdict(float)
+    for _, equip in gear:
+        if equip is not None:
+            for cap, amount in equip.cap_bonuses.items():
+                caps[cap] += amount
     return CharacterState(
         skills_xp={skill.skill_id: skill.xp for skill in skills},
         skill_levels={skill.skill_id: skill.level for skill in skills},
@@ -115,7 +129,18 @@ def _load_state(
         realm_stack_tags=stack_tags(session, character.current_realm_id),
         estate_stage=DecayStage(estate.decay_stage),
         installed_upgrades=tuple(upgrades),
-        cap_bonuses={},
+        gear_modifiers=tuple(
+            m for _, equip in gear if equip is not None for m in equip.modifiers
+        ),
+        right_hand_tool_class=next(
+            (
+                equip.tool_class
+                for slot, equip in gear
+                if slot == "right_hand" and equip is not None
+            ),
+            None,
+        ),
+        cap_bonuses=dict(caps),
     )
 
 

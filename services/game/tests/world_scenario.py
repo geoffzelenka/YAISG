@@ -44,6 +44,8 @@ PROJECT_IDS = (
     *(f"project.{name}" for name in EXTRA_PROJECT_NAMES),
 )
 OPERATIONS = (
+    "equip",
+    "unequip",
     "buy",
     "sell",
     "gift",
@@ -585,7 +587,14 @@ class WorldScenario:
 
     async def run(self, operation: str) -> None:
         """Execute one valid generated intent, checking all required preparation."""
-        if operation == "build":
+        if operation in {"equip", "unequip"}:
+            await self.post(
+                "/equipment/equip", {"item_id": "item.fake_cape", "slot": "cape"}
+            )
+            await self.check()
+            if operation == "unequip":
+                await self.post("/equipment/unequip", {"slot": "cape"})
+        elif operation == "build":
             await self.ensure_mobile()
             await self.pay_form("/estates/build", "form.fake_workshop")
             return

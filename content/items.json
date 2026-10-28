@@ -136,6 +136,57 @@
       ],
       "bullion": true,
       "reference_price": 5
+    },
+    {
+      "id": "item.fake_pickaxe",
+      "name": "Fake pickaxe",
+      "tier": 1,
+      "classes": [
+        "fake_tool"
+      ],
+      "reference_price": 1,
+      "equip": {
+        "slot": "right_hand",
+        "tool_class": "fake_pickaxe",
+        "modifiers": [
+          {
+            "type": "cycle_speed_pct",
+            "value": 10,
+            "category": "gathering"
+          }
+        ]
+      }
+    },
+    {
+      "id": "item.fake_cape",
+      "name": "Fake cape",
+      "tier": 1,
+      "classes": [
+        "fake_gear"
+      ],
+      "reference_price": 1,
+      "equip": {
+        "slot": "cape",
+        "modifiers": [
+          {
+            "type": "xp_pct",
+            "value": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "item.fake_two_hander",
+      "name": "Fake two hander",
+      "tier": 1,
+      "classes": [
+        "fake_gear"
+      ],
+      "reference_price": 1,
+      "equip": {
+        "slot": "right_hand",
+        "two_handed": true
+      }
     }
   ]
 }

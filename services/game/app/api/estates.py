@@ -144,7 +144,7 @@ def _estate_response(
             .order_by(EstateUpgrade.slot_index)
         )
     )
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     slots = resolve_caps(state, content).estate_upgrade_slots
     realm = session.get(RealmState, estate.realm_id)
     estate_realm_state = replace(
@@ -335,7 +335,7 @@ async def purchase_upgrade(
     if any(record.upgrade_id == upgrade.id for record in installed):
         raise api_error(409, "ALREADY_INSTALLED", "The upgrade is already installed")
     cap = resolve_caps(
-        load_character_state(session, character.id), content
+        load_character_state(session, character.id, content), content
     ).estate_upgrade_slots
     used_slots = {record.slot_index for record in installed}
     free_slot = next((slot for slot in range(cap) if slot not in used_slots), None)
@@ -393,7 +393,7 @@ async def transform_estate(
         or destination.mobility != source.mobility
     ):
         raise api_error(409, "INVALID_TRANSFORMATION", "No transformation edge exists")
-    state = load_character_state(session, character.id)
+    state = load_character_state(session, character.id, content)
     installed_count = session.scalar(
         select(func.count())
         .select_from(EstateUpgrade)
@@ -503,7 +503,7 @@ async def build_estate(
     tags = {
         tag.id
         for tag, _ in realm_active_tags(
-            load_character_state(session, character.id), content
+            load_character_state(session, character.id, content), content
         )
     }
     if not tags_present(form.requires_realm_tags, tags):

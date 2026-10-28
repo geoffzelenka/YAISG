@@ -448,3 +448,45 @@ def test_modifier_rejects_invalid_scope(scope: dict[str, str], message: str) -> 
                 }
             )
         )
+
+
+@pytest.mark.parametrize("field", ["requires", "modifiers"])
+def test_loader_rejects_unknown_equipment_skill(tmp_path: Path, field: str) -> None:
+    """Both equipment skill gates and modifier scopes reference real skills."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "items.json"
+    items = json.loads(path.read_text())
+    equip = next(item["equip"] for item in items["items"] if item.get("equip"))
+    equip[field] = (
+        {"missing": 1}
+        if field == "requires"
+        else [{"type": "cycle_speed_pct", "value": 1, "skill_id": "missing"}]
+    )
+    _write_json(path, items)
+    with pytest.raises(ContentError, match="unknown equipment.*skill"):
+        load_content(directory)
+
+
+def test_loader_requires_equipped_tool_class(tmp_path: Path) -> None:
+    """An inventory goods class cannot satisfy a tool reference without equip."""
+    directory = tmp_path / "content"
+    shutil.copytree(CONTENT_DIR, directory)
+    path = directory / "skills.json"
+    skills = json.loads(path.read_text())
+    action = skills["skills"][0]["actions"][0]
+    action["requires"]["tool_class"] = "fake_pickaxe"
+    _write_json(path, skills)
+    load_content(directory)
+    items_path = directory / "items.json"
+    items = json.loads(items_path.read_text())
+    tool = next(
+        item
+        for item in items["items"]
+        if item.get("equip", {}).get("tool_class") == "fake_pickaxe"
+    )
+    tool["equip"]["tool_class"] = "another_tool"
+    tool["classes"].append("fake_pickaxe")
+    _write_json(items_path, items)
+    with pytest.raises(ContentError, match="unknown tool class"):
+        load_content(directory)
