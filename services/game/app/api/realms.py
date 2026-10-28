@@ -43,7 +43,7 @@ from app.services.realms import (
 )
 from app.services.stores import recompute_lines
 from app.services.trade import gift, trade
-from app.services.votes import call_vote, cast_vote
+from app.services.votes import call_vote, cast_vote, open_vote
 
 router = APIRouter(tags=["realms"])
 
@@ -122,6 +122,30 @@ class DemandLineResponse(BaseModel):
     below_reserve: bool
 
 
+class VoteParticipation(BaseModel):
+    """Public eligibility and participation snapshot."""
+
+    character_id: uuid.UUID
+    weight: int
+    voted_at: datetime | None
+
+
+class VoteResponse(BaseModel):
+    """Public ballot; aggregate totals remain hidden until close."""
+
+    id: uuid.UUID
+    upgrade_id: str
+    called_by: uuid.UUID | None
+    called_at: datetime
+    closes_at: datetime
+    status: str
+    eligible_weight: int
+    fee_gold: int
+    yes_weight: int | None
+    no_weight: int | None
+    participation: list[VoteParticipation]
+
+
 class RealmResponse(BaseModel):
     """Public gameplay state; never includes treasury."""
 
@@ -133,6 +157,7 @@ class RealmResponse(BaseModel):
     decay_stage: str
     gauge: float
     active_run: ProjectRunResponse | None
+    open_vote: VoteResponse | None
     lines: list[DemandLineResponse]
     pending_transition: PendingTransition | None
 
@@ -167,6 +192,7 @@ def _realm_response(
         stage,
     )
     run = active_run(session, realm_id)
+    vote = open_vote(session, realm_id)
     lines = recompute_lines(session, state, content) if state else []
     return RealmResponse(
         lines=[
@@ -184,6 +210,7 @@ def _realm_response(
             for line in lines
         ],
         active_run=_run_response(run, now, content) if run else None,
+        open_vote=_vote_response(session, vote) if vote else None,
         id=realm_id,
         name=realm.name,
         node=NodeIdentity(
@@ -694,30 +721,6 @@ class VoteRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     choice: Literal["yes", "no"]
-
-
-class VoteParticipation(BaseModel):
-    """Public eligibility and participation snapshot."""
-
-    character_id: uuid.UUID
-    weight: int
-    voted_at: datetime | None
-
-
-class VoteResponse(BaseModel):
-    """Public ballot; aggregate totals remain hidden until close."""
-
-    id: uuid.UUID
-    upgrade_id: str
-    called_by: uuid.UUID | None
-    called_at: datetime
-    closes_at: datetime
-    status: str
-    eligible_weight: int
-    fee_gold: int
-    yes_weight: int | None
-    no_weight: int | None
-    participation: list[VoteParticipation]
 
 
 def _vote_response(session: DatabaseSession, vote: RealmVote) -> VoteResponse:

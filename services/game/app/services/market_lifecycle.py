@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.content.loader import ContentIndex
 from app.models import MarketOrder, RealmState
+from app.services.metrics import compact_deltas
 from app.services.order_book import cancel_order
 from app.services.realms import prepare_sqlite_write
 
@@ -49,5 +50,6 @@ def run_market_lifecycle(
                 cancel_order(order)
             else:
                 session.delete(order)
+        compact_deltas(session)
         session.commit()
     return True

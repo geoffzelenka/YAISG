@@ -71,6 +71,7 @@ export function EquipmentPanel({ profile }: { profile: CharacterProfile }) {
       {change.error && <p role="alert">{change.error.message}</p>}
       <div
         className="mt-4 grid gap-4 md:grid-cols-3"
+        role="group"
         aria-label="Equipment doll"
       >
         {slots.map((slot) => {
@@ -114,7 +115,7 @@ export function EquipmentPanel({ profile }: { profile: CharacterProfile }) {
                       disabled={Object.entries(item.equip?.requires ?? {}).some(
                         ([id, level]) =>
                           (profile.skills.find((s) => s.id === id)?.level ??
-                            0) < level,
+                            1) < level,
                       )}
                       onClick={() =>
                         change.mutate({
@@ -153,10 +154,12 @@ function Requirements({
     <p>
       Requirements:{' '}
       {Object.entries(item.equip?.requires ?? {})
-        .map(
-          ([id, level]) =>
-            `${profile.skills.find((s) => s.id === id)?.name ?? id} ${level}`,
-        )
+        .map(([id, required]) => {
+          const skill = profile.skills.find((entry) => entry.id === id)
+          const current = skill?.level ?? 1
+          const state = current >= required ? 'met' : 'unmet'
+          return `${skill?.name ?? id} ${required} (current ${current}; ${state})`
+        })
         .join(', ') || 'None'}
       {item.equip?.tool_class && ` · Tool: ${item.equip.tool_class}`}
     </p>
@@ -351,11 +354,11 @@ export function ConsumablesPanel({ profile }: { profile: CharacterProfile }) {
       />
       <h3 className="mt-6">Belt ({beltCapacity} positions)</h3>
       {positions.map((position) => (
-        <div key={position}>
-          <h4>
+        <fieldset key={position} disabled={disabled}>
+          <legend>
             Position {position + 1}
             {position >= beltCapacity ? ' (unavailable; return only)' : ''}
-          </h4>
+          </legend>
           <StackForm
             key={JSON.stringify(profile.belt?.[position])}
             items={held.filter((i) => i.consumable?.heal || i.consumable?.buff)}
@@ -371,7 +374,7 @@ export function ConsumablesPanel({ profile }: { profile: CharacterProfile }) {
               })
             }
           />
-        </div>
+        </fieldset>
       ))}
     </section>
   )

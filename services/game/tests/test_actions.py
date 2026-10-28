@@ -148,7 +148,7 @@ async def test_start_poll_poll_stop_persists_matching_rewards(
 ) -> None:
     client, factory, clock, headers = action_client
     started = await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
@@ -157,10 +157,10 @@ async def test_start_poll_poll_stop_persists_matching_rewards(
     assert datetime.fromisoformat(started.json()["started_at"]).tzinfo is not None
 
     clock.advance(timedelta(milliseconds=2727))
-    first = await client.get("/characters/me/action", headers=headers)
+    first = await client.get("/actions/poll", headers=headers)
     clock.advance(timedelta(milliseconds=5454))
-    second = await client.get("/characters/me/action", headers=headers)
-    stopped = await client.delete("/characters/me/action", headers=headers)
+    second = await client.get("/actions/poll", headers=headers)
+    stopped = await client.post("/actions/stop", headers=headers)
 
     assert first.json()["since_last"]["cycles_completed"] == 1
     assert (
@@ -192,7 +192,7 @@ async def test_switching_mid_cycle_resolves_old_action_without_rewards(
 ) -> None:
     client, factory, clock, headers = action_client
     await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
@@ -210,11 +210,11 @@ async def test_switching_mid_cycle_resolves_old_action_without_rewards(
     clock.advance(timedelta(seconds=1))
 
     switched = await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "refining.fake_plank"},
     )
-    current = await client.get("/characters/me/action", headers=headers)
+    current = await client.get("/actions/poll", headers=headers)
 
     assert switched.status_code == 200
     assert current.json()["active"]["action_id"] == "refining.fake_plank"
@@ -227,13 +227,13 @@ async def test_offline_cap_rewards_once_and_stops(
 ) -> None:
     client, factory, clock, headers = action_client
     await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
     clock.advance(timedelta(hours=20))
 
-    response = await client.get("/characters/me/action", headers=headers)
+    response = await client.get("/actions/poll", headers=headers)
 
     feed = response.json()
     assert feed["active"] is None
@@ -248,7 +248,7 @@ async def test_available_actions_reflect_realm_level_and_empty_fixed_skills(
     action_client: tuple[AsyncClient, sessionmaker[Session], FakeClock, dict[str, str]],
 ) -> None:
     client, _, _, headers = action_client
-    response = await client.get("/characters/me/actions/available", headers=headers)
+    response = await client.get("/actions/available", headers=headers)
 
     groups = {group["skill_id"]: group for group in response.json()["skills"]}
     gathering = {
@@ -298,7 +298,7 @@ async def test_profile_resolution_remains_in_reward_feed(
 ) -> None:
     client, _, clock, headers = action_client
     await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
@@ -306,7 +306,7 @@ async def test_profile_resolution_remains_in_reward_feed(
     profile = await client.get("/characters/me", headers=headers)
     clock.advance(timedelta(milliseconds=2727))
 
-    poll = await client.get("/characters/me/action", headers=headers)
+    poll = await client.get("/actions/poll", headers=headers)
 
     assert profile.status_code == 200
     assert poll.json()["since_last"]["cycles_completed"] == 2
@@ -318,7 +318,7 @@ async def test_zero_cycle_stop_reason_survives_prior_unclaimed_rewards(
 ) -> None:
     client, factory, clock, headers = action_client
     await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
@@ -332,7 +332,7 @@ async def test_zero_cycle_stop_reason_survives_prior_unclaimed_rewards(
         stack.quantity = 2
         session.commit()
     switched = await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "refining.fake_plank"},
     )
@@ -346,7 +346,7 @@ async def test_zero_cycle_stop_reason_survives_prior_unclaimed_rewards(
         session.commit()
     clock.advance(timedelta(milliseconds=4500))
 
-    poll = await client.get("/characters/me/action", headers=headers)
+    poll = await client.get("/actions/poll", headers=headers)
 
     assert poll.json()["since_last"]["cycles_completed"] == 1
     assert poll.json()["stop_reason"] == "inputs_exhausted"
@@ -358,7 +358,7 @@ async def test_concurrent_resolves_contend_and_do_not_double_reward(
 ) -> None:
     client, factory, clock, headers = action_client
     await client.post(
-        "/characters/me/action",
+        "/actions/start",
         headers=headers,
         json={"action_id": "gathering.fake_sprigs"},
     )
@@ -415,9 +415,7 @@ async def test_profile_and_available_report_same_effective_values(
     """Both reporting surfaces share server-computed rates and bonus figures."""
     client, _, _, headers = action_client
     profile = (await client.get("/characters/me", headers=headers)).json()
-    available = (
-        await client.get("/characters/me/actions/available", headers=headers)
-    ).json()
+    available = (await client.get("/actions/available", headers=headers)).json()
     action = available["skills"][0]["actions"][0]
     report = profile["actions"][action["action_id"]]
     assert report == {key: action[key] for key in report}
@@ -501,7 +499,7 @@ async def test_requirement_lost_after_realm_node_change(
     )
     assert started.status_code == 200
     clock.advance(timedelta(seconds=3))
-    initial = await client.get("/characters/me/action", headers=headers)
+    initial = await client.get("/actions/poll", headers=headers)
     assert initial.json()["since_last"]["cycles_completed"] == 1
     with factory() as session:
         realm = session.get(RealmState, "realm.verdant_vale")
@@ -509,11 +507,11 @@ async def test_requirement_lost_after_realm_node_change(
         realm.current_node_id = "node.verdant_t0_stub"
         session.commit()
     clock.advance(timedelta(seconds=3))
-    lost = await client.get("/characters/me/action", headers=headers)
+    lost = await client.get("/actions/poll", headers=headers)
     assert lost.json()["since_last"]["cycles_completed"] == 1
     assert lost.json()["stop_reason"] == "REQUIREMENT_LOST"
     assert lost.json()["active"] is None
-    repeated = await client.get("/characters/me/action", headers=headers)
+    repeated = await client.get("/actions/poll", headers=headers)
     assert repeated.json()["since_last"]["cycles_completed"] == 0
 
 
@@ -534,10 +532,10 @@ async def test_zero_cycle_requirement_loss_survives_availability_read(
         realm.current_node_id = "node.verdant_t0_stub"
         session.commit()
     await client.get("/actions/available", headers=headers)
-    feed = await client.get("/characters/me/action", headers=headers)
+    feed = await client.get("/actions/poll", headers=headers)
     assert feed.json()["stop_reason"] == "REQUIREMENT_LOST"
     assert feed.json()["since_last"]["cycles_completed"] == 0
-    repeat = await client.get("/characters/me/action", headers=headers)
+    repeat = await client.get("/actions/poll", headers=headers)
     assert repeat.json()["stop_reason"] is None
 
 

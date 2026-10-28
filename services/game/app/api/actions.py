@@ -173,7 +173,6 @@ def _start_blockers(
 
 
 @router.get("/actions/available", response_model=AvailableActionsResponse)
-@router.get("/characters/me/actions/available", response_model=AvailableActionsResponse)
 def available_actions(
     request: Request,
     now: ServerNow,
@@ -208,7 +207,6 @@ def available_actions(
 
 
 @router.post("/actions/start", response_model=StartedActionResponse)
-@router.post("/characters/me/action", response_model=StartedActionResponse)
 def start_action(
     body: StartActionRequest,
     request: Request,
@@ -290,7 +288,6 @@ def start_action(
 
 
 @router.get("/actions/poll", response_model=ActionFeedResponse)
-@router.get("/characters/me/action", response_model=ActionFeedResponse)
 def get_action(
     request: Request,
     now: ServerNow,
@@ -338,7 +335,6 @@ def get_action(
 
 
 @router.post("/actions/stop", response_model=ActionFeedResponse)
-@router.delete("/characters/me/action", response_model=ActionFeedResponse)
 def stop_action(
     request: Request,
     now: ServerNow,

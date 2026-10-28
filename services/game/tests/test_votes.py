@@ -222,6 +222,17 @@ async def test_api_participation_secrecy_and_logs(
         response.json()["yes_weight"] is None and response.json()["no_weight"] is None
     )
     assert sum(p["voted_at"] is not None for p in response.json()["participation"]) == 1
+    for projection in (
+        (await client.get(url, headers=headers)).json(),
+        next(
+            row
+            for row in (await client.get("/realms", headers=headers)).json()
+            if row["id"] == REALM
+        ),
+    ):
+        assert projection["open_vote"] == response.json()
+        assert projection["open_vote"]["yes_weight"] is None
+        assert projection["open_vote"]["no_weight"] is None
     duplicate = await client.post(f"{url}/vote", headers=headers, json={"choice": "no"})
     assert duplicate.json()["error"]["code"] == "ALREADY_VOTED"
     assert (
@@ -252,6 +263,7 @@ async def test_api_participation_secrecy_and_logs(
     response = await client.get(f"{url}/vote", headers=headers)
     assert response.json()["status"] == "passed"
     assert response.json()["yes_weight"] == 1 and response.json()["no_weight"] == 0
+    assert (await client.get(url, headers=headers)).json()["open_vote"] is None
     with factory() as session:
         assert (
             session.scalar(
