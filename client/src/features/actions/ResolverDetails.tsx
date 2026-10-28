@@ -58,6 +58,9 @@ export function ResolverDetails({
         const { travel, extra } = resolutionPresentation(value)
         return (
           <div key={index}>
+            {isRecord(value) && typeof value.kills === 'number' && (
+              <h3>Combat summary</h3>
+            )}
             {travel && travel.edges > 0 && (
               <p>
                 Travel: {travel.edges} edges completed · Current realm:{' '}

@@ -88,7 +88,46 @@ export type Combatant = {
   defense_xp_per_damage: number
   drops: Action['outputs']
 }
+export type EquipmentSlot =
+  | 'head'
+  | 'chest'
+  | 'gloves'
+  | 'legs'
+  | 'feet'
+  | 'neck'
+  | 'left_arm'
+  | 'right_arm'
+  | 'left_ring'
+  | 'right_ring'
+  | 'belt'
+  | 'cape'
+  | 'right_hand'
+  | 'left_hand'
+  | 'utility'
+export type Trigger = { hp_below_pct: number } | { buff_missing: true }
 export type Item = {
+  equip?: {
+    slot: EquipmentSlot | 'ring' | 'arm'
+    two_handed: boolean
+    requires: Record<string, number>
+    modifiers: Modifier[]
+    cap_bonuses: Partial<Record<keyof Caps | 'estate_upgrade_slots', number>>
+    weapon: {
+      style: 'melee' | 'ranged' | 'magic'
+      attack_interval_ms: number
+      power: number
+      accuracy: number
+      damage_type: string
+    } | null
+    armour: { armour: number; max_hp: number } | null
+    tool_class: string | null
+    belt_slots: number | null
+  } | null
+  consumable?: {
+    heal: number | null
+    buff: { modifiers: Modifier[]; duration_ms: number } | null
+    utility_for: 'melee' | 'ranged' | 'magic' | null
+  } | null
   id: string
   name: string
   tier: number
@@ -287,6 +326,27 @@ type ContentPacks = {
   }
   development: { nodes: DevelopmentNode[] }
   progression: {
+    combat?: {
+      base_hp: number
+      hp_per_level: number
+      regen_per_min: number
+      min_engage_hp_pct: number
+      base_hit: number
+      hit_per_level: number
+      tier_multiplier: number
+      min_hit_chance: number
+      max_hit_chance: number
+      weakness_multiplier: number
+      resistance_multiplier: number
+      armour_k: number
+      taken_to_defense_pct: number
+      max_cycles_per_resolve: number
+      standard_gear: Partial<Record<EquipmentSlot, string>>
+      unarmed: NonNullable<NonNullable<Item['equip']>['weapon']>
+    }
+    stances?: Record<string, { style: number; accuracy: number }>
+    default_stance?: string
+    combat_effectiveness?: number[]
     basic_mobile_form: string
     visit_profile: TravelProfile
     travel_xp_per_second: number
