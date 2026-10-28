@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.content.schemas import Action
 from app.errors import api_error
@@ -38,7 +38,11 @@ def key_action(key: ItemInstance, realm_id: str) -> Action:
 def realm_keys(session: Session, realm_id: str) -> list[ItemInstance]:
     """Load realm instances once under the realm serialization lock."""
     return list(
-        session.scalars(select(ItemInstance).where(ItemInstance.realm_id == realm_id))
+        session.scalars(
+            select(ItemInstance)
+            .options(joinedload(ItemInstance.listing))
+            .where(ItemInstance.realm_id == realm_id)
+        )
     )
 
 
@@ -56,6 +60,9 @@ def invalidate_keys(keys: list[ItemInstance], at: datetime) -> None:
     transitions must never extend a key's original access window.
     """
     for key in keys:
+        if key.listing is not None and key.listing.status == "open":
+            key.listing.status = "cancelled"
+            key.holder_character_id = key.listing.seller_character_id
         key.state = "invalid"
         if key.invalidated_at is None:
             key.invalidated_at = at

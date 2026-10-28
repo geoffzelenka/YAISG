@@ -26,6 +26,7 @@ from app.models import (
     EstateLarder,
     Inventory,
     ItemInstance,
+    KeyListing,
     MarketOrder,
     RealmShipment,
     RealmState,
@@ -38,7 +39,15 @@ from app.services.realm_ticks import RealmTickContext, daily_share, production_f
 def goods(session: Session) -> Counter[str]:
     """Count each physical holder in milli-items, never audit/history rows."""
     result: Counter[str] = Counter()
+    listings = {
+        row.instance_id: row
+        for row in session.scalars(
+            select(KeyListing).where(KeyListing.status == "open")
+        )
+    }
     for instance in session.scalars(select(ItemInstance)):
+        # Each physical key has exactly one custodian, including market escrow.
+        assert (instance.holder_character_id is not None) != (instance.id in listings)
         # Invalid/depleted keys remain physical trophies until explicit disposal.
         result[f"instance:{instance.template_id}"] += 1000
     for held in session.scalars(select(CharacterBelt)):
