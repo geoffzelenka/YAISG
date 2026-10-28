@@ -139,3 +139,15 @@ None.
 - EQUIPMENT_IN_COMBAT (409): a combat action remains active after resolution.
 - Reused UNKNOWN_ITEM (404), MISSING_INPUTS and INVENTORY_FULL (409); malformed
   request shapes retain INVALID_REQUEST. No dependencies added.
+
+## Orchestrator verification and review hand-offs
+
+- Orchestrator on fec2129: SQLite make ci green (auth 15, game 650 / 20
+  skipped, client 90); PostgreSQL 16 game-ci 669 / 1 skipped; PG db-reset,
+  alembic check and boot green. Review: round 1 CHANGES_REQUESTED (capacity
+  check rejected over-cap changes that free space, §7.5), round 2 APPROVE.
+- 27-consumables-hp (belt): reuse the §7.5 rule in engine/equipment.py
+  (reject only when the resulting distinct-stack count exceeds the resulting
+  cap and the pre-change count); a same-count change may leave usage above a
+  lowered cap by design. Hoist the function-local imports in
+  tests/test_equipment.py.
