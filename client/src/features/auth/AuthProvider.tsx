@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import {
   createContext,
   type PropsWithChildren,
@@ -9,6 +10,7 @@ import {
 
 import {
   authenticate,
+  guestSession,
   logout as requestLogout,
   refreshAccessToken,
   setAccessToken,
@@ -21,12 +23,14 @@ type AuthContextValue = {
   state: AuthState
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string) => Promise<void>
+  guest: () => Promise<void>
   logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const client = useQueryClient()
   const [state, setState] = useState<AuthState>('loading')
 
   useEffect(() => {
@@ -45,18 +49,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
       state,
       login: async (email, password) => {
         await authenticate('login', email, password)
+        client.clear()
         setState('authenticated')
       },
       register: async (email, password) => {
         await authenticate('register', email, password)
+        client.clear()
+        setState('authenticated')
+      },
+      guest: async () => {
+        await guestSession()
+        client.clear()
         setState('authenticated')
       },
       logout: async () => {
         await requestLogout()
+        client.clear()
         setState('unauthenticated')
       },
     }),
-    [state],
+    [state, client],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

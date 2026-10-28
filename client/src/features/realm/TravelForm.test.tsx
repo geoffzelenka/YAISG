@@ -87,3 +87,24 @@ it.each(['fixed', 'away'])(
     expect(screen.getByRole('option', { name: 'Relocate' })).toBeDisabled()
   },
 )
+
+it('can default island travel to relocating the camp', async () => {
+  const fetcher = vi.fn<(url: string) => Promise<Response>>(() =>
+    Promise.resolve(Response.json({ route: [] })),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TravelForm
+        profile={profile}
+        nodes={nodes}
+        initialDestination="b"
+        initialMode="relocate"
+      />
+    </QueryClientProvider>,
+  )
+  expect(screen.getByLabelText('Mode')).toHaveValue('relocate')
+  fireEvent.click(screen.getByText('Preview journey'))
+  await waitFor(() => expect(fetcher).toHaveBeenCalled())
+  expect(String(fetcher.mock.calls[0][0])).toContain('mode=relocate')
+})

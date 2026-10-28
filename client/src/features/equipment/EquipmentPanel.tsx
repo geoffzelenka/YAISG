@@ -1,3 +1,4 @@
+import { activeDefinition } from '../actions/activeDefinition'
 import { useState } from 'react'
 import type { CharacterProfile } from '../../api/characters'
 import {
@@ -37,11 +38,11 @@ export function EquipmentPanel({ profile }: { profile: CharacterProfile }) {
   if (inventory.isError) return <p role="alert">Unable to load inventory.</p>
   const items = content.content.items.items
   const equipment = profile.equipment ?? {}
-  const fighting = content.content.skills.skills
-    .flatMap((s) => s.actions)
-    .some(
-      (a) => a.id === action.data?.active?.action_id && a.resolver === 'combat',
-    )
+  const fighting =
+    activeDefinition(
+      action.data?.active,
+      content.content.skills.skills.flatMap((s) => s.actions),
+    )?.resolver === 'combat'
   const disabled =
     fighting ||
     action.isError ||
@@ -305,11 +306,11 @@ export function ConsumablesPanel({ profile }: { profile: CharacterProfile }) {
         (stack) => stack.item_id === item.id,
       ),
   )
-  const fighting = content.content.skills.skills
-    .flatMap((s) => s.actions)
-    .some(
-      (a) => a.id === action.data?.active?.action_id && a.resolver === 'combat',
-    )
+  const fighting =
+    activeDefinition(
+      action.data?.active,
+      content.content.skills.skills.flatMap((s) => s.actions),
+    )?.resolver === 'combat'
   const disabled =
     fighting || !action.data || action.isError || change.isPending
   const beltCapacity =

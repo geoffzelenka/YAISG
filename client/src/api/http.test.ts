@@ -81,3 +81,22 @@ test('falls back cleanly for non-JSON API errors', async () => {
 
   expect(error).toEqual({ message: 'Bad Gateway' })
 })
+
+test('retries game confirmation after credentials were saved without repeating upgrade', async () => {
+  const { guestSession, confirmAccountUpgrade } = await import('./http')
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(Response.json({ access_token: 'full-token' }))
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValueOnce(Response.json({ kind: 'full' }))
+  await expect(
+    guestSession({ email: 'hero@example.com', password: 'longpassword' }),
+  ).rejects.toMatchObject({ code: 'UPGRADE_CONFIRMATION_FAILED' })
+  await confirmAccountUpgrade()
+  expect(
+    fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname),
+  ).toEqual(['/auth/upgrade', '/players/me', '/players/me'])
+  expect(
+    new Headers(fetchMock.mock.calls[2][1]?.headers).get('Authorization'),
+  ).toBe('Bearer full-token')
+})

@@ -1,3 +1,4 @@
+import { activeDefinition } from '../actions/activeDefinition'
 import { useState } from 'react'
 import { ConsumablesPanel } from '../equipment/EquipmentPanel'
 import { useAvailableActions, useStartAction } from '../../api/actions'
@@ -34,7 +35,7 @@ export function CombatPanel({ profile }: { profile: CharacterProfile }) {
   const selected = choices.find((a) => a.id === actionId) ?? choices[0]
   const status = offered.find((a) => a.action_id === selected?.id)
   const active = feed.data?.active
-  const encounter = actions.find((a) => a.id === active?.action_id)
+  const encounter = activeDefinition(active, actions)
   return (
     <section>
       <h2 className="text-3xl font-bold">Combat</h2>

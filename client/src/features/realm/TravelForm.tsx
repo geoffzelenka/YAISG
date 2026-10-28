@@ -13,10 +13,12 @@ export function TravelForm({
   profile,
   nodes,
   initialDestination = '',
+  initialMode = 'visit',
 }: {
   profile: CharacterProfile
-  nodes: RealmMap['nodes']
+  nodes: Pick<RealmMap['nodes'][number], 'realm_id' | 'name'>[]
   initialDestination?: string
+  initialMode?: TravelRequest['mode']
 }) {
   const estate = useEstate()
   const content = useContent()
@@ -31,7 +33,7 @@ export function TravelForm({
       ? initialDestination
       : '',
   )
-  const [mode, setMode] = useState<TravelRequest['mode']>('visit')
+  const [mode, setMode] = useState<TravelRequest['mode']>(initialMode)
   const canRelocate =
     estate.data?.form.mobility === 'mobile' &&
     estate.data.realm_id === profile.character.current_realm_id

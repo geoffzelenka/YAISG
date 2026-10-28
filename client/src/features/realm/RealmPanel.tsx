@@ -69,6 +69,11 @@ export function RealmPanel({ profile }: { profile: CharacterProfile }) {
           value={selectedRealm || profile.character.current_realm_id}
           onChange={(e) => setSelectedRealm(e.target.value)}
         >
+          {profile.character.tutorial_step && (
+            <option value={profile.character.current_realm_id}>
+              {profile.realm.name} (current island)
+            </option>
+          )}
           {content.content.realms.realms
             .filter((r) => !r.isolated)
             .map((r) => (

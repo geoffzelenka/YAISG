@@ -271,6 +271,19 @@ export type Tag = {
 }
 
 type ContentPacks = {
+  tutorial: {
+    realm_1: string
+    realm_2: string
+    arrival_realms: string[]
+    raft_site_project: string
+    raft_form: string
+    steps: {
+      id: string
+      hint: string
+      done_when: { kind: string; id: string; quantity?: number }
+    }[]
+  }
+
   tags: { tags: Tag[] }
   economy: {
     caravan?: {
@@ -412,6 +425,7 @@ type ContentState =
   | { status: 'error'; content: null; error: Error }
 
 const PACKS: PackName[] = [
+  'tutorial',
   'exploration',
   'combatants',
   'skills',

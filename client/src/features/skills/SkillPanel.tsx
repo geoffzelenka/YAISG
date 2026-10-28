@@ -48,9 +48,10 @@ export function SkillPanel({ skillId }: { skillId: string }) {
         {group.actions
           .filter(() => skillId !== 'travel')
           .map((action) => {
-            const definition = contentSkill.actions.find(
-              (candidate) => candidate.id === action.action_id,
-            )
+            const definition = [
+              ...contentSkill.actions,
+              ...(content.content.exploration?.actions ?? []),
+            ].find((candidate) => candidate.id === action.action_id)
             return (
               <article
                 key={action.action_id}

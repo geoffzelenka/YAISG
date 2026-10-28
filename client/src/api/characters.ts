@@ -8,6 +8,7 @@ export type CharacterProfile = {
     id: string
     name: string
     current_realm_id: string
+    tutorial_step?: string | null
     stance?: string
     created_at: string
   }
