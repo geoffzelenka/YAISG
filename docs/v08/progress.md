@@ -42,6 +42,6 @@ an independent PostgreSQL green run inside the restricted coding sandbox.
 | 32 | `32-key-market` | The key market | done | v08/32-key-market | afac9ea | Key listings, taxed buyouts, cancel, paginated browse, invalidation returns |
 | 33 | `33-guest-auth` | Guest accounts | done | v08/33-guest-auth | 09b5383 | Guest tokens, in-place upgrade, inactivity purge in both services |
 | 34 | `34-tutorial` | Tutorial Island | done | v08/34-tutorial | 049fdf8 | Tutorial Island: private instances, steps, seed gold, raft kickoff pays full cost, departure |
-| 35 | `35-client-keys-tutorial` | Client: keys, tutorial, guest upgrade | ready for review | `v08/35-client-keys-tutorial` | — | Guest entry, tutorial departure/upgrade, keys and key market UI |
+| 35 | `35-client-keys-tutorial` | Client: keys, tutorial, guest upgrade | done | v08/35-client-keys-tutorial | 3809c39 | Guest entry, tutorial hints, departure with upgrade, keys panel and key market UI |
 | 36 | `36-hardening` | Rate limits, counters, load, seed-check in CI | pending | — | — | — |
 | 37 | `37-conformance` | Final design conformance audit | pending | — | — | — |
