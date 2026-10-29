@@ -36,7 +36,7 @@ Check that PostgreSQL is up: `docker ps | grep yaisg-pg16`. It is reachable at `
    The message says it was written by the Codex coding agent and committed by the orchestrator, and ends with the trailer. Never commit the swap file, and never commit untracked human work.
 5. **Verify:** `$SK/verify.sh <id> v1`. Expect `sqlite=0 pg=0 pg_auth=0 reset_pg=0`, "No new upgrade operations detected." twice, and `boot=200`. Logs are in `$PIPELINE_WORK/<id>/`.
    - If something fails, send the failures back to Codex on the same thread before review. These pre-review fixes have their own counter and don't use review rounds.
-6. **Review,** at most 3 rounds. Use the `code-reviewer` agent; round 1 uses the default model, rounds 2–3 a fresh Sonnet reviewer. Give it:
+6. **Review,** at most 3 rounds. For each round, copy `templates/review-brief.md` and fill it in. Use the `code-reviewer` agent; round 1 uses the default model, rounds 2–3 a fresh Sonnet reviewer. Give it:
    - the prompt and README paths;
    - the diff range;
    - the orchestrator's verification numbers;
@@ -44,7 +44,7 @@ Check that PostgreSQL is up: `docker ps | grep yaisg-pg16`. It is reachable at `
    - PostgreSQL `yaisg_review_test` and a scratch directory for mutation checks;
    - the instruction never to edit the repo.
 
-   Rounds 2–3 also get the previous findings and rulings, and the fix commit's range. Rule on each finding. Send the valid ones with `codex exec resume <thread> --json "$(cat fix.md)"`, then commit and re-verify.
+   Rounds 2–3 also get the previous findings and rulings, and the fix commit's range. Rule on each finding. Copy `templates/fix-brief.md` to `$PIPELINE_WORK/<id>/fix-<N>.md`, fill in the valid findings, and send it with `codex exec resume <thread> --json "$(cat $PIPELINE_WORK/<id>/fix-<N>.md)"`, then commit and re-verify.
 7. **Stop** on any condition in the README: ESCALATE, 3 rounds without APPROVE, red CI on main, a BLOCKER in preflight, or a "Ratification needed" item the next prompt depends on. Report it as `⚠️ NEEDS_HUMAN` and leave the branch as it is.
 8. **Before merging,** append `## Orchestrator verification and review hand-offs` to `docs/phase-notes/<V>-<id>.md`. Record the verification numbers, each review round's verdict and the non-blocking hand-offs. Commit it.
 9. **Merge:** `$SK/merge.sh <id> "<title>" "<one-line summary>"`. It merges with `--no-ff` and runs CI on main (SQLite, PG game, PG auth). Only if all are green does it update and commit the progress row. If it prints `CI RED ON MAIN`, stop.
